@@ -7,7 +7,7 @@ from django.test import TestCase
 from catalog.models import Room, Section, Subject
 from users.models import Professors
 
-from .models import (
+from timetable.models import (
     Assignment,
     AvailabilityWindow,
     BusyBlock,
