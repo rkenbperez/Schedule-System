@@ -1,1 +1,61 @@
-.venv
+# ==========================================
+# Django & Python Core
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# ==========================================
+# Virtual Environments & Packages
+# ==========================================
+.venv/
+venv/
+ENV/
+env/
+/bin/
+/lib/
+/include/
+/pip-selfcheck.json
+
+# ==========================================
+# Environment Variables & Secrets
+# ==========================================
+.env
+.secret
+*.env.local
+
+# ==========================================
+# Media and Static Files
+# ==========================================
+# Ignore user-uploaded media files (highly recommended)
+media/
+
+# Optional: Ignore gathered static files if you run collectstatic locally
+# static/
+
+# ==========================================
+# Testing & Coverage
+# ==========================================
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.mo
+*.pot
+.pytest_cache/
+
+# ==========================================
+# IDEs and Editors
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
