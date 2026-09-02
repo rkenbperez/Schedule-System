@@ -5,15 +5,14 @@ from catalog.models import Room, Section, Subject
 from users.models import Professors
 
 
-def day_choices():
-    return (
-        ("Monday", "Monday"),
-        ("Tuesday", "Tuesday"),
-        ("Wednesday", "Wednesday"),
-        ("Thursday", "Thursday"),
-        ("Friday", "Friday"),
-        ("Saturday", "Saturday"),
-    )
+WEEKDAY_CHOICES = (
+    (0, "Monday"),
+    (1, "Tuesday"),
+    (2, "Wednesday"),
+    (3, "Thursday"),
+    (4, "Friday"),
+    (5, "Saturday"),
+)
 
 
 class Assignment(models.Model):
@@ -40,7 +39,15 @@ class Assignment(models.Model):
             models.UniqueConstraint(
                 fields=["prof", "subject", "section"],
                 name="unique_prof_subject_section",
-            )
+            ),
+            models.CheckConstraint(
+                condition=models.Q(meetings_per_week__gte=1),
+                name="assignment_meetings_per_week_gte_1",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(duration_slots__gte=1),
+                name="assignment_duration_slots_gte_1",
+            ),
         ]
 
     def __str__(self):
@@ -53,13 +60,21 @@ class AvailabilityWindow(models.Model):
         on_delete=models.CASCADE,
         related_name="availability_windows",
     )
-    day = models.CharField(max_length=20, choices=day_choices())
+    day = models.IntegerField(choices=WEEKDAY_CHOICES)
     start_time = models.TimeField()
     end_time = models.TimeField()
     is_preferred = models.BooleanField(default=False)
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(start_time__lt=models.F("end_time")),
+                name="availability_start_before_end",
+            ),
+        ]
+
     def __str__(self):
-        return f"{self.prof} {self.day} {self.start_time}-{self.end_time}"
+        return f"{self.prof} {self.get_day_display()} {self.start_time}-{self.end_time}"
 
 
 class BusyBlock(models.Model):
@@ -68,12 +83,20 @@ class BusyBlock(models.Model):
         on_delete=models.CASCADE,
         related_name="busy_blocks",
     )
-    day = models.CharField(max_length=20, choices=day_choices())
+    day = models.IntegerField(choices=WEEKDAY_CHOICES)
     start_time = models.TimeField()
     end_time = models.TimeField()
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(start_time__lt=models.F("end_time")),
+                name="busyblock_start_before_end",
+            ),
+        ]
+
     def __str__(self):
-        return f"{self.prof} {self.day} {self.start_time}-{self.end_time}"
+        return f"{self.prof} {self.get_day_display()} {self.start_time}-{self.end_time}"
 
 
 class ScheduleRun(models.Model):
@@ -118,12 +141,18 @@ class ScheduledClass(models.Model):
         blank=True,
         related_name="scheduled_classes",
     )
-    day = models.CharField(max_length=20, choices=day_choices())
+    day = models.IntegerField(choices=WEEKDAY_CHOICES)
     start_time = models.TimeField()
     duration_slots = models.PositiveSmallIntegerField(default=1)
 
     class Meta:
         ordering = ["day", "start_time"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(duration_slots__gte=1),
+                name="scheduled_class_duration_slots_gte_1",
+            ),
+        ]
 
     def __str__(self):
-        return f"{self.assignment} {self.day} {self.start_time}"
+        return f"{self.assignment} {self.get_day_display()} {self.start_time}"
