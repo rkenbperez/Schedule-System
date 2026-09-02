@@ -3,7 +3,7 @@
 from collections import defaultdict
 from typing import Dict, List
 
-from .scenario import Meeting, Placement, Scenario
+from .scenario import Meeting, Placement, Scenario, minutes_to_clock
 from .slots import (
     _busy_by_prof_day,
     _daily_used,
@@ -66,6 +66,25 @@ def hard_violations(scenario: Scenario, placed: Dict[int, Placement]) -> List[st
         meeting = meeting_map[placement.meeting_id]
         duration = minutes(scenario, meeting.duration_slots)
 
+        day_range = scenario.day_ranges.get(placement.day)
+        if day_range is None:
+            violations.append(
+                f"{_label(meeting_map, meeting.meeting_id)} on unknown day {placement.day}"
+            )
+            continue
+        day_start, day_end = day_range
+        if placement.start % scenario.slot_minutes != 0:
+            violations.append(
+                f"{_label(meeting_map, meeting.meeting_id)} start "
+                f"{minutes_to_clock(placement.start)} not aligned to "
+                f"{scenario.slot_minutes}-minute grid"
+            )
+        if placement.start < day_start or placement.start + duration > day_end:
+            violations.append(
+                f"{_label(meeting_map, meeting.meeting_id)} outside opening hours "
+                f"on {_day(placement.day)}"
+            )
+
         room = room_map.get(placement.room_id)
         if room is None:
             violations.append(
@@ -100,7 +119,7 @@ def hard_violations(scenario: Scenario, placed: Dict[int, Placement]) -> List[st
         if used[(meeting.prof_id, placement.day)] > max_hours[meeting.prof_id]:
             violations.append(
                 f"{meeting.prof_label} exceeds daily limit "
-                f"({used[(meeting.prof_id, placement.day)]}h > {max_hours[meeting.prof_id]}h) "
+                f"({used[(meeting.prof_id, placement.day)]:g}h > {max_hours[meeting.prof_id]}h) "
                 f"on {_day(placement.day)}"
             )
 

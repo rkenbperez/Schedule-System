@@ -1,6 +1,7 @@
 from django.test import SimpleTestCase
 
 from timetable.engines import run
+from timetable.engines.constraints import hard_violations
 from timetable.engines.scenario import (
     Availability,
     Meeting,
@@ -101,6 +102,32 @@ class MinConflictsEngineTests(SimpleTestCase):
         scenario = _loose_scenario()
         result = run("min_conflicts", scenario, seed=0)
         self.assertTrue(result.feasible, result.violations)
+
+
+class ConstraintValidationTests(SimpleTestCase):
+    def test_slot_minutes_zero_rejected(self):
+        with self.assertRaises(ValueError):
+            Scenario(slot_minutes=0)
+
+    def test_out_of_hours_placement_detected(self):
+        scenario = Scenario(
+            rooms=[_room(1, 30)],
+            meetings=[_meeting(1, prof_id=1)],
+            availability=[Availability(prof_id=1, day=0, start=8 * 60, end=17 * 60)],
+        )
+        placed = {1: Placement(meeting_id=1, day=0, start=20 * 60, room_id=1)}
+        violations = hard_violations(scenario, placed)
+        self.assertTrue(any("opening hours" in v for v in violations))
+
+    def test_misaligned_start_detected(self):
+        scenario = Scenario(
+            rooms=[_room(1, 30)],
+            meetings=[_meeting(1, prof_id=1)],
+            availability=[Availability(prof_id=1, day=0, start=8 * 60, end=17 * 60)],
+        )
+        placed = {1: Placement(meeting_id=1, day=0, start=8 * 60 + 30, room_id=1)}
+        violations = hard_violations(scenario, placed)
+        self.assertTrue(any("not aligned" in v for v in violations))
 
 
 class InfeasibilityTests(SimpleTestCase):

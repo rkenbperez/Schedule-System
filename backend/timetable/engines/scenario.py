@@ -77,6 +77,15 @@ class Scenario:
     )
     slot_minutes: int = SLOT_MINUTES
 
+    def __post_init__(self):
+        if self.slot_minutes < 1:
+            raise ValueError("slot_minutes must be a positive integer")
+        for day, (start, end) in self.day_ranges.items():
+            if start < 0 or end <= start:
+                raise ValueError(
+                    f"day_ranges[{day}] must have 0 <= start < end, got ({start}, {end})"
+                )
+
     def meeting_map(self) -> Dict[int, Meeting]:
         return {m.meeting_id: m for m in self.meetings}
 

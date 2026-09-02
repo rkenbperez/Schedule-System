@@ -14,10 +14,14 @@ from .scenario import Meeting, Placement, Scenario
 from .slots import legal_rooms, legal_time_slots
 
 
-def _initial_assignment(scenario: Scenario, rng: random.Random) -> Dict[int, Placement]:
+def _initial_assignment(
+    scenario: Scenario, rng: random.Random, deadline: float
+) -> Dict[int, Placement]:
     placed: Dict[int, Placement] = {}
     for meeting in scenario.meetings:
-        slots = legal_time_slots(scenario, meeting, placed)
+        if time.monotonic() >= deadline:
+            break
+        slots = legal_time_slots(scenario, meeting, {})
         rooms = legal_rooms(scenario, meeting)
         if not slots or not rooms:
             continue
@@ -51,7 +55,7 @@ def min_conflicts(
     deadline = time.monotonic() + time_limit_s
     meeting_map = scenario.meeting_map()
 
-    placed = _initial_assignment(scenario, rng)
+    placed = _initial_assignment(scenario, rng, deadline)
     if not placed:
         return placed
 

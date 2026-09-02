@@ -10,6 +10,10 @@ def minutes(scenario: Scenario, slots: int) -> int:
     return slots * scenario.slot_minutes
 
 
+def hours(scenario: Scenario, slots: int) -> float:
+    return slots * scenario.slot_minutes / 60.0
+
+
 def overlaps(start_a: int, end_a: int, start_b: int, end_b: int) -> bool:
     return start_a < end_b and start_b < end_a
 
@@ -35,12 +39,12 @@ def covered_by(window: Tuple[int, int, bool], start: int, end: int) -> bool:
     return window_start <= start and end <= window_end
 
 
-def _daily_used(scenario: Scenario, placed: Dict[int, Placement]) -> Dict[Tuple[int, int], int]:
-    used = defaultdict(int)
+def _daily_used(scenario: Scenario, placed: Dict[int, Placement]) -> Dict[Tuple[int, int], float]:
+    used = defaultdict(float)
     meeting_map = scenario.meeting_map()
     for placement in placed.values():
         meeting = meeting_map[placement.meeting_id]
-        used[(meeting.prof_id, placement.day)] += meeting.duration_slots
+        used[(meeting.prof_id, placement.day)] += hours(scenario, meeting.duration_slots)
     return used
 
 
@@ -61,7 +65,7 @@ def legal_time_slots(
 
     results = []
     for day, (day_start, day_end) in scenario.day_ranges.items():
-        if used[(meeting.prof_id, day)] + meeting.duration_slots > max_hours:
+        if used[(meeting.prof_id, day)] + hours(scenario, meeting.duration_slots) > max_hours:
             continue
 
         start = day_start

@@ -13,14 +13,22 @@ from .slots import free_rooms, is_time_free, legal_time_slots
 
 def greedy(scenario: Scenario, time_limit_s: float = 30.0) -> Dict[int, Placement]:
     deadline = time.monotonic() + time_limit_s
-    meeting_map = scenario.meeting_map()
 
-    initial_counts = {
-        m.meeting_id: len(legal_time_slots(scenario, m, {})) for m in scenario.meetings
-    }
+    if time.monotonic() >= deadline:
+        return {}
+
+    initial_counts: Dict[int, int] = {}
+    for meeting in scenario.meetings:
+        if time.monotonic() >= deadline:
+            break
+        initial_counts[meeting.meeting_id] = len(
+            legal_time_slots(scenario, meeting, {})
+        )
+
+    fallback = len(scenario.meetings) + 1
     ordered = sorted(
         scenario.meetings,
-        key=lambda m: (initial_counts[m.meeting_id], -m.duration_slots),
+        key=lambda m: (initial_counts.get(m.meeting_id, fallback), -m.duration_slots),
     )
 
     placed: Dict[int, Placement] = {}

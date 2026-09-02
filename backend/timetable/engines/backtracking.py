@@ -28,9 +28,9 @@ def _candidates(
 
 
 def backtracking(scenario: Scenario, time_limit_s: float = 30.0) -> Dict[int, Placement]:
-    meeting_map = scenario.meeting_map()
     meetings = scenario.meetings
     start_time = time.monotonic()
+    best_partial: Dict[int, Placement] = {}
 
     def timed_out() -> bool:
         return time.monotonic() - start_time >= time_limit_s
@@ -38,6 +38,9 @@ def backtracking(scenario: Scenario, time_limit_s: float = 30.0) -> Dict[int, Pl
     def search(placed: Dict[int, Placement]) -> Optional[Dict[int, Placement]]:
         if timed_out():
             return None
+
+        if len(placed) > len(best_partial):
+            best_partial.update(placed)
 
         if len(placed) == len(meetings):
             return dict(placed)
@@ -69,4 +72,4 @@ def backtracking(scenario: Scenario, time_limit_s: float = 30.0) -> Dict[int, Pl
         return None
 
     solution = search({})
-    return solution if solution is not None else {}
+    return solution if solution is not None else best_partial

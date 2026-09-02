@@ -11,7 +11,7 @@ from collections import defaultdict
 from typing import Dict, Tuple
 
 from .scenario import Placement, Scenario
-from .slots import _windows_by_prof_day, minutes
+from .slots import _windows_by_prof_day, hours, minutes
 
 W_SPREAD = 10.0
 W_CONSECUTIVE = 2.0
@@ -25,19 +25,19 @@ def soft_score(scenario: Scenario, placed: Dict[int, Placement]) -> Tuple[float,
     occupied_hours = defaultdict(set)
     for placement in placed.values():
         meeting = meeting_map[placement.meeting_id]
-        per_prof_hours[meeting.prof_id][placement.day] += meeting.duration_slots
+        per_prof_hours[meeting.prof_id][placement.day] += hours(scenario, meeting.duration_slots)
         first_hour = placement.start // scenario.slot_minutes
         for slot in range(meeting.duration_slots):
             occupied_hours[(meeting.prof_id, placement.day)].add(first_hour + slot)
 
     spread = 0.0
-    for hours in per_prof_hours.values():
-        mean = sum(hours) / len(hours)
-        spread += sum((h - mean) ** 2 for h in hours) / len(hours)
+    for day_hours in per_prof_hours.values():
+        mean = sum(day_hours) / len(day_hours)
+        spread += sum((h - mean) ** 2 for h in day_hours) / len(day_hours)
 
     consecutive = 0.0
-    for hours in occupied_hours.values():
-        ordered = sorted(hours)
+    for occupied in occupied_hours.values():
+        ordered = sorted(occupied)
         consecutive += sum(
             1 for a, b in zip(ordered, ordered[1:]) if b == a + 1
         )
