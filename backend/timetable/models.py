@@ -71,6 +71,10 @@ class AvailabilityWindow(models.Model):
                 condition=models.Q(start_time__lt=models.F("end_time")),
                 name="availability_start_before_end",
             ),
+            models.CheckConstraint(
+                condition=models.Q(day__gte=0, day__lte=5),
+                name="availability_day_in_range",
+            ),
         ]
 
     def __str__(self):
@@ -92,6 +96,10 @@ class BusyBlock(models.Model):
             models.CheckConstraint(
                 condition=models.Q(start_time__lt=models.F("end_time")),
                 name="busyblock_start_before_end",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(day__gte=0, day__lte=5),
+                name="busyblock_day_in_range",
             ),
         ]
 
@@ -151,6 +159,10 @@ class ScheduledClass(models.Model):
             models.CheckConstraint(
                 condition=models.Q(duration_slots__gte=1),
                 name="scheduled_class_duration_slots_gte_1",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(day__gte=0, day__lte=5),
+                name="scheduled_class_day_in_range",
             ),
         ]
 

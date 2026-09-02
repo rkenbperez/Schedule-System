@@ -88,6 +88,15 @@ class TimeRangeTests(TestCase):
                 end_time=time(8, 0),
             )
 
+    def test_availability_out_of_range_day_rejected(self):
+        with self.assertRaises(IntegrityError):
+            AvailabilityWindow.objects.create(
+                prof=self.prof,
+                day=6,
+                start_time=time(8, 0),
+                end_time=time(12, 0),
+            )
+
     def test_availability_valid_accepted(self):
         window = AvailabilityWindow.objects.create(
             prof=self.prof,
@@ -104,6 +113,15 @@ class TimeRangeTests(TestCase):
                 day=0,
                 start_time=time(13, 0),
                 end_time=time(8, 0),
+            )
+
+    def test_busyblock_out_of_range_day_rejected(self):
+        with self.assertRaises(IntegrityError):
+            BusyBlock.objects.create(
+                prof=self.prof,
+                day=-1,
+                start_time=time(8, 0),
+                end_time=time(9, 0),
             )
 
     def test_busyblock_valid_accepted(self):
@@ -154,3 +172,14 @@ class ScheduledClassTests(TestCase):
             duration_slots=1,
         )
         self.assertEqual(klass.get_day_display(), "Monday")
+
+    def test_out_of_range_day_rejected(self):
+        with self.assertRaises(IntegrityError):
+            ScheduledClass.objects.create(
+                run=self.run,
+                assignment=self.assignment,
+                room=self.room,
+                day=7,
+                start_time=time(8, 0),
+                duration_slots=1,
+            )
