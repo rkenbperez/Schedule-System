@@ -25,8 +25,17 @@ def hard_violations(scenario: Scenario, placed: Dict[int, Placement]) -> List[st
         labels = ", ".join(_label(meeting_map, m.meeting_id) for m in unplaced)
         violations.append(f"{len(unplaced)} meeting(s) not placed: {labels}")
 
+    valid_placed: Dict[int, Placement] = {}
+    for meeting_id, placement in placed.items():
+        if placement.day not in scenario.day_ranges:
+            violations.append(
+                f"{_label(meeting_map, meeting_id)} on unknown day {placement.day}"
+            )
+        else:
+            valid_placed[meeting_id] = placement
+
     by_day = defaultdict(list)
-    for placement in placed.values():
+    for placement in valid_placed.values():
         by_day[placement.day].append(placement)
 
     for day, placements in by_day.items():
@@ -56,23 +65,17 @@ def hard_violations(scenario: Scenario, placed: Dict[int, Placement]) -> List[st
 
     windows = _windows_by_prof_day(scenario)
     busy = _busy_by_prof_day(scenario)
-    used = _daily_used(scenario, placed)
+    used = _daily_used(scenario, valid_placed)
     max_hours = {
         prof_id: scenario.max_daily_hours(prof_id)
-        for prof_id in {meeting_map[p.meeting_id].prof_id for p in placed.values()}
+        for prof_id in {meeting_map[p.meeting_id].prof_id for p in valid_placed.values()}
     }
 
-    for placement in placed.values():
+    for placement in valid_placed.values():
         meeting = meeting_map[placement.meeting_id]
         duration = minutes(scenario, meeting.duration_slots)
 
-        day_range = scenario.day_ranges.get(placement.day)
-        if day_range is None:
-            violations.append(
-                f"{_label(meeting_map, meeting.meeting_id)} on unknown day {placement.day}"
-            )
-            continue
-        day_start, day_end = day_range
+        day_start, day_end = scenario.day_ranges[placement.day]
         if placement.start % scenario.slot_minutes != 0:
             violations.append(
                 f"{_label(meeting_map, meeting.meeting_id)} start "
@@ -116,10 +119,11 @@ def hard_violations(scenario: Scenario, placed: Dict[int, Placement]) -> List[st
                 f"{meeting.prof_label}'s busy block on {_day(placement.day)}"
             )
 
-        if used[(meeting.prof_id, placement.day)] > max_hours[meeting.prof_id]:
+        daily_minutes = used[(meeting.prof_id, placement.day)]
+        if daily_minutes > max_hours[meeting.prof_id] * 60:
             violations.append(
                 f"{meeting.prof_label} exceeds daily limit "
-                f"({used[(meeting.prof_id, placement.day)]:g}h > {max_hours[meeting.prof_id]}h) "
+                f"({daily_minutes / 60:g}h > {max_hours[meeting.prof_id]}h) "
                 f"on {_day(placement.day)}"
             )
 

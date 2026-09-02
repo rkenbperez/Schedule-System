@@ -10,6 +10,7 @@ from timetable.engines.scenario import (
     Scenario,
 )
 from timetable.engines.scoring import soft_score
+from timetable.engines.slots import _daily_used
 
 
 def _meeting(mid, prof_id, duration=1, section_id=1, headcount=20, subject="CC101"):
@@ -128,6 +129,28 @@ class ConstraintValidationTests(SimpleTestCase):
         placed = {1: Placement(meeting_id=1, day=0, start=8 * 60 + 30, room_id=1)}
         violations = hard_violations(scenario, placed)
         self.assertTrue(any("not aligned" in v for v in violations))
+
+    def test_unknown_day_does_not_crash(self):
+        scenario = Scenario(
+            rooms=[_room(1, 30)],
+            meetings=[_meeting(1, prof_id=1)],
+            availability=[Availability(prof_id=1, day=0, start=8 * 60, end=17 * 60)],
+        )
+        placed = {1: Placement(meeting_id=1, day=6, start=8 * 60, room_id=1)}
+        violations = hard_violations(scenario, placed)
+        self.assertTrue(any("unknown day" in v for v in violations))
+
+    def test_daily_used_is_integer_minutes(self):
+        scenario = Scenario(
+            slot_minutes=10,
+            rooms=[_room(1, 30)],
+            meetings=[_meeting(1, prof_id=1, duration=6)],
+            availability=[Availability(prof_id=1, day=0, start=0, end=24 * 60)],
+        )
+        placed = {1: Placement(meeting_id=1, day=0, start=0, room_id=1)}
+        used = _daily_used(scenario, placed)
+        self.assertEqual(used[(1, 0)], 60)
+        self.assertIsInstance(used[(1, 0)], int)
 
 
 class InfeasibilityTests(SimpleTestCase):

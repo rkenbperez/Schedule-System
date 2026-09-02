@@ -39,12 +39,12 @@ def covered_by(window: Tuple[int, int, bool], start: int, end: int) -> bool:
     return window_start <= start and end <= window_end
 
 
-def _daily_used(scenario: Scenario, placed: Dict[int, Placement]) -> Dict[Tuple[int, int], float]:
-    used = defaultdict(float)
+def _daily_used(scenario: Scenario, placed: Dict[int, Placement]) -> Dict[Tuple[int, int], int]:
+    used = defaultdict(int)
     meeting_map = scenario.meeting_map()
     for placement in placed.values():
         meeting = meeting_map[placement.meeting_id]
-        used[(meeting.prof_id, placement.day)] += hours(scenario, meeting.duration_slots)
+        used[(meeting.prof_id, placement.day)] += minutes(scenario, meeting.duration_slots)
     return used
 
 
@@ -65,7 +65,7 @@ def legal_time_slots(
 
     results = []
     for day, (day_start, day_end) in scenario.day_ranges.items():
-        if used[(meeting.prof_id, day)] + hours(scenario, meeting.duration_slots) > max_hours:
+        if used[(meeting.prof_id, day)] + duration > max_hours * 60:
             continue
 
         start = day_start
