@@ -8,10 +8,11 @@ result.
 
 Two dataset sizes are available via ``--scale``:
 
-* ``normal`` (default): 6 professors, 12 subjects, 8 sections, 6 rooms and
-  18 assignments (30 weekly meetings).
-* ``large``: 9 professors, 17 subjects, 12 sections, 9 rooms and 27
-  assignments (46 weekly meetings).
+* ``normal`` (default): 7 professors (CS, IT, MATH and GE), 18 subjects
+  (majors plus GE minors such as GEC101, PE101 and NSTP101), 10 sections
+  (first years included), 8 rooms and 34 assignments (52 weekly meetings).
+* ``large``: 11 professors, 23 subjects, 14 sections, 12 rooms and 50
+  assignments (77 weekly meetings).
 
 Each run reconciles the database to the chosen scale: demo-managed subjects,
 sections, rooms, assignments and availability that belong to another scale
@@ -56,7 +57,7 @@ def _dataset(scale):
     (not derived from the mode) so the mix stays realistic and feasible; rooms
     are matched to professor departments (LAB1 is shared).
     """
-    departments = ["CS", "IT", "MATH"]
+    departments = ["CS", "IT", "MATH", "GE"]
 
     normal = {
         "subjects": [
@@ -72,6 +73,12 @@ def _dataset(scale):
             ("MATH201", "Statistics"),
             ("MATH202", "Linear Algebra"),
             ("MATH203", "Calculus"),
+            ("GEC101", "Purposive Communication"),
+            ("GEC102", "Mathematics in the Modern World"),
+            ("GEC103", "Readings in Philippine History"),
+            ("GEC104", "Science, Technology and Society"),
+            ("PE101", "Physical Education 1"),
+            ("NSTP101", "National Service Training Program 1"),
         ],
         "sections": [
             ("BSIT-3A", 30),
@@ -82,6 +89,8 @@ def _dataset(scale):
             ("BSCS-4A", 22),
             ("BSIT-2A", 30),
             ("BSIT-2B", 27),
+            ("BSIT-1A", 35),
+            ("BSCS-1A", 33),
         ],
         "rooms": [
             ("R201", 40, "CS"),
@@ -90,14 +99,24 @@ def _dataset(scale):
             ("R302", 45, "IT"),
             ("MATH1", 35, "MATH"),
             ("LAB1", 30, None),
+            ("GEC1", 45, "GE"),
+            ("GEC2", 45, "GE"),
         ],
         "availability": {
-            "demo_prof1": [(0, "07:00:00", "19:00:00", True), (1, "07:00:00", "19:00:00", True), (2, "07:00:00", "19:00:00", True), (3, "07:00:00", "19:00:00", True), (4, "07:00:00", "19:00:00", True)],
-            "demo_prof2": [(0, "07:00:00", "19:00:00", True), (1, "07:00:00", "19:00:00", True), (2, "07:00:00", "19:00:00", True), (3, "07:00:00", "19:00:00", True), (4, "07:00:00", "19:00:00", True)],
-            "demo_prof3": [(0, "07:00:00", "19:00:00", True), (1, "07:00:00", "19:00:00", True), (2, "07:00:00", "19:00:00", True), (3, "07:00:00", "19:00:00", True), (4, "07:00:00", "19:00:00", True)],
-            "demo_prof4": [(0, "08:00:00", "18:00:00", True), (1, "08:00:00", "18:00:00", True), (2, "08:00:00", "18:00:00", True), (3, "08:00:00", "18:00:00", True), (4, "08:00:00", "18:00:00", True)],
-            "demo_prof5": [(0, "07:00:00", "17:00:00", True), (1, "07:00:00", "17:00:00", True), (2, "07:00:00", "17:00:00", True), (3, "07:00:00", "17:00:00", True), (4, "07:00:00", "17:00:00", True)],
-            "demo_prof6": [(0, "08:00:00", "17:00:00", False), (1, "08:00:00", "17:00:00", False), (2, "08:00:00", "17:00:00", False), (3, "08:00:00", "12:00:00", False), (3, "13:00:00", "17:00:00", False), (4, "08:00:00", "17:00:00", False)],
+            "demo_prof1": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "demo_prof2": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "demo_prof3": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "demo_prof4": [(d, "08:00:00", "18:00:00", True) for d in range(5)],
+            "demo_prof5": [(d, "07:00:00", "17:00:00", True) for d in range(5)],
+            "demo_prof6": [
+                (0, "08:00:00", "17:00:00", False),
+                (1, "08:00:00", "17:00:00", False),
+                (2, "08:00:00", "17:00:00", False),
+                (3, "08:00:00", "12:00:00", False),
+                (3, "13:00:00", "17:00:00", False),
+                (4, "08:00:00", "17:00:00", False),
+            ],
+            "demo_prof10": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
         },
         "loads": [
             ("demo_prof1", "CC101", "BSIT-3A", [("sync", 1), ("async", 1)]),
@@ -118,6 +137,22 @@ def _dataset(scale):
             ("demo_prof6", "MATH203", "BSIT-2B", [("sync", 1), ("sync", 1)]),
             ("demo_prof6", "MATH101", "BSIT-4A", [("lab", 1)]),
             ("demo_prof6", "MATH201", "BSIT-2A", [("sync", 1), ("async", 1)]),
+            ("demo_prof1", "CC101", "BSIT-1A", [("sync", 1), ("lab", 1)]),
+            ("demo_prof4", "CC102", "BSCS-1A", [("sync", 1), ("async", 1)]),
+            ("demo_prof3", "MATH101", "BSIT-1A", [("sync", 1), ("sync", 1)]),
+            ("demo_prof6", "MATH203", "BSCS-1A", [("sync", 1), ("sync", 1)]),
+            ("demo_prof2", "IT101", "BSIT-1A", [("sync", 1)]),
+            ("demo_prof5", "IT102", "BSCS-1A", [("lab", 1)]),
+            ("demo_prof10", "GEC101", "BSIT-1A", [("sync", 1)]),
+            ("demo_prof10", "GEC101", "BSCS-1A", [("sync", 1)]),
+            ("demo_prof10", "GEC102", "BSIT-1A", [("sync", 1), ("async", 1)]),
+            ("demo_prof10", "GEC102", "BSCS-1A", [("sync", 1), ("async", 1)]),
+            ("demo_prof10", "GEC103", "BSIT-2A", [("sync", 1)]),
+            ("demo_prof10", "GEC104", "BSCS-2A", [("sync", 1)]),
+            ("demo_prof10", "PE101", "BSIT-1A", [("sync", 1)]),
+            ("demo_prof10", "PE101", "BSCS-1A", [("sync", 1)]),
+            ("demo_prof10", "NSTP101", "BSIT-1A", [("sync", 1)]),
+            ("demo_prof10", "NSTP101", "BSCS-1A", [("sync", 1)]),
         ],
     }
 
@@ -133,8 +168,8 @@ def _dataset(scale):
         "sections": normal["sections"]
         + [
             ("BSCS-2B", 30),
-            ("BSIT-1A", 35),
             ("BSIT-1B", 32),
+            ("BSCS-1B", 30),
             ("BSIT-4B", 25),
         ],
         "rooms": normal["rooms"]
@@ -142,24 +177,33 @@ def _dataset(scale):
             ("R303", 45, "CS"),
             ("R304", 45, "IT"),
             ("MATH2", 40, "MATH"),
+            ("GEC3", 45, "GE"),
         ],
         "availability": {
             **normal["availability"],
             "demo_prof7": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
             "demo_prof8": [(d, "09:00:00", "18:00:00", True) for d in range(5)],
             "demo_prof9": [(d, "08:00:00", "16:00:00", False) for d in range(5)],
+            "demo_prof11": [(d, "07:00:00", "17:00:00", True) for d in range(5)],
         },
         "loads": normal["loads"]
         + [
             ("demo_prof7", "CC104", "BSIT-3B", [("sync", 2)]),
             ("demo_prof7", "CS202", "BSCS-2B", [("sync", 1), ("lab", 1), ("async", 1)]),
             ("demo_prof7", "CS203", "BSCS-4A", [("sync", 1), ("sync", 1)]),
+            ("demo_prof7", "CC102", "BSCS-1B", [("sync", 1), ("async", 1)]),
             ("demo_prof8", "IT104", "BSIT-1A", [("sync", 1), ("lab", 1)]),
             ("demo_prof8", "IT105", "BSIT-1B", [("sync", 2), ("async", 1)]),
             ("demo_prof8", "IT101", "BSIT-4B", [("sync", 1)]),
             ("demo_prof9", "MATH204", "BSIT-1A", [("sync", 1), ("lab", 1)]),
             ("demo_prof9", "MATH202", "BSIT-1B", [("sync", 1), ("async", 1)]),
             ("demo_prof9", "MATH203", "BSIT-4B", [("sync", 2)]),
+            ("demo_prof11", "GEC101", "BSIT-1B", [("sync", 1)]),
+            ("demo_prof11", "GEC101", "BSCS-1B", [("sync", 1)]),
+            ("demo_prof11", "GEC102", "BSIT-1B", [("sync", 1), ("async", 1)]),
+            ("demo_prof11", "GEC103", "BSCS-1B", [("sync", 1)]),
+            ("demo_prof11", "PE101", "BSIT-1B", [("sync", 1)]),
+            ("demo_prof11", "NSTP101", "BSCS-1B", [("sync", 1)]),
         ],
     }
 
@@ -170,6 +214,8 @@ def _dataset(scale):
         "IT101": "IT", "IT102": "IT", "IT103": "IT", "IT104": "IT", "IT105": "IT",
         "MATH101": "MATH", "MATH201": "MATH", "MATH202": "MATH",
         "MATH203": "MATH", "MATH204": "MATH",
+        "GEC101": "GE", "GEC102": "GE", "GEC103": "GE", "GEC104": "GE",
+        "PE101": "GE", "NSTP101": "GE",
     }
     return {"departments": departments, "dept_by_code": dept_by_code, **data}
 
