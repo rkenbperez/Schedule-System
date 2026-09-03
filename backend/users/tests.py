@@ -5,6 +5,7 @@ from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
+from catalog.models import Department
 from .models import Professors
 
 
@@ -12,7 +13,8 @@ class LoginAPITests(APITestCase):
     def setUp(self):
         cache.clear()
         self.user = User.objects.create_user(username="prof1", password="pass12345")
-        Professors.objects.create(user=self.user, department="CCS")
+        dept = Department.objects.create(name="CCS")
+        Professors.objects.create(user=self.user, department=dept)
 
     def tearDown(self):
         cache.clear()

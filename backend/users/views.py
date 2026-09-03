@@ -50,6 +50,6 @@ class LoginView(APIView):
     destroy=extend_schema(tags=["users"]),
 )
 class ProfessorsViewSet(viewsets.ModelViewSet):
-    queryset = Professors.objects.select_related("user").all()
+    queryset = Professors.objects.select_related("user", "department").all()
     serializer_class = ProfessorsSerializer
     permission_classes = [IsRegistrarOrReadOnly]

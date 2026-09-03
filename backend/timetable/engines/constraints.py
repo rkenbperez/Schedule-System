@@ -9,6 +9,7 @@ from .slots import (
     _daily_used,
     _windows_by_prof_day,
     covered_by,
+    department_ok,
     minutes,
     overlaps,
 )
@@ -92,6 +93,11 @@ def hard_violations(scenario: Scenario, placed: Dict[int, Placement]) -> List[st
         if room is None:
             violations.append(
                 f"{_label(meeting_map, meeting.meeting_id)} has no assigned room"
+            )
+        elif not department_ok(scenario, meeting, room):
+            violations.append(
+                f"{_label(meeting_map, meeting.meeting_id)} room {room.name} is for "
+                f"{room.department} but {meeting.prof_label} is {meeting.department}"
             )
         elif room.capacity < meeting.section_headcount:
             violations.append(

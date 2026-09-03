@@ -17,13 +17,20 @@ def _to_minutes(value):
 
 def build_scenario() -> Scenario:
     rooms = [
-        RoomRef(id=r.pk, name=r.name, capacity=r.capacity)
-        for r in Room.objects.all()
+        RoomRef(
+            id=r.pk,
+            name=r.name,
+            capacity=r.capacity,
+            department=r.department.name if r.department else "",
+        )
+        for r in Room.objects.select_related("department")
     ]
 
     meetings = []
     meeting_id = 1
-    for assignment in Assignment.objects.select_related("prof", "subject", "section"):
+    for assignment in Assignment.objects.select_related(
+        "prof__department", "subject", "section"
+    ):
         headcount = assignment.section.headcount
         for _ in range(assignment.meetings_per_week):
             meetings.append(
@@ -37,6 +44,11 @@ def build_scenario() -> Scenario:
                     section_name=assignment.section.name,
                     section_headcount=headcount,
                     duration_slots=assignment.duration_slots,
+                    department=(
+                        assignment.prof.department.name
+                        if assignment.prof.department
+                        else ""
+                    ),
                 )
             )
             meeting_id += 1
