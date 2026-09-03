@@ -11,14 +11,22 @@ scheduling logic. A web frontend will talk to this API in a later phase.
 
 ## How it works
 
-1. A **registrar** enters the building blocks: subjects, sections (class groups),
-   rooms, and the professors who teach them.
+1. A **registrar** enters the building blocks: departments, subjects, sections
+   (class groups), rooms, and the professors who teach them.
 2. Each professor has an **assignment** (what they teach and to which section),
    plus **availability windows** (when they can teach) and optional **busy
    blocks** (times they are already occupied).
 3. The registrar asks the system to **generate a schedule**. The scheduler
    places every class into a time slot and a room while respecting the rules.
 4. The result is saved so it can be viewed or compared later.
+
+### Departments
+
+Every room and every professor can belong to a **department** (e.g. "CS",
+"IT", "Math"). The list of departments is managed by the registrar. A professor
+is only scheduled into rooms of their own department; a room with no department
+is a general/shared room any professor may use, and a professor with no
+department may teach anywhere.
 
 ### The three algorithms
 
@@ -57,7 +65,7 @@ The API has two kinds of users.
 ```
 backend/
 ├── core/          Project settings and URL routing
-├── catalog/       Subjects, sections, and rooms
+├── catalog/       Departments, subjects, sections, and rooms
 ├── timetable/     Assignments, availability, schedules, and the algorithm engine
 ├── users/         Login and professor profiles
 └── manage.py      Django's command-line entry point
@@ -108,9 +116,14 @@ Follow the prompts to set a username and password. This account can log into
 Create the account through the Django admin site:
 
 1. Log into `/admin/` as the registrar.
-2. Go to **Users → Add user**.
-3. Set a username and password, and fill in the professor's details (department,
-   daily limits) in the **Professors** section on the same form.
+2. Create the departments first (**Departments → Add department**), e.g. "CS".
+3. Go to **Users → Add user**.
+4. Set a username and password, and fill in the professor's details
+   (department chosen from the list, daily limits) in the **Professors** section
+   on the same form.
+
+Rooms can be given a department in the same way (**Rooms → Add room**). Leave it
+blank for a shared/general room.
 
 ---
 
@@ -136,14 +149,20 @@ The response contains a `token`. Use it in the following steps.
 ### 2. Add data
 
 ```bash
+curl -X POST http://127.0.0.1:8000/api/departments/ \
+  -H "Authorization: Token <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "CS"}'
+
 curl -X POST http://127.0.0.1:8000/api/rooms/ \
   -H "Authorization: Token <token>" \
   -H "Content-Type: application/json" \
-  -d '{"name": "R101", "capacity": 40}'
+  -d '{"name": "R101", "capacity": 40, "department": 1}'
 ```
 
 Similar endpoints exist for `subjects`, `sections`, `profs`, `assignments`,
-`availability-windows`, and `busy-blocks`.
+`availability-windows`, and `busy-blocks`. Room and professor responses also
+include a `department_name` for convenience.
 
 ### 3. Generate a schedule
 
@@ -217,12 +236,14 @@ python manage.py demo_schedule --reset
 python manage.py test
 ```
 
-The test suite (51 tests) checks, in plain terms:
+The test suite (62 tests) checks, in plain terms:
 
 - **Data rules** — invalid values (zero meetings, a time range that ends before
   it starts, an unknown day) are rejected.
 - **The algorithms** — each engine produces a valid schedule, and a tricky
   example shows where `backtracking` succeeds and `greedy` fails.
+- **Departments** — a professor is only placed into rooms of their own
+  department; unassigned rooms/professors stay flexible.
 - **Security** — only the registrar can generate schedules or change catalog
   data; professors can only manage their own availability.
 - **End to end** — one test runs the full journey over HTTP: login, create
