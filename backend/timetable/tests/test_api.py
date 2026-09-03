@@ -257,12 +257,18 @@ class AssignmentApiTests(ApiTestCase):
         self.auth(self.reg_token)
         response = self.client.post(
             "/api/assignments/",
-            self._payload(self.prof.id, subject_id, section_id, [{"mode": "async"}]),
+            self._payload(
+                self.prof.id,
+                subject_id,
+                section_id,
+                [{"mode": "sync"}, {"mode": "async"}],
+            ),
             format="json",
         )
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(len(response.data["meetings"]), 1)
-        self.assertEqual(response.data["meetings"][0]["duration_slots"], 1)
+        self.assertEqual(len(response.data["meetings"]), 2)
+        self.assertEqual(response.data["meetings"][1]["mode"], "async")
+        self.assertEqual(response.data["meetings"][1]["duration_slots"], 1)
 
     def test_explicit_duration_overrides_mode_default(self):
         subject_id, section_id = self._seed_ids()
@@ -273,13 +279,14 @@ class AssignmentApiTests(ApiTestCase):
                 self.prof.id,
                 subject_id,
                 section_id,
-                [{"mode": "async", "duration_slots": 2}],
+                [{"mode": "sync"}, {"mode": "async", "duration_slots": 2}],
             ),
             format="json",
         )
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(len(response.data["meetings"]), 1)
-        self.assertEqual(response.data["meetings"][0]["duration_slots"], 2)
+        self.assertEqual(len(response.data["meetings"]), 2)
+        self.assertEqual(response.data["meetings"][1]["mode"], "async")
+        self.assertEqual(response.data["meetings"][1]["duration_slots"], 2)
 
     def test_zero_duration_is_rejected(self):
         subject_id, section_id = self._seed_ids()
@@ -305,6 +312,53 @@ class AssignmentApiTests(ApiTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_all_async_meetings_rejected(self):
+        subject_id, section_id = self._seed_ids()
+        self.auth(self.reg_token)
+        response = self.client.post(
+            "/api/assignments/",
+            self._payload(
+                self.prof.id,
+                subject_id,
+                section_id,
+                [{"mode": "async"}, {"mode": "async"}],
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_sync_plus_async_accepted(self):
+        subject_id, section_id = self._seed_ids()
+        self.auth(self.reg_token)
+        response = self.client.post(
+            "/api/assignments/",
+            self._payload(
+                self.prof.id,
+                subject_id,
+                section_id,
+                [{"mode": "sync"}, {"mode": "async"}],
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(response.data["meetings"]), 2)
+
+    def test_lab_satisfies_sync_requirement(self):
+        subject_id, section_id = self._seed_ids()
+        self.auth(self.reg_token)
+        response = self.client.post(
+            "/api/assignments/",
+            self._payload(
+                self.prof.id,
+                subject_id,
+                section_id,
+                [{"mode": "async"}, {"mode": "lab"}],
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(response.data["meetings"]), 2)
 
 
 class ScheduleViewTests(ApiTestCase):
