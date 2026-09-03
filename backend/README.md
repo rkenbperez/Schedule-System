@@ -13,9 +13,10 @@ scheduling logic. A web frontend will talk to this API in a later phase.
 
 1. A **registrar** enters the building blocks: departments, subjects, sections
    (class groups), rooms, and the professors who teach them.
-2. Each professor has an **assignment** (what they teach and to which section),
-   plus **availability windows** (when they can teach) and optional **busy
-   blocks** (times they are already occupied).
+2. Each professor has an **assignment** (what they teach and to which section)
+   made of one or more weekly **meetings**, plus **availability windows** (when
+   they can teach) and optional **busy blocks** (times they are already
+   occupied).
 3. The registrar asks the system to **generate a schedule**. The scheduler
    places every class into a time slot and a room while respecting the rules.
 4. The result is saved so it can be viewed or compared later.
@@ -27,6 +28,23 @@ Every room and every professor can belong to a **department** (e.g. "CS",
 is only scheduled into rooms of their own department; a room with no department
 is a general/shared room any professor may use, and a professor with no
 department may teach anywhere.
+
+### Meeting modes
+
+Every weekly meeting of an assignment has a **mode** that suggests how long it
+runs:
+
+| Mode        | Default length |
+| ----------- | -------------- |
+| `async`     | 1 hour         |
+| `sync`      | 2 hours        |
+| `lab`       | 3 hours        |
+
+A professor's load can mix modes — for example one assignment may have a
+synchronous 2-hour lecture on Monday and an asynchronous 1-hour session on
+Wednesday. The registrar can override the default length of any meeting. The
+chosen mode and length are saved with each scheduled class so the output shows
+whether a class is asynchronous, synchronous, or a laboratory session.
 
 ### The three algorithms
 
@@ -161,9 +179,17 @@ curl -X POST http://127.0.0.1:8000/api/rooms/ \
   -H "Authorization: Token <token>" \
   -H "Content-Type: application/json" \
   -d '{"name": "R101", "capacity": 40, "department": 5}'
+
+# An assignment links a professor, subject, and section to one or more weekly
+# meetings. Each meeting has a mode; length defaults from the mode (async 1h,
+# sync 2h, lab 3h) but can be overridden per meeting with "duration_slots":
+curl -X POST http://127.0.0.1:8000/api/assignments/ \
+  -H "Authorization: Token <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"prof": 1, "subject": 1, "section": 1, "meetings": [{"mode": "sync"}, {"mode": "async"}]}'
 ```
 
-Similar endpoints exist for `subjects`, `sections`, `profs`, `assignments`,
+Similar endpoints exist for `subjects`, `sections`, `profs`,
 `availability-windows`, and `busy-blocks`. Room and professor responses also
 include a `department_name` for convenience.
 
@@ -239,14 +265,16 @@ python manage.py demo_schedule --reset
 python manage.py test
 ```
 
-The test suite (62 tests) checks, in plain terms:
+The test suite (74 tests) checks, in plain terms:
 
-- **Data rules** — invalid values (zero meetings, a time range that ends before
-  it starts, an unknown day) are rejected.
+- **Data rules** — invalid values (zero meeting length, a time range that ends
+  before it starts, an unknown day) are rejected.
 - **The algorithms** — each engine produces a valid schedule, and a tricky
   example shows where `backtracking` succeeds and `greedy` fails.
 - **Departments** — a professor is only placed into rooms of their own
   department; unassigned rooms/professors stay flexible.
+- **Meeting modes** — each meeting carries its mode and length through to the
+  scheduled classes, and durations default from the chosen mode.
 - **Security** — only the registrar can generate schedules or change catalog
   data; professors can only manage their own availability.
 - **End to end** — one test runs the full journey over HTTP: login, create
