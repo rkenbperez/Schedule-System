@@ -149,15 +149,18 @@ The response contains a `token`. Use it in the following steps.
 ### 2. Add data
 
 ```bash
+# Create a department and keep its id (from the response) for the next step
 curl -X POST http://127.0.0.1:8000/api/departments/ \
   -H "Authorization: Token <token>" \
   -H "Content-Type: application/json" \
   -d '{"name": "CS"}'
 
+# The response body contains the new department's "id" (e.g. {"id": 5, "name": "CS"}).
+# Use that value (not a hard-coded 1) as the room's "department":
 curl -X POST http://127.0.0.1:8000/api/rooms/ \
   -H "Authorization: Token <token>" \
   -H "Content-Type: application/json" \
-  -d '{"name": "R101", "capacity": 40, "department": 1}'
+  -d '{"name": "R101", "capacity": 40, "department": 5}'
 ```
 
 Similar endpoints exist for `subjects`, `sections`, `profs`, `assignments`,
