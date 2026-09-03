@@ -3,7 +3,7 @@
 Seeds a small, idempotent demo dataset (a registrar, 3 professors, subjects,
 sections, rooms, assignments and availability), then logs in over real HTTP,
 generates a schedule with all three engines, and prints a metrics comparison
-plus a readable Monday-Saturday grid for the greedy result.
+plus a readable Monday-Saturday grid for the best-scoring feasible result.
 
 Usage (two terminals):
 
@@ -18,8 +18,9 @@ import json
 import urllib.error
 import urllib.request
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from catalog.models import Room, Section, Subject
 from timetable.models import Assignment, AvailabilityWindow
@@ -42,8 +43,20 @@ class Command(BaseCommand):
             action="store_true",
             help="Delete existing demo schedules/assignments/availability first",
         )
+        parser.add_argument(
+            "--allow-non-debug",
+            action="store_true",
+            help="Allow running when DEBUG is off (not recommended).",
+        )
 
     def handle(self, *args, **options):
+        if not settings.DEBUG and not options["allow_non_debug"]:
+            raise CommandError(
+                "demo_schedule creates demo accounts with a fixed password and "
+                "may only run with DEBUG enabled. Re-run with --allow-non-debug "
+                "to override."
+            )
+
         base = options["base"]
         if options["reset"]:
             self._reset()
