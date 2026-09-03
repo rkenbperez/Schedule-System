@@ -360,6 +360,18 @@ class AssignmentApiTests(ApiTestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(len(response.data["meetings"]), 2)
 
+    def test_update_omitting_meetings_rejects_legacy_all_async(self):
+        subject_id, section_id = self._seed_ids()
+        other_section = Section.objects.create(name="BSIT-3B", headcount=25)
+        assignment = make_assignment(self.prof, Subject.objects.get(pk=subject_id), Section.objects.get(pk=section_id), [("async", 1), ("async", 1)])
+        self.auth(self.reg_token)
+        response = self.client.patch(
+            f"/api/assignments/{assignment.pk}/",
+            {"section": other_section.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
 
 class ScheduleViewTests(ApiTestCase):
     def _seed_and_generate(self):
