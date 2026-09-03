@@ -204,3 +204,107 @@ class ScheduleViewTests(ApiTestCase):
         self.assertEqual(response.status_code, 400)
         response = self.client.get(f"/api/schedules/runs/{run_id}/classes?day=abc")
         self.assertEqual(response.status_code, 400)
+
+
+class FullScheduleFlowTests(ApiTestCase):
+    """End-to-end: login -> catalog -> load -> generate -> read, over real HTTP."""
+
+    def _login(self, username, password):
+        response = self.client.post(
+            "/api/auth/login/", {"username": username, "password": password}
+        )
+        self.assertEqual(response.status_code, 200)
+        token = response.data["token"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+        return token
+
+    def _post(self, url, payload, expected=201):
+        response = self.client.post(url, payload, format="json")
+        self.assertEqual(response.status_code, expected, response.data)
+        return response.data
+
+    def _seed(self):
+        self._login("reg", "pass12345")
+
+        subj1 = self._post(
+            "/api/subjects/", {"code": "CS101", "title": "Algorithms", "units": 3}
+        )
+        subj2 = self._post(
+            "/api/subjects/", {"code": "CS102", "title": "Databases", "units": 3}
+        )
+        sec1 = self._post("/api/sections/", {"name": "BSIT-3A", "headcount": 30})
+        sec2 = self._post("/api/sections/", {"name": "BSIT-3B", "headcount": 25})
+        room1 = self._post("/api/rooms/", {"name": "R201", "capacity": 40})
+        room2 = self._post("/api/rooms/", {"name": "R202", "capacity": 40})
+
+        prof2_user = User.objects.create_user(username="e2eprof2", password="pass12345")
+        prof2 = self._post(
+            "/api/profs/", {"user": prof2_user.id, "department": "IT"}
+        )
+
+        self._post(
+            "/api/assignments/",
+            {
+                "prof": self.prof.id,
+                "subject": subj1["id"],
+                "section": sec1["id"],
+                "meetings_per_week": 2,
+                "duration_slots": 1,
+            },
+        )
+        self._post(
+            "/api/assignments/",
+            {
+                "prof": prof2["id"],
+                "subject": subj2["id"],
+                "section": sec2["id"],
+                "meetings_per_week": 2,
+                "duration_slots": 1,
+            },
+        )
+
+        for prof_id in (self.prof.id, prof2["id"]):
+            for day in range(5):
+                self._post(
+                    "/api/availability-windows/",
+                    {
+                        "prof": prof_id,
+                        "day": day,
+                        "start_time": "07:00:00",
+                        "end_time": "19:00:00",
+                        "is_preferred": True,
+                    },
+                )
+
+        return prof2
+
+    def test_full_schedule_creation_flow(self):
+        prof2 = self._seed()
+
+        metrics = {}
+        for algorithm in ["greedy", "min_conflicts", "backtracking"]:
+            result = self._post(
+                "/api/schedules/generate", {"algorithm": algorithm}
+            )
+            self.assertTrue(result["feasible"], result)
+            self.assertEqual(result["status"], "feasible")
+            self.assertEqual(result["class_count"], 4)
+            self.assertEqual(result["violations"], [])
+            self.assertGreaterEqual(result["runtime_ms"], 0)
+            self.assertIsNotNone(result["soft_score"])
+
+            response = self.client.get(
+                f"/api/schedules/runs/{result['run_id']}/classes"
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(len(response.data), 4)
+            metrics[algorithm] = result
+
+        for algorithm, result in metrics.items():
+            self.assertIn(algorithm, ["greedy", "min_conflicts", "backtracking"])
+
+        self._login("e2eprof2", "pass12345")
+        response = self.client.get("/api/schedules/my")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 2)
+        self.assertTrue(all(c["prof_id"] == prof2["id"] for c in response.data))
