@@ -1,4 +1,4 @@
-from datetime import time
+from datetime import datetime, time, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -212,7 +212,13 @@ class ScheduleViewTests(ApiTestCase):
         self.assertEqual(response.status_code, 200)
         for klass in response.data:
             self.assertIn("end_time", klass)
-            self.assertGreater(klass["end_time"], klass["start_time"])
+            start = datetime.strptime(klass["start_time"], "%H:%M:%S").time()
+            expected_end = (
+                datetime.combine(datetime.today(), start)
+                + timedelta(hours=klass["duration_slots"])
+            ).time()
+            actual_end = datetime.strptime(klass["end_time"], "%H:%M:%S").time()
+            self.assertEqual(actual_end, expected_end)
 
 
 class FullScheduleFlowTests(ApiTestCase):
