@@ -1,11 +1,12 @@
 from datetime import time
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from catalog.models import Room, Section, Subject
-from timetable.models import Assignment, AvailabilityWindow, ScheduleRun
+from timetable.models import Assignment, AvailabilityWindow, ScheduledClass, ScheduleRun
 from users.models import Professors
 
 User = get_user_model()
@@ -88,6 +89,12 @@ class AvailabilityApiTests(ApiTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 0)
 
+    def test_user_without_prof_profile_gets_403(self):
+        no_prof = User.objects.create_user(username="noprofile", password="pass12345")
+        self.auth(Token.objects.create(user=no_prof))
+        response = self.client.post("/api/availability-windows/", self._payload(self.prof.id))
+        self.assertEqual(response.status_code, 403)
+
 
 class ScheduleGenerateTests(ApiTestCase):
     def _seed(self):
@@ -139,6 +146,16 @@ class ScheduleGenerateTests(ApiTestCase):
         self.assertEqual(response.data["status"], "infeasible")
         self.assertTrue(any("not placed" in v for v in response.data["violations"]))
 
+    def test_generate_rolls_back_on_class_save_failure(self):
+        self._seed()
+        self.auth(self.reg_token)
+        with patch.object(
+            ScheduledClass.objects, "bulk_create", side_effect=Exception("boom")
+        ):
+            with self.assertRaises(Exception):
+                self.client.post("/api/schedules/generate", {"algorithm": "greedy"})
+        self.assertEqual(ScheduleRun.objects.count(), 0)
+
 
 class ScheduleViewTests(ApiTestCase):
     def _seed_and_generate(self):
@@ -179,3 +196,11 @@ class ScheduleViewTests(ApiTestCase):
         self.auth(self.prof_token)
         response = self.client.get("/api/schedules/runs")
         self.assertEqual(response.status_code, 403)
+
+    def test_classes_filter_rejects_non_integer(self):
+        run_id = self._seed_and_generate()
+        self.auth(self.reg_token)
+        response = self.client.get(f"/api/schedules/runs/{run_id}/classes?prof=abc")
+        self.assertEqual(response.status_code, 400)
+        response = self.client.get(f"/api/schedules/runs/{run_id}/classes?day=abc")
+        self.assertEqual(response.status_code, 400)

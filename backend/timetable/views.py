@@ -6,8 +6,10 @@ from drf_spectacular.utils import (
     extend_schema_view,
     inline_serializer,
 )
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers, status
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -61,10 +63,19 @@ class AvailabilityWindowViewSet(viewsets.ModelViewSet):
         return qs.filter(prof__user=self.request.user)
 
     def perform_create(self, serializer):
-        if self.request.user.is_staff:
+        prof = self._own_prof()
+        if prof is None:
             serializer.save()
         else:
-            serializer.save(prof=self.request.user.prof)
+            serializer.save(prof=prof)
+
+    def _own_prof(self):
+        if self.request.user.is_staff:
+            return None
+        prof = getattr(self.request.user, "prof", None)
+        if prof is None:
+            raise PermissionDenied("No professor profile linked to this account.")
+        return prof
 
 
 @extend_schema_view(
@@ -86,10 +97,19 @@ class BusyBlockViewSet(viewsets.ModelViewSet):
         return qs.filter(prof__user=self.request.user)
 
     def perform_create(self, serializer):
-        if self.request.user.is_staff:
+        prof = self._own_prof()
+        if prof is None:
             serializer.save()
         else:
-            serializer.save(prof=self.request.user.prof)
+            serializer.save(prof=prof)
+
+    def _own_prof(self):
+        if self.request.user.is_staff:
+            return None
+        prof = getattr(self.request.user, "prof", None)
+        if prof is None:
+            raise PermissionDenied("No professor profile linked to this account.")
+        return prof
 
 
 @extend_schema(
@@ -134,31 +154,32 @@ class ScheduleGenerateView(APIView):
         scenario = build_scenario()
         result = run(algorithm, scenario, time_limit_s=time_limit)
 
-        run_obj = ScheduleRun.objects.create(
-            algorithm=algorithm,
-            status=(
-                ScheduleRun.Status.FEASIBLE
-                if result.feasible
-                else ScheduleRun.Status.INFEASIBLE
-            ),
-            runtime_ms=result.runtime_ms,
-            soft_score=result.soft_score,
-            created_by=request.user,
-        )
+        with transaction.atomic():
+            run_obj = ScheduleRun.objects.create(
+                algorithm=algorithm,
+                status=(
+                    ScheduleRun.Status.FEASIBLE
+                    if result.feasible
+                    else ScheduleRun.Status.INFEASIBLE
+                ),
+                runtime_ms=result.runtime_ms,
+                soft_score=result.soft_score,
+                created_by=request.user,
+            )
 
-        ScheduledClass.objects.bulk_create(
-            [
-                ScheduledClass(
-                    run=run_obj,
-                    assignment_id=pc.assignment_id,
-                    room_id=pc.room_id,
-                    day=pc.day,
-                    start_time=dtime(pc.start // 60, pc.start % 60),
-                    duration_slots=pc.duration_slots,
-                )
-                for pc in result.classes
-            ]
-        )
+            ScheduledClass.objects.bulk_create(
+                [
+                    ScheduledClass(
+                        run=run_obj,
+                        assignment_id=pc.assignment_id,
+                        room_id=pc.room_id,
+                        day=pc.day,
+                        start_time=dtime(pc.start // 60, pc.start % 60),
+                        duration_slots=pc.duration_slots,
+                    )
+                    for pc in result.classes
+                ]
+            )
 
         return Response(
             {
@@ -205,15 +226,21 @@ class ScheduleRunClassesView(APIView):
 
         params = request.query_params
         if params.get("prof"):
-            qs = qs.filter(assignment__prof_id=params["prof"])
+            qs = qs.filter(assignment__prof_id=self._int_param("prof", params["prof"]))
         if params.get("section"):
-            qs = qs.filter(assignment__section_id=params["section"])
+            qs = qs.filter(assignment__section_id=self._int_param("section", params["section"]))
         if params.get("room"):
-            qs = qs.filter(room_id=params["room"])
+            qs = qs.filter(room_id=self._int_param("room", params["room"]))
         if params.get("day"):
-            qs = qs.filter(day=params["day"])
+            qs = qs.filter(day=self._int_param("day", params["day"]))
 
         return Response(ScheduledClassSerializer(qs, many=True).data)
+
+    def _int_param(self, name, raw):
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            raise ValidationError({"detail": f"'{name}' must be an integer."})
 
 
 @extend_schema(tags=["schedules"])
