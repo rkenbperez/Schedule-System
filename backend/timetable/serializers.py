@@ -91,6 +91,7 @@ class ScheduledClassSerializer(serializers.ModelSerializer):
     section_name = serializers.SerializerMethodField()
     subject_label = serializers.SerializerMethodField()
     room_name = serializers.SerializerMethodField()
+    end_time = serializers.TimeField(read_only=True)
 
     class Meta:
         model = ScheduledClass
@@ -109,6 +110,7 @@ class ScheduledClassSerializer(serializers.ModelSerializer):
             "day",
             "day_display",
             "start_time",
+            "end_time",
             "duration_slots",
         ]
 

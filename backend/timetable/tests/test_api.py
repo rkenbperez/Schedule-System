@@ -205,6 +205,15 @@ class ScheduleViewTests(ApiTestCase):
         response = self.client.get(f"/api/schedules/runs/{run_id}/classes?day=abc")
         self.assertEqual(response.status_code, 400)
 
+    def test_classes_include_end_time(self):
+        run_id = self._seed_and_generate()
+        self.auth(self.reg_token)
+        response = self.client.get(f"/api/schedules/runs/{run_id}/classes")
+        self.assertEqual(response.status_code, 200)
+        for klass in response.data:
+            self.assertIn("end_time", klass)
+            self.assertGreater(klass["end_time"], klass["start_time"])
+
 
 class FullScheduleFlowTests(ApiTestCase):
     """End-to-end: login -> catalog -> load -> generate -> read, over real HTTP."""

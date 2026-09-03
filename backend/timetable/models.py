@@ -1,3 +1,5 @@
+from datetime import date, datetime, timedelta
+
 from django.conf import settings
 from django.db import models
 
@@ -168,3 +170,10 @@ class ScheduledClass(models.Model):
 
     def __str__(self):
         return f"{self.assignment} {self.get_day_display()} {self.start_time}"
+
+    @property
+    def end_time(self):
+        end = datetime.combine(date.today(), self.start_time) + timedelta(
+            hours=self.duration_slots
+        )
+        return end.time()
