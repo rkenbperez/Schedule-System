@@ -176,6 +176,7 @@ class ScheduleGenerateView(APIView):
                         day=pc.day,
                         start_time=dtime(pc.start // 60, pc.start % 60),
                         duration_slots=pc.duration_slots,
+                        mode=pc.mode or None,
                     )
                     for pc in result.classes
                 ]

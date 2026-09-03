@@ -1,6 +1,7 @@
 from datetime import time
 
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.test import SimpleTestCase, TestCase
 
@@ -11,6 +12,7 @@ from timetable.models import (
     Assignment,
     AvailabilityWindow,
     BusyBlock,
+    MeetingSlot,
     ScheduledClass,
     ScheduleRun,
 )
@@ -23,46 +25,55 @@ class AssignmentTests(TestCase):
         self.subject = Subject.objects.create(code="CC101", title="Intro")
         self.section = Section.objects.create(name="BSIT-3A", headcount=40)
 
-    def test_duplicate_assignment_rejected(self):
-        Assignment.objects.create(
+    def _assignment(self):
+        return Assignment.objects.create(
             prof=self.prof,
             subject=self.subject,
             section=self.section,
         )
-        with self.assertRaises(IntegrityError):
-            Assignment.objects.create(
-                prof=self.prof,
-                subject=self.subject,
-                section=self.section,
-            )
 
-    def test_zero_meetings_per_week_rejected(self):
+    def test_duplicate_assignment_rejected(self):
+        self._assignment()
         with self.assertRaises(IntegrityError):
-            Assignment.objects.create(
-                prof=self.prof,
-                subject=self.subject,
-                section=self.section,
-                meetings_per_week=0,
+            self._assignment()
+
+    def test_valid_assignment_accepted(self):
+        assignment = self._assignment()
+        self.assertEqual(assignment.meetings.count(), 0)
+
+    def test_duplicate_meeting_order_rejected(self):
+        assignment = self._assignment()
+        MeetingSlot.objects.create(
+            assignment=assignment, order=1, mode="sync", duration_slots=1
+        )
+        with self.assertRaises(IntegrityError):
+            MeetingSlot.objects.create(
+                assignment=assignment, order=1, mode="sync", duration_slots=1
             )
 
     def test_zero_duration_slots_rejected(self):
+        assignment = self._assignment()
         with self.assertRaises(IntegrityError):
-            Assignment.objects.create(
-                prof=self.prof,
-                subject=self.subject,
-                section=self.section,
-                duration_slots=0,
+            MeetingSlot.objects.create(
+                assignment=assignment, order=1, mode="sync", duration_slots=0
             )
 
-    def test_valid_assignment_accepted(self):
-        assignment = Assignment.objects.create(
-            prof=self.prof,
-            subject=self.subject,
-            section=self.section,
-            meetings_per_week=2,
-            duration_slots=3,
+    def test_invalid_mode_rejected(self):
+        assignment = self._assignment()
+        slot = MeetingSlot(
+            assignment=assignment, order=1, mode="webinar", duration_slots=1
         )
-        self.assertEqual(assignment.meetings_per_week, 2)
+        with self.assertRaises(ValidationError):
+            slot.full_clean()
+
+    def test_default_mode_is_sync(self):
+        assignment = self._assignment()
+        slot = MeetingSlot.objects.create(
+            assignment=assignment, order=1, duration_slots=2
+        )
+        self.assertEqual(slot.mode, "sync")
+        self.assertEqual(slot.get_mode_display(), "Synchronous")
+        self.assertEqual(assignment.meetings.count(), 1)
 
 
 class TimeRangeTests(TestCase):

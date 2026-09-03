@@ -16,6 +16,12 @@ WEEKDAY_CHOICES = (
     (5, "Saturday"),
 )
 
+MODE_DURATIONS = {
+    "async": 1,
+    "sync": 2,
+    "lab": 3,
+}
+
 
 class Assignment(models.Model):
     prof = models.ForeignKey(
@@ -33,8 +39,6 @@ class Assignment(models.Model):
         on_delete=models.CASCADE,
         related_name="assignments",
     )
-    meetings_per_week = models.PositiveSmallIntegerField(default=1)
-    duration_slots = models.PositiveSmallIntegerField(default=1)
 
     class Meta:
         constraints = [
@@ -42,18 +46,46 @@ class Assignment(models.Model):
                 fields=["prof", "subject", "section"],
                 name="unique_prof_subject_section",
             ),
-            models.CheckConstraint(
-                condition=models.Q(meetings_per_week__gte=1),
-                name="assignment_meetings_per_week_gte_1",
-            ),
-            models.CheckConstraint(
-                condition=models.Q(duration_slots__gte=1),
-                name="assignment_duration_slots_gte_1",
-            ),
         ]
 
     def __str__(self):
         return f"{self.prof} - {self.subject} - {self.section}"
+
+
+class MeetingSlot(models.Model):
+    class Mode(models.TextChoices):
+        ASYNC = "async", "Asynchronous"
+        SYNC = "sync", "Synchronous"
+        LAB = "lab", "Laboratory"
+
+    assignment = models.ForeignKey(
+        Assignment,
+        on_delete=models.CASCADE,
+        related_name="meetings",
+    )
+    order = models.PositiveSmallIntegerField(default=1)
+    mode = models.CharField(
+        max_length=10,
+        choices=Mode.choices,
+        default=Mode.SYNC,
+    )
+    duration_slots = models.PositiveSmallIntegerField(default=1)
+
+    class Meta:
+        ordering = ["order"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["assignment", "order"],
+                name="unique_meeting_slot_order",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(duration_slots__gte=1),
+                name="meeting_slot_duration_slots_gte_1",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.assignment} #{self.order} {self.get_mode_display()} {self.duration_slots}"
 
 
 class AvailabilityWindow(models.Model):
@@ -154,6 +186,12 @@ class ScheduledClass(models.Model):
     day = models.IntegerField(choices=WEEKDAY_CHOICES)
     start_time = models.TimeField()
     duration_slots = models.PositiveSmallIntegerField(default=1)
+    mode = models.CharField(
+        max_length=10,
+        choices=MeetingSlot.Mode.choices,
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         ordering = ["day", "start_time"]
