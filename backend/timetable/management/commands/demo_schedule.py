@@ -379,18 +379,21 @@ class Command(BaseCommand):
         managed_sections = set()
         managed_rooms = set()
         managed_profs = set()
+        managed_loads = set()
         for other in ("normal", "large"):
             other_data = _dataset(other)
             managed_subjects.update(c for c, _ in other_data["subjects"])
             managed_sections.update(n for n, _ in other_data["sections"])
             managed_rooms.update(n for n, _, _ in other_data["rooms"])
             managed_profs.update(other_data["availability"])
+            managed_loads.update((u, c, s) for u, c, s, _ in other_data["loads"])
 
         selected_subjects = {c for c, _ in data["subjects"]}
         selected_sections = {n for n, _ in data["sections"]}
         selected_rooms = {n for n, _, _ in data["rooms"]}
         selected_profs = set(data["availability"])
         selected_loads = {(u, c, s) for u, c, s, _ in data["loads"]}
+        managed_loads_to_drop = managed_loads - selected_loads
 
         AvailabilityWindow.objects.filter(
             prof__user__username__in=managed_profs - selected_profs
@@ -406,7 +409,7 @@ class Command(BaseCommand):
                 assignment.subject.code,
                 assignment.section.name,
             )
-            if key not in selected_loads:
+            if key in managed_loads_to_drop:
                 assignment.delete()
 
         for code in managed_subjects - selected_subjects:
