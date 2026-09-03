@@ -2,7 +2,7 @@ from datetime import time
 
 from django.contrib.auth.models import User
 from django.db import IntegrityError
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 
 from catalog.models import Room, Section, Subject
 from users.models import Professors
@@ -183,3 +183,32 @@ class ScheduledClassTests(TestCase):
                 start_time=time(8, 0),
                 duration_slots=1,
             )
+
+    def test_end_time_computed_from_duration(self):
+        klass = ScheduledClass.objects.create(
+            run=self.run,
+            assignment=self.assignment,
+            room=self.room,
+            day=0,
+            start_time=time(8, 0),
+            duration_slots=2,
+        )
+        self.assertEqual(klass.end_time, time(10, 0))
+
+    def test_end_time_wraps_no_rollover(self):
+        klass = ScheduledClass.objects.create(
+            run=self.run,
+            assignment=self.assignment,
+            room=self.room,
+            day=0,
+            start_time=time(23, 0),
+            duration_slots=1,
+        )
+        self.assertEqual(klass.end_time, time(0, 0))
+
+    def test_end_time_single_slot(self):
+        klass = ScheduledClass(
+            start_time=time(7, 30),
+            duration_slots=1,
+        )
+        self.assertEqual(klass.end_time, time(8, 30))

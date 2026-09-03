@@ -247,6 +247,11 @@ class Command(BaseCommand):
             return results[ALGORITHMS[0]]
         return min(feasible, key=lambda r: (r["soft_score"] is None, r["soft_score"]))
 
+    def _time_range(self, c):
+        start = c["start_time"][:5]
+        end = c.get("end_time")
+        return f"{start}-{end[:5]}" if end else start
+
     def _print_grid(self, algorithm, classes):
         self.stdout.write(f"\n=== {algorithm} weekly grid ===")
         by_day = {day: [] for day in range(6)}
@@ -261,7 +266,7 @@ class Command(BaseCommand):
                 if len(subject) > 20:
                     subject = subject[:17] + "..."
                 self.stdout.write(
-                    f"  {c['start_time'][:5]}  {subject:<20}  "
+                    f"  {self._time_range(c):<11}  {subject:<20}  "
                     f"{c['section_name']:<10}  {c['prof_name']:<16}  "
                     f"room {c['room_name']}"
                 )
