@@ -46,6 +46,9 @@ Wednesday. The registrar can override the default length of any meeting. The
 chosen mode and length are saved with each scheduled class so the output shows
 whether a class is asynchronous, synchronous, or a laboratory session.
 
+Every assignment must contain at least one synchronous (`sync` or `lab`)
+meeting — a weekly load that is entirely asynchronous is rejected.
+
 ### The three algorithms
 
 The scheduler can search for a schedule in three different ways. This is the
@@ -58,8 +61,8 @@ research focus of the project: comparing how each one behaves.
 | `backtracking`  | Try a choice; if it leads to a dead end, step back and try another. Guarantees an answer if one exists, but can be slower. |
 
 For the same input, each algorithm reports how long it took (`runtime_ms`) and
-how good the result is (`soft_score`, lower is better). That comparison is what
-you show in your evaluation chapter.
+how good the result is (`soft_score`, lower is better), which makes them
+directly comparable for evaluation.
 
 ---
 
@@ -225,8 +228,8 @@ See the Swagger UI for the complete list of endpoints and their fields.
 
 ## Running the demo
 
-A demo command seeds a small example and runs the whole flow against your
-running server.
+A demo command seeds a realistic example dataset and runs the whole flow against
+your running server.
 
 Open two terminals:
 
@@ -240,14 +243,27 @@ python manage.py runserver
 python manage.py demo_schedule
 ```
 
-It creates a dev-only demo registrar (`demoreg`) and three professors, seeds
-subjects, sections, rooms, assignments, and availability, then generates a
-schedule with all three algorithms and prints:
+It creates a dev-only demo registrar (`demoreg` / password `demo12345`) plus
+professors across the CS, IT, MATH and GE departments, and seeds subjects
+(including GE minors such as PE and NSTP), sections, rooms, assignments and
+availability. It then generates a schedule with all three algorithms and prints:
 
 - a comparison table (`feasible`, `runtime_ms`, `soft_score`, class count)
 - a readable Monday–Saturday grid of the best result
 
-Add `--reset` to delete existing schedules, assignments, and availability
+Two dataset sizes are available:
+
+| `--scale` | Professors | Assignments | Weekly meetings | Sections |
+| --------- | ---------- | ----------- | --------------- | -------- |
+| `normal` (default) | 7 | 35 | 53 | 10 |
+| `large` | 11 | 52 | 79 | 14 |
+
+```bash
+# Use the larger dataset (more sections and GE minors)
+python manage.py demo_schedule --scale large
+```
+
+Add `--reset` to delete existing demo schedules, assignments and availability
 before re-running:
 
 ```bash
@@ -265,10 +281,11 @@ python manage.py demo_schedule --reset
 python manage.py test
 ```
 
-The test suite (74 tests) checks, in plain terms:
+The test suite (80 tests) checks, in plain terms:
 
 - **Data rules** — invalid values (zero meeting length, a time range that ends
-  before it starts, an unknown day) are rejected.
+  before it starts, an unknown day) are rejected, and every subject load must
+  include at least one synchronous (`sync` or `lab`) class per week.
 - **The algorithms** — each engine produces a valid schedule, and a tricky
   example shows where `backtracking` succeeds and `greedy` fails.
 - **Departments** — a professor is only placed into rooms of their own
