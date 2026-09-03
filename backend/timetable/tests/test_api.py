@@ -296,6 +296,16 @@ class AssignmentApiTests(ApiTestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_empty_meetings_rejected(self):
+        subject_id, section_id = self._seed_ids()
+        self.auth(self.reg_token)
+        response = self.client.post(
+            "/api/assignments/",
+            self._payload(self.prof.id, subject_id, section_id, []),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
 
 class ScheduleViewTests(ApiTestCase):
     def _seed_and_generate(self):

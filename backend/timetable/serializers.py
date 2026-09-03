@@ -75,6 +75,13 @@ class AssignmentSerializer(serializers.ModelSerializer):
                 ),
             )
 
+    def validate(self, attrs):
+        if attrs.get("meetings") is not None and not attrs["meetings"]:
+            raise serializers.ValidationError(
+                {"meetings": "An assignment must have at least one meeting."}
+            )
+        return attrs
+
     def create(self, validated_data):
         meetings = validated_data.pop("meetings", [])
         with transaction.atomic():
