@@ -1,9 +1,22 @@
 """Run the full schedule-creation flow against the live dev server.
 
-Seeds a small, idempotent demo dataset (a registrar, 3 professors, subjects,
-sections, rooms, assignments and availability), then logs in over real HTTP,
-generates a schedule with all three engines, and prints a metrics comparison
-plus a readable Monday-Saturday grid for the best-scoring feasible result.
+Seeds an idempotent demo dataset (a registrar, professors across departments,
+subjects, sections, rooms, assignments and availability), then logs in over
+real HTTP, generates a schedule with all three engines, and prints a metrics
+comparison plus a readable Monday-Saturday grid for the best-scoring feasible
+result.
+
+Two dataset sizes are available via ``--scale``:
+
+* ``normal`` (default): 6 professors, 12 subjects, 8 sections, 6 rooms and
+  18 assignments (30 weekly meetings).
+* ``large``: 9 professors, 17 subjects, 12 sections, 9 rooms and 27
+  assignments (46 weekly meetings).
+
+Each run reconciles the database to the chosen scale: demo-managed subjects,
+sections, rooms, assignments and availability that belong to another scale
+are removed, so rerunning with ``--scale normal`` after ``--scale large``
+does not leave stale records behind.
 
 Usage (two terminals):
 
@@ -12,6 +25,8 @@ Usage (two terminals):
 
     # terminal 2
     python manage.py demo_schedule
+    python manage.py demo_schedule --scale large
+    python manage.py demo_schedule --reset
 """
 
 import json
@@ -33,6 +48,132 @@ DEMO_PASSWORD = "demo12345"
 ALGORITHMS = ["greedy", "min_conflicts", "backtracking"]
 
 
+def _dataset(scale):
+    """Return the demo dataset for the requested scale.
+
+    A "load" is (username, subject code, section name, spec) where spec lists
+    the weekly meetings as (mode, duration_slots). Durations are set explicitly
+    (not derived from the mode) so the mix stays realistic and feasible; rooms
+    are matched to professor departments (LAB1 is shared).
+    """
+    departments = ["CS", "IT", "MATH"]
+
+    normal = {
+        "subjects": [
+            ("CC101", "Programming Fundamentals"),
+            ("CC102", "Database Systems"),
+            ("CC103", "Networking"),
+            ("CC104", "Software Engineering"),
+            ("CS201", "Data Structures"),
+            ("IT101", "Web Development"),
+            ("IT102", "Multimedia Systems"),
+            ("IT103", "Systems Administration"),
+            ("MATH101", "Discrete Mathematics"),
+            ("MATH201", "Statistics"),
+            ("MATH202", "Linear Algebra"),
+            ("MATH203", "Calculus"),
+        ],
+        "sections": [
+            ("BSIT-3A", 30),
+            ("BSIT-3B", 25),
+            ("BSIT-4A", 28),
+            ("BSCS-2A", 28),
+            ("BSCS-3A", 30),
+            ("BSCS-4A", 22),
+            ("BSIT-2A", 30),
+            ("BSIT-2B", 27),
+        ],
+        "rooms": [
+            ("R201", 40, "CS"),
+            ("R202", 40, "IT"),
+            ("R301", 45, "CS"),
+            ("R302", 45, "IT"),
+            ("MATH1", 35, "MATH"),
+            ("LAB1", 30, None),
+        ],
+        "availability": {
+            "demo_prof1": [(0, "07:00:00", "19:00:00", True), (1, "07:00:00", "19:00:00", True), (2, "07:00:00", "19:00:00", True), (3, "07:00:00", "19:00:00", True), (4, "07:00:00", "19:00:00", True)],
+            "demo_prof2": [(0, "07:00:00", "19:00:00", True), (1, "07:00:00", "19:00:00", True), (2, "07:00:00", "19:00:00", True), (3, "07:00:00", "19:00:00", True), (4, "07:00:00", "19:00:00", True)],
+            "demo_prof3": [(0, "07:00:00", "19:00:00", True), (1, "07:00:00", "19:00:00", True), (2, "07:00:00", "19:00:00", True), (3, "07:00:00", "19:00:00", True), (4, "07:00:00", "19:00:00", True)],
+            "demo_prof4": [(0, "08:00:00", "18:00:00", True), (1, "08:00:00", "18:00:00", True), (2, "08:00:00", "18:00:00", True), (3, "08:00:00", "18:00:00", True), (4, "08:00:00", "18:00:00", True)],
+            "demo_prof5": [(0, "07:00:00", "17:00:00", True), (1, "07:00:00", "17:00:00", True), (2, "07:00:00", "17:00:00", True), (3, "07:00:00", "17:00:00", True), (4, "07:00:00", "17:00:00", True)],
+            "demo_prof6": [(0, "08:00:00", "17:00:00", False), (1, "08:00:00", "17:00:00", False), (2, "08:00:00", "17:00:00", False), (3, "08:00:00", "12:00:00", False), (3, "13:00:00", "17:00:00", False), (4, "08:00:00", "17:00:00", False)],
+        },
+        "loads": [
+            ("demo_prof1", "CC101", "BSIT-3A", [("sync", 1), ("async", 1)]),
+            ("demo_prof1", "CC102", "BSCS-3A", [("sync", 2)]),
+            ("demo_prof1", "CC104", "BSCS-4A", [("lab", 1), ("async", 1)]),
+            ("demo_prof4", "CS201", "BSCS-2A", [("sync", 1), ("lab", 1)]),
+            ("demo_prof4", "CC103", "BSIT-4A", [("async", 1), ("async", 1)]),
+            ("demo_prof4", "CC101", "BSIT-2A", [("sync", 1)]),
+            ("demo_prof2", "IT101", "BSIT-3A", [("sync", 1), ("sync", 1)]),
+            ("demo_prof2", "IT102", "BSIT-2B", [("lab", 1)]),
+            ("demo_prof2", "IT103", "BSIT-2A", [("async", 1), ("sync", 1)]),
+            ("demo_prof5", "IT102", "BSIT-4A", [("sync", 2)]),
+            ("demo_prof5", "IT101", "BSIT-3B", [("async", 1), ("async", 1)]),
+            ("demo_prof5", "IT103", "BSCS-3A", [("sync", 1), ("lab", 1)]),
+            ("demo_prof3", "MATH101", "BSCS-2A", [("sync", 1)]),
+            ("demo_prof3", "MATH201", "BSIT-3A", [("sync", 1), ("lab", 1)]),
+            ("demo_prof3", "MATH202", "BSCS-3A", [("sync", 2), ("async", 1)]),
+            ("demo_prof6", "MATH203", "BSIT-2B", [("sync", 1), ("sync", 1)]),
+            ("demo_prof6", "MATH101", "BSIT-4A", [("lab", 1)]),
+            ("demo_prof6", "MATH201", "BSIT-2A", [("async", 1), ("async", 1)]),
+        ],
+    }
+
+    large = {
+        "subjects": normal["subjects"]
+        + [
+            ("CS202", "Operating Systems"),
+            ("IT104", "Mobile Development"),
+            ("IT105", "Networking 2"),
+            ("MATH204", "Numerical Methods"),
+            ("CS203", "Algorithms"),
+        ],
+        "sections": normal["sections"]
+        + [
+            ("BSCS-2B", 30),
+            ("BSIT-1A", 35),
+            ("BSIT-1B", 32),
+            ("BSIT-4B", 25),
+        ],
+        "rooms": normal["rooms"]
+        + [
+            ("R303", 45, "CS"),
+            ("R304", 45, "IT"),
+            ("MATH2", 40, "MATH"),
+        ],
+        "availability": {
+            **normal["availability"],
+            "demo_prof7": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "demo_prof8": [(d, "09:00:00", "18:00:00", True) for d in range(5)],
+            "demo_prof9": [(d, "08:00:00", "16:00:00", False) for d in range(5)],
+        },
+        "loads": normal["loads"]
+        + [
+            ("demo_prof7", "CC104", "BSIT-3B", [("sync", 2)]),
+            ("demo_prof7", "CS202", "BSCS-2B", [("sync", 1), ("lab", 1), ("async", 1)]),
+            ("demo_prof7", "CS203", "BSCS-4A", [("sync", 1), ("sync", 1)]),
+            ("demo_prof8", "IT104", "BSIT-1A", [("sync", 1), ("lab", 1)]),
+            ("demo_prof8", "IT105", "BSIT-1B", [("sync", 2), ("async", 1)]),
+            ("demo_prof8", "IT101", "BSIT-4B", [("sync", 1)]),
+            ("demo_prof9", "MATH204", "BSIT-1A", [("sync", 1), ("lab", 1)]),
+            ("demo_prof9", "MATH202", "BSIT-1B", [("async", 1), ("async", 1)]),
+            ("demo_prof9", "MATH203", "BSIT-4B", [("sync", 2)]),
+        ],
+    }
+
+    data = {"normal": normal, "large": large}[scale]
+    dept_by_code = {
+        "CC101": "CS", "CC102": "CS", "CC103": "CS", "CC104": "CS",
+        "CS201": "CS", "CS202": "CS", "CS203": "CS",
+        "IT101": "IT", "IT102": "IT", "IT103": "IT", "IT104": "IT", "IT105": "IT",
+        "MATH101": "MATH", "MATH201": "MATH", "MATH202": "MATH",
+        "MATH203": "MATH", "MATH204": "MATH",
+    }
+    return {"departments": departments, "dept_by_code": dept_by_code, **data}
+
+
 class Command(BaseCommand):
     help = "Seed demo data and run schedule creation against the running server."
 
@@ -48,6 +189,12 @@ class Command(BaseCommand):
             action="store_true",
             help="Allow running when DEBUG is off (not recommended).",
         )
+        parser.add_argument(
+            "--scale",
+            choices=["normal", "large"],
+            default="normal",
+            help="Demo dataset size: 'normal' (default) or 'large'.",
+        )
 
     def handle(self, *args, **options):
         if not settings.DEBUG and not options["allow_non_debug"]:
@@ -61,10 +208,12 @@ class Command(BaseCommand):
         if options["reset"]:
             self._reset()
 
-        registrar = self._seed_users()
-        self._seed_catalog()
-        self._seed_load_and_availability()
+        registrar = self._seed_users(options["scale"])
+        self._seed_catalog(options["scale"])
+        self._seed_load_and_availability(options["scale"])
+        self._reconcile(options["scale"])
 
+        self.stdout.write(f"Scale: {options['scale']}")
         self.stdout.write(f"Registrar: {registrar.username} / {DEMO_PASSWORD}")
 
         try:
@@ -104,56 +253,46 @@ class Command(BaseCommand):
 
     # -- seeding -----------------------------------------------------------
 
-    def _seed_users(self):
+    def _seed_users(self, scale):
         registrar, created = User.objects.get_or_create(username="demoreg")
         if created:
             registrar.is_staff = True
             registrar.set_password(DEMO_PASSWORD)
             registrar.save()
 
+        data = _dataset(scale)
         departments = {
             name: Department.objects.get_or_create(name=name)[0]
-            for name in ["CS", "IT", "MATH"]
+            for name in data["departments"]
         }
-        profs = [
-            ("demo_prof1", "CS"),
-            ("demo_prof2", "IT"),
-            ("demo_prof3", "MATH"),
-        ]
-        for username, dept_name in profs:
+        prof_depts = {}
+        for username, code, _sec, _spec in data["loads"]:
+            if username not in prof_depts:
+                prof_depts[username] = data["dept_by_code"][code]
+        for username in data["availability"]:
             user, created = User.objects.get_or_create(username=username)
             if created:
                 user.set_password(DEMO_PASSWORD)
                 user.save()
             Professors.objects.get_or_create(
-                user=user, defaults={"department": departments[dept_name]}
+                user=user, defaults={"department": departments[prof_depts[username]]}
             )
 
         return registrar
 
-    def _seed_catalog(self):
-        for code, title in [
-            ("CC101", "Programming Fundamentals"),
-            ("CC102", "Database Systems"),
-            ("CC103", "Networking"),
-        ]:
+    def _seed_catalog(self, scale):
+        data = _dataset(scale)
+
+        for code, title in data["subjects"]:
             Subject.objects.get_or_create(code=code, defaults={"title": title, "units": 3})
 
-        for name, headcount in [
-            ("BSIT-3A", 30),
-            ("BSIT-3B", 25),
-            ("BSCS-2A", 28),
-        ]:
+        for name, headcount in data["sections"]:
             Section.objects.get_or_create(name=name, defaults={"headcount": headcount})
 
         def department(name):
             return Department.objects.filter(name=name).first()
 
-        for name, capacity, dept_name in [
-            ("R201", 40, "CS"),
-            ("R202", 40, "IT"),
-            ("LAB1", 30, None),
-        ]:
+        for name, capacity, dept_name in data["rooms"]:
             room, created = Room.objects.get_or_create(
                 name=name,
                 defaults={
@@ -166,7 +305,9 @@ class Command(BaseCommand):
                 room.department = department(dept_name) if dept_name else None
                 room.save(update_fields=["capacity", "department"])
 
-    def _seed_load_and_availability(self):
+    def _seed_load_and_availability(self, scale):
+        data = _dataset(scale)
+
         def prof(username):
             return Professors.objects.get(user__username=username)
 
@@ -177,16 +318,7 @@ class Command(BaseCommand):
             return Section.objects.get(name=name)
 
         # Each load lists its weekly meetings as (mode, duration_slots).
-        # Durations keep the original demo counts so feasibility is unchanged;
-        # modes showcase the async/sync/lab mix.
-        loads = [
-            ("demo_prof1", "CC101", "BSIT-3A", [("sync", 1), ("async", 1)]),
-            ("demo_prof1", "CC102", "BSCS-2A", [("sync", 2)]),
-            ("demo_prof2", "CC102", "BSIT-3B", [("sync", 1), ("sync", 1)]),
-            ("demo_prof3", "CC103", "BSIT-3A", [("async", 1), ("async", 1)]),
-            ("demo_prof3", "CC101", "BSIT-3B", [("lab", 2)]),
-        ]
-        for username, code, sec_name, spec in loads:
+        for username, code, sec_name, spec in data["loads"]:
             assignment, _ = Assignment.objects.get_or_create(
                 prof=prof(username),
                 subject=subject(code),
@@ -205,18 +337,23 @@ class Command(BaseCommand):
                 ]
             )
 
-        for username in ("demo_prof1", "demo_prof2", "demo_prof3"):
+        # Delete-then-recreate so profs with split windows (e.g. a lunch gap)
+        # don't collide with the previous run's windows.
+        for username, windows in data["availability"].items():
             p = prof(username)
-            for day in range(5):
-                AvailabilityWindow.objects.update_or_create(
-                    prof=p,
-                    day=day,
-                    defaults={
-                        "start_time": "07:00:00",
-                        "end_time": "19:00:00",
-                        "is_preferred": True,
-                    },
-                )
+            AvailabilityWindow.objects.filter(prof=p).delete()
+            AvailabilityWindow.objects.bulk_create(
+                [
+                    AvailabilityWindow(
+                        prof=p,
+                        day=day,
+                        start_time=start,
+                        end_time=end,
+                        is_preferred=preferred,
+                    )
+                    for day, start, end, preferred in windows
+                ]
+            )
 
     def _reset(self):
         from timetable.models import ScheduledClass, ScheduleRun
@@ -225,6 +362,67 @@ class Command(BaseCommand):
         ScheduleRun.objects.all().delete()
         Assignment.objects.all().delete()
         AvailabilityWindow.objects.all().delete()
+
+    def _reconcile(self, scale):
+        """Drop demo-managed records that are not part of the requested scale.
+
+        The catalog seed only ever upserts the records the current dataset
+        declares, so rerunning with ``--scale normal`` after ``--scale large``
+        would otherwise leave the larger scale's subjects, sections, rooms,
+        assignments and availability windows behind. Only records whose names
+        the demo datasets manage are ever removed; user-created data (e.g. a
+        subject or room the registrar added manually) is left untouched.
+        """
+        data = _dataset(scale)
+
+        managed_subjects = set()
+        managed_sections = set()
+        managed_rooms = set()
+        managed_profs = set()
+        managed_loads = set()
+        for other in ("normal", "large"):
+            other_data = _dataset(other)
+            managed_subjects.update(c for c, _ in other_data["subjects"])
+            managed_sections.update(n for n, _ in other_data["sections"])
+            managed_rooms.update(n for n, _, _ in other_data["rooms"])
+            managed_profs.update(other_data["availability"])
+            managed_loads.update((u, c, s) for u, c, s, _ in other_data["loads"])
+
+        selected_subjects = {c for c, _ in data["subjects"]}
+        selected_sections = {n for n, _ in data["sections"]}
+        selected_rooms = {n for n, _, _ in data["rooms"]}
+        selected_profs = set(data["availability"])
+        selected_loads = {(u, c, s) for u, c, s, _ in data["loads"]}
+        managed_loads_to_drop = managed_loads - selected_loads
+
+        AvailabilityWindow.objects.filter(
+            prof__user__username__in=managed_profs - selected_profs
+        ).delete()
+
+        for assignment in (
+            Assignment.objects.filter(prof__user__username__in=managed_profs)
+            .select_related("prof__user", "subject", "section")
+            .all()
+        ):
+            key = (
+                assignment.prof.user.username,
+                assignment.subject.code,
+                assignment.section.name,
+            )
+            if key in managed_loads_to_drop:
+                assignment.delete()
+
+        for code in managed_subjects - selected_subjects:
+            subject = Subject.objects.filter(code=code).first()
+            if subject and not Assignment.objects.filter(subject=subject).exists():
+                subject.delete()
+
+        for name in managed_sections - selected_sections:
+            section = Section.objects.filter(name=name).first()
+            if section and not Assignment.objects.filter(section=section).exists():
+                section.delete()
+
+        Room.objects.filter(name__in=managed_rooms - selected_rooms).delete()
 
     # -- HTTP + output -----------------------------------------------------
 
