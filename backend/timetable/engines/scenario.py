@@ -33,6 +33,7 @@ class RoomRef:
     id: int
     name: str
     capacity: int
+    department: str = ""
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,7 @@ class Meeting:
     section_name: str
     section_headcount: int
     duration_slots: int
+    department: str = ""
 
 
 @dataclass

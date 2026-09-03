@@ -3,7 +3,7 @@ from datetime import time
 from django.contrib.auth.models import User
 from django.test import TestCase
 
-from catalog.models import Room, Section, Subject
+from catalog.models import Department, Room, Section, Subject
 from timetable.engines import run
 from timetable.scenario_builder import build_scenario
 from users.models import Professors
@@ -43,3 +43,26 @@ class ScenarioBuilderTests(TestCase):
         result = run("greedy", scenario)
         self.assertTrue(result.feasible, result.violations)
         self.assertEqual(len(result.classes), 2)
+
+    def test_departments_carried_into_scenario(self):
+        from timetable.models import Assignment, AvailabilityWindow
+
+        dept = Department.objects.create(name="CS")
+        self.prof.department = dept
+        self.prof.save(update_fields=["department"])
+        Room.objects.create(name="R202", capacity=40, department=dept)
+        Assignment.objects.create(
+            prof=self.prof,
+            subject=self.subject,
+            section=self.section,
+            meetings_per_week=1,
+            duration_slots=1,
+        )
+        AvailabilityWindow.objects.create(
+            prof=self.prof, day=0, start_time=time(8, 0), end_time=time(17, 0)
+        )
+
+        scenario = build_scenario()
+        self.assertEqual(scenario.meetings[0].department, "CS")
+        cs_rooms = [r for r in scenario.rooms if r.name == "R202"]
+        self.assertEqual(cs_rooms[0].department, "CS")

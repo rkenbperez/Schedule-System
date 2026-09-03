@@ -22,7 +22,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 
-from catalog.models import Room, Section, Subject
+from catalog.models import Department, Room, Section, Subject
 from timetable.models import Assignment, AvailabilityWindow
 from users.models import Professors
 
@@ -111,17 +111,23 @@ class Command(BaseCommand):
             registrar.set_password(DEMO_PASSWORD)
             registrar.save()
 
+        departments = {
+            name: Department.objects.get_or_create(name=name)[0]
+            for name in ["CS", "IT", "MATH"]
+        }
         profs = [
             ("demo_prof1", "CS"),
             ("demo_prof2", "IT"),
             ("demo_prof3", "MATH"),
         ]
-        for username, department in profs:
+        for username, dept_name in profs:
             user, created = User.objects.get_or_create(username=username)
             if created:
                 user.set_password(DEMO_PASSWORD)
                 user.save()
-            Professors.objects.get_or_create(user=user, defaults={"department": department})
+            Professors.objects.get_or_create(
+                user=user, defaults={"department": departments[dept_name]}
+            )
 
         return registrar
 
@@ -140,8 +146,25 @@ class Command(BaseCommand):
         ]:
             Section.objects.get_or_create(name=name, defaults={"headcount": headcount})
 
-        for name, capacity in [("R201", 40), ("R202", 40), ("LAB1", 30)]:
-            Room.objects.get_or_create(name=name, defaults={"capacity": capacity})
+        def department(name):
+            return Department.objects.filter(name=name).first()
+
+        for name, capacity, dept_name in [
+            ("R201", 40, "CS"),
+            ("R202", 40, "IT"),
+            ("LAB1", 30, None),
+        ]:
+            room, created = Room.objects.get_or_create(
+                name=name,
+                defaults={
+                    "capacity": capacity,
+                    "department": department(dept_name) if dept_name else None,
+                },
+            )
+            if not created:
+                room.capacity = capacity
+                room.department = department(dept_name) if dept_name else None
+                room.save(update_fields=["capacity", "department"])
 
     def _seed_load_and_availability(self):
         def prof(username):

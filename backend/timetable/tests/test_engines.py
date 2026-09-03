@@ -13,7 +13,7 @@ from timetable.engines.scoring import soft_score
 from timetable.engines.slots import _daily_used
 
 
-def _meeting(mid, prof_id, duration=1, section_id=1, headcount=20, subject="CC101"):
+def _meeting(mid, prof_id, duration=1, section_id=1, headcount=20, subject="CC101", department=""):
     return Meeting(
         meeting_id=mid,
         assignment_id=mid,
@@ -24,11 +24,12 @@ def _meeting(mid, prof_id, duration=1, section_id=1, headcount=20, subject="CC10
         section_name=f"SEC{section_id}",
         section_headcount=headcount,
         duration_slots=duration,
+        department=department,
     )
 
 
-def _room(rid, capacity=30):
-    return RoomRef(id=rid, name=f"R{rid}", capacity=capacity)
+def _room(rid, capacity=30, department=""):
+    return RoomRef(id=rid, name=f"R{rid}", capacity=capacity, department=department)
 
 
 def _loose_scenario():
@@ -200,3 +201,60 @@ class ScoringTests(SimpleTestCase):
         clumped_score, _ = soft_score(scenario, clumped)
         spread_score, _ = soft_score(scenario, spread)
         self.assertLess(spread_score, clumped_score)
+
+
+def _department_scenario(meeting_department, room_department):
+    rooms = [_room(1, 40, department=room_department)]
+    meetings = [_meeting(1, prof_id=1, department=meeting_department)]
+    availability = [
+        Availability(prof_id=1, day=day, start=8 * 60, end=17 * 60) for day in range(5)
+    ]
+    return Scenario(rooms=rooms, meetings=meetings, availability=availability)
+
+
+class DepartmentSolverTests(SimpleTestCase):
+    def test_prof_teaches_in_matching_department_room(self):
+        result = run("greedy", _department_scenario("CS", "CS"))
+        self.assertTrue(result.feasible, result.violations)
+        self.assertEqual(len(result.classes), 1)
+
+    def test_prof_rejected_from_other_department_room(self):
+        result = run("greedy", _department_scenario("CS", "IT"))
+        self.assertFalse(result.feasible)
+        self.assertTrue(result.unplaced)
+
+    def test_mismatched_placement_reported_as_violation(self):
+        scenario = _department_scenario("CS", "IT")
+        placed = {1: Placement(meeting_id=1, day=0, start=8 * 60, room_id=1)}
+        violations = hard_violations(scenario, placed)
+        self.assertTrue(any("is for IT" in v for v in violations), violations)
+
+    def test_department_and_capacity_violations_reported_together(self):
+        rooms = [_room(1, 40, department="IT")]
+        meetings = [
+            _meeting(1, prof_id=1, headcount=60, department="CS")
+        ]
+        scenario = Scenario(
+            rooms=rooms,
+            meetings=meetings,
+            availability=[
+                Availability(prof_id=1, day=day, start=8 * 60, end=17 * 60)
+                for day in range(5)
+            ],
+        )
+        placed = {1: Placement(meeting_id=1, day=0, start=8 * 60, room_id=1)}
+        violations = hard_violations(scenario, placed)
+        self.assertTrue(any("is for IT" in v for v in violations), violations)
+        self.assertTrue(any("too small" in v for v in violations), violations)
+
+    def test_blank_room_is_shared_across_departments(self):
+        result = run("greedy", _department_scenario("CS", ""))
+        self.assertTrue(result.feasible, result.violations)
+
+    def test_prof_without_department_uses_any_room(self):
+        result = run("greedy", _department_scenario("", "CS"))
+        self.assertTrue(result.feasible, result.violations)
+
+    def test_department_match_is_case_insensitive(self):
+        result = run("greedy", _department_scenario("cs", "CS"))
+        self.assertTrue(result.feasible, result.violations)

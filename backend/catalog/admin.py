@@ -1,6 +1,12 @@
 from django.contrib import admin
 
-from .models import Room, Section, Subject
+from .models import Department, Room, Section, Subject
+
+
+@admin.register(Department)
+class DepartmentAdmin(admin.ModelAdmin):
+    list_display = ("name",)
+    search_fields = ("name",)
 
 
 @admin.register(Subject)
@@ -16,4 +22,5 @@ class SectionAdmin(admin.ModelAdmin):
 
 @admin.register(Room)
 class RoomAdmin(admin.ModelAdmin):
-    list_display = ("name", "capacity")
+    list_display = ("name", "capacity", "department")
+    list_filter = ("department",)

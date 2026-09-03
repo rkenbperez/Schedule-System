@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
-from catalog.models import Room, Section, Subject
+from catalog.models import Department, Room, Section, Subject
 from timetable.models import Assignment, AvailabilityWindow, ScheduledClass, ScheduleRun
 from users.models import Professors
 
@@ -19,8 +19,9 @@ class ApiTestCase(APITestCase):
         )
         self.reg_token = Token.objects.create(user=self.registrar)
 
+        self.dept = Department.objects.create(name="CS")
         self.prof_user = User.objects.create_user(username="prof1", password="pass12345")
-        self.prof = Professors.objects.create(user=self.prof_user, department="CS")
+        self.prof = Professors.objects.create(user=self.prof_user, department=self.dept)
         self.prof_token = Token.objects.create(user=self.prof_user)
 
     def auth(self, token):
@@ -52,6 +53,34 @@ class CatalogApiTests(ApiTestCase):
         self.assertEqual(len(response.data), 1)
 
 
+class DepartmentApiTests(ApiTestCase):
+    def test_registrar_can_create_department(self):
+        self.auth(self.reg_token)
+        response = self.client.post("/api/departments/", {"name": "EE"})
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["name"], "EE")
+
+    def test_non_staff_cannot_write_department(self):
+        self.auth(self.prof_token)
+        response = self.client.post("/api/departments/", {"name": "EE"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_room_response_includes_department_name(self):
+        Room.objects.create(name="R101", capacity=40, department=self.dept)
+        self.auth(self.prof_token)
+        response = self.client.get("/api/rooms/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data[0]["department"], self.dept.id)
+        self.assertEqual(response.data[0]["department_name"], "CS")
+
+    def test_prof_response_includes_department_name(self):
+        self.auth(self.prof_token)
+        response = self.client.get("/api/profs/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data[0]["department"], self.dept.id)
+        self.assertEqual(response.data[0]["department_name"], "CS")
+
+
 class AvailabilityApiTests(ApiTestCase):
     def _payload(self, prof_id):
         return {
@@ -70,7 +99,7 @@ class AvailabilityApiTests(ApiTestCase):
 
     def test_prof_availability_is_forced_to_own(self):
         other_user = User.objects.create_user(username="prof2", password="pass12345")
-        other = Professors.objects.create(user=other_user, department="CS")
+        other = Professors.objects.create(user=other_user, department=self.dept)
 
         self.auth(self.prof_token)
         response = self.client.post("/api/availability-windows/", self._payload(other.id))
@@ -79,7 +108,7 @@ class AvailabilityApiTests(ApiTestCase):
 
     def test_prof_only_sees_own_availability(self):
         other_user = User.objects.create_user(username="prof2", password="pass12345")
-        other = Professors.objects.create(user=other_user, department="CS")
+        other = Professors.objects.create(user=other_user, department=self.dept)
         AvailabilityWindow.objects.create(
             prof=other, day=0, start_time=time(8, 0), end_time=time(17, 0)
         )
@@ -176,7 +205,7 @@ class ScheduleViewTests(ApiTestCase):
         run_id = self._seed_and_generate()
 
         other_user = User.objects.create_user(username="prof2", password="pass12345")
-        other = Professors.objects.create(user=other_user, department="CS")
+        other = Professors.objects.create(user=other_user, department=self.dept)
 
         self.auth(Token.objects.create(user=other_user))
         response = self.client.get(f"/api/schedules/runs/{run_id}/classes")
@@ -249,14 +278,16 @@ class FullScheduleFlowTests(ApiTestCase):
         )
         sec1 = self._post("/api/sections/", {"name": "BSIT-3A", "headcount": 30})
         sec2 = self._post("/api/sections/", {"name": "BSIT-3B", "headcount": 25})
+        it_dept = self._post("/api/departments/", {"name": "IT"})
         room1 = self._post("/api/rooms/", {"name": "R201", "capacity": 40})
-        room2 = self._post("/api/rooms/", {"name": "R202", "capacity": 40})
+        room2 = self._post(
+            "/api/rooms/", {"name": "R202", "capacity": 40, "department": it_dept["id"]}
+        )
 
         prof2_user = User.objects.create_user(username="e2eprof2", password="pass12345")
         prof2 = self._post(
-            "/api/profs/", {"user": prof2_user.id, "department": "IT"}
+            "/api/profs/", {"user": prof2_user.id, "department": it_dept["id"]}
         )
-
         self._post(
             "/api/assignments/",
             {
