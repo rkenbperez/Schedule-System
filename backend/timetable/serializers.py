@@ -75,11 +75,43 @@ class AssignmentSerializer(serializers.ModelSerializer):
                 ),
             )
 
+    def _has_synchronous_meeting(self, meetings):
+        return any(
+            m.get("mode", MeetingSlot.Mode.SYNC) in (MeetingSlot.Mode.SYNC, MeetingSlot.Mode.LAB)
+            for m in meetings
+        )
+
+    def _raise_requires_synchronous(self):
+        raise serializers.ValidationError(
+            {
+                "meetings": (
+                    "A subject must have at least one synchronous "
+                    "(sync or lab) meeting per week; the load cannot "
+                    "be all asynchronous."
+                )
+            }
+        )
+
     def validate(self, attrs):
-        if attrs.get("meetings") is not None and not attrs["meetings"]:
-            raise serializers.ValidationError(
-                {"meetings": "An assignment must have at least one meeting."}
-            )
+        meetings = attrs.get("meetings")
+        if meetings is not None:
+            if not meetings:
+                raise serializers.ValidationError(
+                    {"meetings": "An assignment must have at least one meeting."}
+                )
+            if not self._has_synchronous_meeting(meetings):
+                self._raise_requires_synchronous()
+        elif self.instance is not None:
+            existing = list(self.instance.meetings.all())
+            if not existing:
+                raise serializers.ValidationError(
+                    {"meetings": "An assignment must have at least one meeting."}
+                )
+            if not any(
+                m.mode in (MeetingSlot.Mode.SYNC, MeetingSlot.Mode.LAB)
+                for m in existing
+            ):
+                self._raise_requires_synchronous()
         return attrs
 
     def create(self, validated_data):
