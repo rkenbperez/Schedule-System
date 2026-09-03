@@ -10,6 +10,8 @@ from .models import (
     ScheduleRun,
 )
 
+from django.db import transaction
+
 
 class MeetingSlotSerializer(serializers.ModelSerializer):
     mode = serializers.ChoiceField(
@@ -18,6 +20,7 @@ class MeetingSlotSerializer(serializers.ModelSerializer):
         default=MeetingSlot.Mode.SYNC,
     )
     mode_display = serializers.CharField(source="get_mode_display", read_only=True)
+    duration_slots = serializers.IntegerField(min_value=1, required=False)
 
     class Meta:
         model = MeetingSlot
@@ -74,17 +77,19 @@ class AssignmentSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         meetings = validated_data.pop("meetings", [])
-        assignment = Assignment.objects.create(**validated_data)
-        self._replace_meetings(assignment, meetings)
+        with transaction.atomic():
+            assignment = Assignment.objects.create(**validated_data)
+            self._replace_meetings(assignment, meetings)
         return assignment
 
     def update(self, instance, validated_data):
         meetings = validated_data.pop("meetings", None)
-        for field, value in validated_data.items():
-            setattr(instance, field, value)
-        instance.save()
-        if meetings is not None:
-            self._replace_meetings(instance, meetings)
+        with transaction.atomic():
+            for field, value in validated_data.items():
+                setattr(instance, field, value)
+            instance.save()
+            if meetings is not None:
+                self._replace_meetings(instance, meetings)
         return instance
 
 

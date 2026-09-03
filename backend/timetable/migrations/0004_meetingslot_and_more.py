@@ -64,7 +64,7 @@ class Migration(migrations.Migration):
             model_name='assignment',
             name='assignment_duration_slots_gte_1',
         ),
-        migrations.RunPython(split_assignments, migrations.RunPython.noop),
+        migrations.RunPython(split_assignments),
         migrations.RemoveField(
             model_name='assignment',
             name='duration_slots',

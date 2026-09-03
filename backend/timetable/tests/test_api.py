@@ -281,6 +281,21 @@ class AssignmentApiTests(ApiTestCase):
         self.assertEqual(len(response.data["meetings"]), 1)
         self.assertEqual(response.data["meetings"][0]["duration_slots"], 2)
 
+    def test_zero_duration_is_rejected(self):
+        subject_id, section_id = self._seed_ids()
+        self.auth(self.reg_token)
+        response = self.client.post(
+            "/api/assignments/",
+            self._payload(
+                self.prof.id,
+                subject_id,
+                section_id,
+                [{"mode": "sync", "duration_slots": 0}],
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
 
 class ScheduleViewTests(ApiTestCase):
     def _seed_and_generate(self):
