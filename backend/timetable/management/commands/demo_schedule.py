@@ -10,9 +10,9 @@ Two dataset sizes are available via ``--scale``:
 
 * ``normal`` (default): 7 professors (CS, IT, MATH and GE), 18 subjects
   (majors plus GE minors such as GEC101, PE101 and NSTP101), 10 sections
-  (first years included), 8 rooms and 34 assignments (52 weekly meetings).
-* ``large``: 11 professors, 23 subjects, 14 sections, 12 rooms and 50
-  assignments (77 weekly meetings).
+  (first years included), 8 rooms and 35 assignments (53 weekly meetings).
+* ``large``: 11 professors, 23 subjects, 14 sections, 12 rooms and 52
+  assignments (79 weekly meetings).
 
 Each run reconciles the database to the chosen scale: demo-managed subjects,
 sections, rooms, assignments and availability that belong to another scale
@@ -148,6 +148,7 @@ def _dataset(scale):
             ("demo_prof10", "GEC102", "BSIT-1A", [("sync", 1), ("async", 1)]),
             ("demo_prof10", "GEC102", "BSCS-1A", [("sync", 1), ("async", 1)]),
             ("demo_prof10", "GEC103", "BSIT-2A", [("sync", 1)]),
+            ("demo_prof10", "GEC103", "BSIT-2B", [("sync", 1)]),
             ("demo_prof10", "GEC104", "BSCS-2A", [("sync", 1)]),
             ("demo_prof10", "PE101", "BSIT-1A", [("sync", 1)]),
             ("demo_prof10", "PE101", "BSCS-1A", [("sync", 1)]),
@@ -202,6 +203,7 @@ def _dataset(scale):
             ("demo_prof11", "GEC101", "BSCS-1B", [("sync", 1)]),
             ("demo_prof11", "GEC102", "BSIT-1B", [("sync", 1), ("async", 1)]),
             ("demo_prof11", "GEC103", "BSCS-1B", [("sync", 1)]),
+            ("demo_prof11", "GEC104", "BSCS-2B", [("sync", 1)]),
             ("demo_prof11", "PE101", "BSIT-1B", [("sync", 1)]),
             ("demo_prof11", "NSTP101", "BSCS-1B", [("sync", 1)]),
         ],
