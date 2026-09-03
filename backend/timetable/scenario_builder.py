@@ -30,9 +30,12 @@ def build_scenario() -> Scenario:
     meeting_id = 1
     for assignment in Assignment.objects.select_related(
         "prof__department", "subject", "section"
-    ):
+    ).prefetch_related("meetings"):
         headcount = assignment.section.headcount
-        for _ in range(assignment.meetings_per_week):
+        department = (
+            assignment.prof.department.name if assignment.prof.department else ""
+        )
+        for slot in assignment.meetings.all():
             meetings.append(
                 Meeting(
                     meeting_id=meeting_id,
@@ -43,12 +46,9 @@ def build_scenario() -> Scenario:
                     section_id=assignment.section_id,
                     section_name=assignment.section.name,
                     section_headcount=headcount,
-                    duration_slots=assignment.duration_slots,
-                    department=(
-                        assignment.prof.department.name
-                        if assignment.prof.department
-                        else ""
-                    ),
+                    duration_slots=slot.duration_slots,
+                    department=department,
+                    mode=slot.mode,
                 )
             )
             meeting_id += 1

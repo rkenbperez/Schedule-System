@@ -4,15 +4,26 @@ from .models import (
     Assignment,
     AvailabilityWindow,
     BusyBlock,
+    MeetingSlot,
     ScheduledClass,
     ScheduleRun,
 )
 
 
+class MeetingSlotInline(admin.TabularInline):
+    model = MeetingSlot
+    extra = 0
+
+
 @admin.register(Assignment)
 class AssignmentAdmin(admin.ModelAdmin):
-    list_display = ("prof", "subject", "section", "meetings_per_week", "duration_slots")
+    list_display = ("prof", "subject", "section", "meeting_count")
     list_filter = ("prof", "section")
+    inlines = [MeetingSlotInline]
+
+    @admin.display(description="Meetings")
+    def meeting_count(self, obj):
+        return obj.meetings.count()
 
 
 @admin.register(AvailabilityWindow)
@@ -35,5 +46,5 @@ class ScheduleRunAdmin(admin.ModelAdmin):
 
 @admin.register(ScheduledClass)
 class ScheduledClassAdmin(admin.ModelAdmin):
-    list_display = ("run", "assignment", "room", "day", "start_time", "duration_slots")
+    list_display = ("run", "assignment", "room", "day", "start_time", "duration_slots", "mode")
     list_filter = ("day", "run")

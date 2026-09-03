@@ -65,6 +65,7 @@ class Meeting:
     section_headcount: int
     duration_slots: int
     department: str = ""
+    mode: str = ""
 
 
 @dataclass
@@ -116,6 +117,7 @@ class PlacedClass:
     start: int
     duration_slots: int
     room_id: int
+    mode: str = ""
 
 
 @dataclass
