@@ -8,10 +8,15 @@ result.
 
 Two dataset sizes are available via ``--scale``:
 
-* ``normal`` (default): 6 professors, ~12 subjects, 8 sections, 6 rooms and
-  ~16 assignments (~30-35 weekly meetings).
-* ``large``: 9 professors, ~17 subjects, 12 sections, 9 rooms and ~27
-  assignments (~45+ weekly meetings).
+* ``normal`` (default): 6 professors, 12 subjects, 8 sections, 6 rooms and
+  18 assignments (30 weekly meetings).
+* ``large``: 9 professors, 17 subjects, 12 sections, 9 rooms and 27
+  assignments (46 weekly meetings).
+
+Each run reconciles the database to the chosen scale: demo-managed subjects,
+sections, rooms, assignments and availability that belong to another scale
+are removed, so rerunning with ``--scale normal`` after ``--scale large``
+does not leave stale records behind.
 
 Usage (two terminals):
 
@@ -206,6 +211,7 @@ class Command(BaseCommand):
         registrar = self._seed_users(options["scale"])
         self._seed_catalog(options["scale"])
         self._seed_load_and_availability(options["scale"])
+        self._reconcile(options["scale"])
 
         self.stdout.write(f"Scale: {options['scale']}")
         self.stdout.write(f"Registrar: {registrar.username} / {DEMO_PASSWORD}")
@@ -356,6 +362,64 @@ class Command(BaseCommand):
         ScheduleRun.objects.all().delete()
         Assignment.objects.all().delete()
         AvailabilityWindow.objects.all().delete()
+
+    def _reconcile(self, scale):
+        """Drop demo-managed records that are not part of the requested scale.
+
+        The catalog seed only ever upserts the records the current dataset
+        declares, so rerunning with ``--scale normal`` after ``--scale large``
+        would otherwise leave the larger scale's subjects, sections, rooms,
+        assignments and availability windows behind. Only records whose names
+        the demo datasets manage are ever removed; user-created data (e.g. a
+        subject or room the registrar added manually) is left untouched.
+        """
+        data = _dataset(scale)
+
+        managed_subjects = set()
+        managed_sections = set()
+        managed_rooms = set()
+        managed_profs = set()
+        for other in ("normal", "large"):
+            other_data = _dataset(other)
+            managed_subjects.update(c for c, _ in other_data["subjects"])
+            managed_sections.update(n for n, _ in other_data["sections"])
+            managed_rooms.update(n for n, _, _ in other_data["rooms"])
+            managed_profs.update(other_data["availability"])
+
+        selected_subjects = {c for c, _ in data["subjects"]}
+        selected_sections = {n for n, _ in data["sections"]}
+        selected_rooms = {n for n, _, _ in data["rooms"]}
+        selected_profs = set(data["availability"])
+        selected_loads = {(u, c, s) for u, c, s, _ in data["loads"]}
+
+        AvailabilityWindow.objects.filter(
+            prof__user__username__in=managed_profs - selected_profs
+        ).delete()
+
+        for assignment in (
+            Assignment.objects.filter(prof__user__username__in=managed_profs)
+            .select_related("prof__user", "subject", "section")
+            .all()
+        ):
+            key = (
+                assignment.prof.user.username,
+                assignment.subject.code,
+                assignment.section.name,
+            )
+            if key not in selected_loads:
+                assignment.delete()
+
+        for code in managed_subjects - selected_subjects:
+            subject = Subject.objects.filter(code=code).first()
+            if subject and not Assignment.objects.filter(subject=subject).exists():
+                subject.delete()
+
+        for name in managed_sections - selected_sections:
+            section = Section.objects.filter(name=name).first()
+            if section and not Assignment.objects.filter(section=section).exists():
+                section.delete()
+
+        Room.objects.filter(name__in=managed_rooms - selected_rooms).delete()
 
     # -- HTTP + output -----------------------------------------------------
 
