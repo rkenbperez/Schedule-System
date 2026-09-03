@@ -229,6 +229,24 @@ class DepartmentSolverTests(SimpleTestCase):
         violations = hard_violations(scenario, placed)
         self.assertTrue(any("is for IT" in v for v in violations), violations)
 
+    def test_department_and_capacity_violations_reported_together(self):
+        rooms = [_room(1, 40, department="IT")]
+        meetings = [
+            _meeting(1, prof_id=1, headcount=60, department="CS")
+        ]
+        scenario = Scenario(
+            rooms=rooms,
+            meetings=meetings,
+            availability=[
+                Availability(prof_id=1, day=day, start=8 * 60, end=17 * 60)
+                for day in range(5)
+            ],
+        )
+        placed = {1: Placement(meeting_id=1, day=0, start=8 * 60, room_id=1)}
+        violations = hard_violations(scenario, placed)
+        self.assertTrue(any("is for IT" in v for v in violations), violations)
+        self.assertTrue(any("too small" in v for v in violations), violations)
+
     def test_blank_room_is_shared_across_departments(self):
         result = run("greedy", _department_scenario("CS", ""))
         self.assertTrue(result.feasible, result.violations)

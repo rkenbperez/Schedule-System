@@ -94,17 +94,18 @@ def hard_violations(scenario: Scenario, placed: Dict[int, Placement]) -> List[st
             violations.append(
                 f"{_label(meeting_map, meeting.meeting_id)} has no assigned room"
             )
-        elif not department_ok(scenario, meeting, room):
-            violations.append(
-                f"{_label(meeting_map, meeting.meeting_id)} room {room.name} is for "
-                f"{room.department} but {meeting.prof_label} is {meeting.department}"
-            )
-        elif room.capacity < meeting.section_headcount:
-            violations.append(
-                f"{_label(meeting_map, meeting.meeting_id)} room {room.name} "
-                f"(cap {room.capacity}) too small for section {meeting.section_name} "
-                f"(headcount {meeting.section_headcount})"
-            )
+        else:
+            if not department_ok(scenario, meeting, room):
+                violations.append(
+                    f"{_label(meeting_map, meeting.meeting_id)} room {room.name} is for "
+                    f"{room.department} but {meeting.prof_label} is {meeting.department}"
+                )
+            if room.capacity < meeting.section_headcount:
+                violations.append(
+                    f"{_label(meeting_map, meeting.meeting_id)} room {room.name} "
+                    f"(cap {room.capacity}) too small for section {meeting.section_name} "
+                    f"(headcount {meeting.section_headcount})"
+                )
 
         prof_windows = windows.get((meeting.prof_id, placement.day), [])
         if not any(

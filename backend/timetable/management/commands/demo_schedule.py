@@ -154,13 +154,17 @@ class Command(BaseCommand):
             ("R202", 40, "IT"),
             ("LAB1", 30, None),
         ]:
-            Room.objects.get_or_create(
+            room, created = Room.objects.get_or_create(
                 name=name,
                 defaults={
                     "capacity": capacity,
                     "department": department(dept_name) if dept_name else None,
                 },
             )
+            if not created:
+                room.capacity = capacity
+                room.department = department(dept_name) if dept_name else None
+                room.save(update_fields=["capacity", "department"])
 
     def _seed_load_and_availability(self):
         def prof(username):
