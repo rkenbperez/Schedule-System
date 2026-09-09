@@ -86,8 +86,24 @@ def legal_time_slots(
     return results
 
 
+def department_ok(scenario: Scenario, meeting: Meeting, room: RoomRef) -> bool:
+    """True when the room's department can host this professor's meeting.
+
+    A blank department on either side means \"no restriction\": a professor
+    with no department can teach anywhere, and a room with no department is a
+    general room usable by any department.
+    """
+    if not meeting.department or not room.department:
+        return True
+    return meeting.department.casefold() == room.department.casefold()
+
+
 def legal_rooms(scenario: Scenario, meeting: Meeting) -> List[RoomRef]:
-    return [r for r in scenario.rooms if r.capacity >= meeting.section_headcount]
+    return [
+        r
+        for r in scenario.rooms
+        if r.capacity >= meeting.section_headcount and department_ok(scenario, meeting, r)
+    ]
 
 
 def is_time_free(
@@ -136,5 +152,7 @@ def free_rooms(
     return [
         r
         for r in scenario.rooms
-        if r.capacity >= meeting.section_headcount and r.id not in busy_room_ids
+        if r.capacity >= meeting.section_headcount
+        and r.id not in busy_room_ids
+        and department_ok(scenario, meeting, r)
     ]

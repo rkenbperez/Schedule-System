@@ -1,15 +1,37 @@
-from datetime import time
+from datetime import datetime, time, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
-from catalog.models import Room, Section, Subject
-from timetable.models import Assignment, AvailabilityWindow, ScheduledClass, ScheduleRun
+from catalog.models import Department, Room, Section, Subject
+from timetable.models import (
+    Assignment,
+    AvailabilityWindow,
+    MeetingSlot,
+    ScheduledClass,
+    ScheduleRun,
+)
 from users.models import Professors
 
 User = get_user_model()
+
+
+def make_assignment(prof, subject, section, spec):
+    assignment = Assignment.objects.create(prof=prof, subject=subject, section=section)
+    MeetingSlot.objects.bulk_create(
+        [
+            MeetingSlot(
+                assignment=assignment,
+                order=order,
+                mode=mode,
+                duration_slots=duration,
+            )
+            for order, (mode, duration) in enumerate(spec, start=1)
+        ]
+    )
+    return assignment
 
 
 class ApiTestCase(APITestCase):
@@ -19,8 +41,9 @@ class ApiTestCase(APITestCase):
         )
         self.reg_token = Token.objects.create(user=self.registrar)
 
+        self.dept = Department.objects.create(name="CS")
         self.prof_user = User.objects.create_user(username="prof1", password="pass12345")
-        self.prof = Professors.objects.create(user=self.prof_user, department="CS")
+        self.prof = Professors.objects.create(user=self.prof_user, department=self.dept)
         self.prof_token = Token.objects.create(user=self.prof_user)
 
     def auth(self, token):
@@ -52,6 +75,34 @@ class CatalogApiTests(ApiTestCase):
         self.assertEqual(len(response.data["results"]), 1)
 
 
+class DepartmentApiTests(ApiTestCase):
+    def test_registrar_can_create_department(self):
+        self.auth(self.reg_token)
+        response = self.client.post("/api/departments/", {"name": "EE"})
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["name"], "EE")
+
+    def test_non_staff_cannot_write_department(self):
+        self.auth(self.prof_token)
+        response = self.client.post("/api/departments/", {"name": "EE"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_room_response_includes_department_name(self):
+        Room.objects.create(name="R101", capacity=40, department=self.dept)
+        self.auth(self.prof_token)
+        response = self.client.get("/api/rooms/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data[0]["department"], self.dept.id)
+        self.assertEqual(response.data[0]["department_name"], "CS")
+
+    def test_prof_response_includes_department_name(self):
+        self.auth(self.prof_token)
+        response = self.client.get("/api/profs/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data[0]["department"], self.dept.id)
+        self.assertEqual(response.data[0]["department_name"], "CS")
+
+
 class AvailabilityApiTests(ApiTestCase):
     def _payload(self, prof_id):
         return {
@@ -70,7 +121,7 @@ class AvailabilityApiTests(ApiTestCase):
 
     def test_prof_availability_is_forced_to_own(self):
         other_user = User.objects.create_user(username="prof2", password="pass12345")
-        other = Professors.objects.create(user=other_user, department="CS")
+        other = Professors.objects.create(user=other_user, department=self.dept)
 
         self.auth(self.prof_token)
         response = self.client.post("/api/availability-windows/", self._payload(other.id))
@@ -79,7 +130,7 @@ class AvailabilityApiTests(ApiTestCase):
 
     def test_prof_only_sees_own_availability(self):
         other_user = User.objects.create_user(username="prof2", password="pass12345")
-        other = Professors.objects.create(user=other_user, department="CS")
+        other = Professors.objects.create(user=other_user, department=self.dept)
         AvailabilityWindow.objects.create(
             prof=other, day=0, start_time=time(8, 0), end_time=time(17, 0)
         )
@@ -101,8 +152,8 @@ class ScheduleGenerateTests(ApiTestCase):
         subject = Subject.objects.create(code="CC101", title="Intro", units=3)
         section = Section.objects.create(name="BSIT-3A", headcount=30)
         Room.objects.create(name="R101", capacity=40)
-        Assignment.objects.create(
-            prof=self.prof, subject=subject, section=section, meetings_per_week=2
+        make_assignment(
+            self.prof, subject, section, [("sync", 1), ("async", 1)]
         )
         AvailabilityWindow.objects.create(
             prof=self.prof, day=0, start_time=time(8, 0), end_time=time(17, 0)
@@ -135,9 +186,7 @@ class ScheduleGenerateTests(ApiTestCase):
         subject = Subject.objects.create(code="CC101", title="Intro", units=3)
         section = Section.objects.create(name="BSIT-3A", headcount=30)
         Room.objects.create(name="R101", capacity=40)
-        Assignment.objects.create(
-            prof=self.prof, subject=subject, section=section, meetings_per_week=1
-        )
+        make_assignment(self.prof, subject, section, [("sync", 1)])
         # No availability -> infeasible.
         self.auth(self.reg_token)
         response = self.client.post("/api/schedules/generate", {"algorithm": "greedy"})
@@ -156,15 +205,180 @@ class ScheduleGenerateTests(ApiTestCase):
                 self.client.post("/api/schedules/generate", {"algorithm": "greedy"})
         self.assertEqual(ScheduleRun.objects.count(), 0)
 
+    def test_generate_places_classes_with_per_slot_duration_and_mode(self):
+        subject = Subject.objects.create(code="CC101", title="Intro", units=3)
+        section = Section.objects.create(name="BSIT-3A", headcount=30)
+        Room.objects.create(name="R101", capacity=40)
+        make_assignment(self.prof, subject, section, [("lab", 3), ("sync", 2)])
+        AvailabilityWindow.objects.create(
+            prof=self.prof, day=0, start_time=time(8, 0), end_time=time(17, 0)
+        )
+        self.auth(self.reg_token)
+        response = self.client.post("/api/schedules/generate", {"algorithm": "greedy"})
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["feasible"])
+        self.assertEqual(response.data["class_count"], 2)
+
+        run = ScheduleRun.objects.get(pk=response.data["run_id"])
+        durations = sorted(run.classes.values_list("duration_slots", flat=True))
+        self.assertEqual(durations, [2, 3])
+        modes = sorted(run.classes.values_list("mode", flat=True))
+        self.assertEqual(modes, ["lab", "sync"])
+
+
+class AssignmentApiTests(ApiTestCase):
+    def _payload(self, prof_id, subject_id, section_id, meetings):
+        return {
+            "prof": prof_id,
+            "subject": subject_id,
+            "section": section_id,
+            "meetings": meetings,
+        }
+
+    def _seed_ids(self):
+        subject = Subject.objects.create(code="CC101", title="Intro", units=3)
+        section = Section.objects.create(name="BSIT-3A", headcount=30)
+        return subject.id, section.id
+
+    def test_meeting_defaults_mode_sync(self):
+        subject_id, section_id = self._seed_ids()
+        self.auth(self.reg_token)
+        response = self.client.post(
+            "/api/assignments/",
+            self._payload(self.prof.id, subject_id, section_id, [{"duration_slots": 1}]),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(response.data["meetings"]), 1)
+        self.assertEqual(response.data["meetings"][0]["mode"], "sync")
+
+    def test_meeting_defaults_duration_from_mode(self):
+        subject_id, section_id = self._seed_ids()
+        self.auth(self.reg_token)
+        response = self.client.post(
+            "/api/assignments/",
+            self._payload(
+                self.prof.id,
+                subject_id,
+                section_id,
+                [{"mode": "sync"}, {"mode": "async"}],
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(response.data["meetings"]), 2)
+        self.assertEqual(response.data["meetings"][1]["mode"], "async")
+        self.assertEqual(response.data["meetings"][1]["duration_slots"], 1)
+
+    def test_explicit_duration_overrides_mode_default(self):
+        subject_id, section_id = self._seed_ids()
+        self.auth(self.reg_token)
+        response = self.client.post(
+            "/api/assignments/",
+            self._payload(
+                self.prof.id,
+                subject_id,
+                section_id,
+                [{"mode": "sync"}, {"mode": "async", "duration_slots": 2}],
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(response.data["meetings"]), 2)
+        self.assertEqual(response.data["meetings"][1]["mode"], "async")
+        self.assertEqual(response.data["meetings"][1]["duration_slots"], 2)
+
+    def test_zero_duration_is_rejected(self):
+        subject_id, section_id = self._seed_ids()
+        self.auth(self.reg_token)
+        response = self.client.post(
+            "/api/assignments/",
+            self._payload(
+                self.prof.id,
+                subject_id,
+                section_id,
+                [{"mode": "sync", "duration_slots": 0}],
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_empty_meetings_rejected(self):
+        subject_id, section_id = self._seed_ids()
+        self.auth(self.reg_token)
+        response = self.client.post(
+            "/api/assignments/",
+            self._payload(self.prof.id, subject_id, section_id, []),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_all_async_meetings_rejected(self):
+        subject_id, section_id = self._seed_ids()
+        self.auth(self.reg_token)
+        response = self.client.post(
+            "/api/assignments/",
+            self._payload(
+                self.prof.id,
+                subject_id,
+                section_id,
+                [{"mode": "async"}, {"mode": "async"}],
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_sync_plus_async_accepted(self):
+        subject_id, section_id = self._seed_ids()
+        self.auth(self.reg_token)
+        response = self.client.post(
+            "/api/assignments/",
+            self._payload(
+                self.prof.id,
+                subject_id,
+                section_id,
+                [{"mode": "sync"}, {"mode": "async"}],
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(response.data["meetings"]), 2)
+
+    def test_lab_satisfies_sync_requirement(self):
+        subject_id, section_id = self._seed_ids()
+        self.auth(self.reg_token)
+        response = self.client.post(
+            "/api/assignments/",
+            self._payload(
+                self.prof.id,
+                subject_id,
+                section_id,
+                [{"mode": "async"}, {"mode": "lab"}],
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(response.data["meetings"]), 2)
+
+    def test_update_omitting_meetings_rejects_legacy_all_async(self):
+        subject_id, section_id = self._seed_ids()
+        other_section = Section.objects.create(name="BSIT-3B", headcount=25)
+        assignment = make_assignment(self.prof, Subject.objects.get(pk=subject_id), Section.objects.get(pk=section_id), [("async", 1), ("async", 1)])
+        self.auth(self.reg_token)
+        response = self.client.patch(
+            f"/api/assignments/{assignment.pk}/",
+            {"section": other_section.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
 
 class ScheduleViewTests(ApiTestCase):
     def _seed_and_generate(self):
         subject = Subject.objects.create(code="CC101", title="Intro", units=3)
         section = Section.objects.create(name="BSIT-3A", headcount=30)
         Room.objects.create(name="R101", capacity=40)
-        Assignment.objects.create(
-            prof=self.prof, subject=subject, section=section, meetings_per_week=1
-        )
+        make_assignment(self.prof, subject, section, [("sync", 1)])
         AvailabilityWindow.objects.create(
             prof=self.prof, day=0, start_time=time(8, 0), end_time=time(17, 0)
         )
@@ -176,7 +390,7 @@ class ScheduleViewTests(ApiTestCase):
         run_id = self._seed_and_generate()
 
         other_user = User.objects.create_user(username="prof2", password="pass12345")
-        other = Professors.objects.create(user=other_user, department="CS")
+        other = Professors.objects.create(user=other_user, department=self.dept)
 
         self.auth(Token.objects.create(user=other_user))
         response = self.client.get(f"/api/schedules/runs/{run_id}/classes")
@@ -204,6 +418,21 @@ class ScheduleViewTests(ApiTestCase):
         self.assertEqual(response.status_code, 400)
         response = self.client.get(f"/api/schedules/runs/{run_id}/classes?day=abc")
         self.assertEqual(response.status_code, 400)
+
+    def test_classes_include_end_time(self):
+        run_id = self._seed_and_generate()
+        self.auth(self.reg_token)
+        response = self.client.get(f"/api/schedules/runs/{run_id}/classes")
+        self.assertEqual(response.status_code, 200)
+        for klass in response.data:
+            self.assertIn("end_time", klass)
+            start = datetime.strptime(klass["start_time"], "%H:%M:%S").time()
+            expected_end = (
+                datetime.combine(datetime.today(), start)
+                + timedelta(hours=klass["duration_slots"])
+            ).time()
+            actual_end = datetime.strptime(klass["end_time"], "%H:%M:%S").time()
+            self.assertEqual(actual_end, expected_end)
 
 
 class FullScheduleFlowTests(ApiTestCase):
@@ -234,22 +463,23 @@ class FullScheduleFlowTests(ApiTestCase):
         )
         sec1 = self._post("/api/sections/", {"name": "BSIT-3A", "headcount": 30})
         sec2 = self._post("/api/sections/", {"name": "BSIT-3B", "headcount": 25})
+        it_dept = self._post("/api/departments/", {"name": "IT"})
         room1 = self._post("/api/rooms/", {"name": "R201", "capacity": 40})
-        room2 = self._post("/api/rooms/", {"name": "R202", "capacity": 40})
+        room2 = self._post(
+            "/api/rooms/", {"name": "R202", "capacity": 40, "department": it_dept["id"]}
+        )
 
         prof2_user = User.objects.create_user(username="e2eprof2", password="pass12345")
         prof2 = self._post(
-            "/api/profs/", {"user": prof2_user.id, "department": "IT"}
+            "/api/profs/", {"user": prof2_user.id, "department": it_dept["id"]}
         )
-
         self._post(
             "/api/assignments/",
             {
                 "prof": self.prof.id,
                 "subject": subj1["id"],
                 "section": sec1["id"],
-                "meetings_per_week": 2,
-                "duration_slots": 1,
+                "meetings": [{"mode": "sync"}, {"mode": "async"}],
             },
         )
         self._post(
@@ -258,8 +488,7 @@ class FullScheduleFlowTests(ApiTestCase):
                 "prof": prof2["id"],
                 "subject": subj2["id"],
                 "section": sec2["id"],
-                "meetings_per_week": 2,
-                "duration_slots": 1,
+                "meetings": [{"mode": "sync"}, {"mode": "async"}],
             },
         )
 

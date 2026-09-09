@@ -33,6 +33,7 @@ class RoomRef:
     id: int
     name: str
     capacity: int
+    department: str = ""
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,8 @@ class Meeting:
     section_name: str
     section_headcount: int
     duration_slots: int
+    department: str = ""
+    mode: str = ""
 
 
 @dataclass
@@ -114,6 +117,7 @@ class PlacedClass:
     start: int
     duration_slots: int
     room_id: int
+    mode: str = ""
 
 
 @dataclass

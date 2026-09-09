@@ -7,6 +7,9 @@ from .models import Professors
 class ProfessorsSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
     full_name = serializers.CharField(source="user.get_full_name", read_only=True)
+    department_name = serializers.CharField(
+        source="department.name", read_only=True, default=""
+    )
 
     class Meta:
         model = Professors
@@ -16,6 +19,7 @@ class ProfessorsSerializer(serializers.ModelSerializer):
             "username",
             "full_name",
             "department",
+            "department_name",
             "max_daily_hours",
             "max_consecutive",
         ]

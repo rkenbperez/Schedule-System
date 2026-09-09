@@ -11,14 +11,43 @@ scheduling logic. A web frontend will talk to this API in a later phase.
 
 ## How it works
 
-1. A **registrar** enters the building blocks: subjects, sections (class groups),
-   rooms, and the professors who teach them.
-2. Each professor has an **assignment** (what they teach and to which section),
-   plus **availability windows** (when they can teach) and optional **busy
-   blocks** (times they are already occupied).
+1. A **registrar** enters the building blocks: departments, subjects, sections
+   (class groups), rooms, and the professors who teach them.
+2. Each professor has an **assignment** (what they teach and to which section)
+   made of one or more weekly **meetings**, plus **availability windows** (when
+   they can teach) and optional **busy blocks** (times they are already
+   occupied).
 3. The registrar asks the system to **generate a schedule**. The scheduler
    places every class into a time slot and a room while respecting the rules.
 4. The result is saved so it can be viewed or compared later.
+
+### Departments
+
+Every room and every professor can belong to a **department** (e.g. "CS",
+"IT", "Math"). The list of departments is managed by the registrar. A professor
+is only scheduled into rooms of their own department; a room with no department
+is a general/shared room any professor may use, and a professor with no
+department may teach anywhere.
+
+### Meeting modes
+
+Every weekly meeting of an assignment has a **mode** that suggests how long it
+runs:
+
+| Mode        | Default length |
+| ----------- | -------------- |
+| `async`     | 1 hour         |
+| `sync`      | 2 hours        |
+| `lab`       | 3 hours        |
+
+A professor's load can mix modes — for example one assignment may have a
+synchronous 2-hour lecture on Monday and an asynchronous 1-hour session on
+Wednesday. The registrar can override the default length of any meeting. The
+chosen mode and length are saved with each scheduled class so the output shows
+whether a class is asynchronous, synchronous, or a laboratory session.
+
+Every assignment must contain at least one synchronous (`sync` or `lab`)
+meeting — a weekly load that is entirely asynchronous is rejected.
 
 ### The three algorithms
 
@@ -32,8 +61,8 @@ research focus of the project: comparing how each one behaves.
 | `backtracking`  | Try a choice; if it leads to a dead end, step back and try another. Guarantees an answer if one exists, but can be slower. |
 
 For the same input, each algorithm reports how long it took (`runtime_ms`) and
-how good the result is (`soft_score`, lower is better). That comparison is what
-you show in your evaluation chapter.
+how good the result is (`soft_score`, lower is better), which makes them
+directly comparable for evaluation.
 
 ---
 
@@ -57,7 +86,7 @@ The API has two kinds of users.
 ```
 backend/
 ├── core/          Project settings and URL routing
-├── catalog/       Subjects, sections, and rooms
+├── catalog/       Departments, subjects, sections, and rooms
 ├── timetable/     Assignments, availability, schedules, and the algorithm engine
 ├── users/         Login and professor profiles
 └── manage.py      Django's command-line entry point
@@ -108,9 +137,14 @@ Follow the prompts to set a username and password. This account can log into
 Create the account through the Django admin site:
 
 1. Log into `/admin/` as the registrar.
-2. Go to **Users → Add user**.
-3. Set a username and password, and fill in the professor's details (department,
-   daily limits) in the **Professors** section on the same form.
+2. Create the departments first (**Departments → Add department**), e.g. "CS".
+3. Go to **Users → Add user**.
+4. Set a username and password, and fill in the professor's details
+   (department chosen from the list, daily limits) in the **Professors** section
+   on the same form.
+
+Rooms can be given a department in the same way (**Rooms → Add room**). Leave it
+blank for a shared/general room.
 
 ---
 
@@ -136,14 +170,31 @@ The response contains a `token`. Use it in the following steps.
 ### 2. Add data
 
 ```bash
+# Create a department and keep its id (from the response) for the next step
+curl -X POST http://127.0.0.1:8000/api/departments/ \
+  -H "Authorization: Token <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "CS"}'
+
+# The response body contains the new department's "id" (e.g. {"id": 5, "name": "CS"}).
+# Use that value (not a hard-coded 1) as the room's "department":
 curl -X POST http://127.0.0.1:8000/api/rooms/ \
   -H "Authorization: Token <token>" \
   -H "Content-Type: application/json" \
-  -d '{"name": "R101", "capacity": 40}'
+  -d '{"name": "R101", "capacity": 40, "department": 5}'
+
+# An assignment links a professor, subject, and section to one or more weekly
+# meetings. Each meeting has a mode; length defaults from the mode (async 1h,
+# sync 2h, lab 3h) but can be overridden per meeting with "duration_slots":
+curl -X POST http://127.0.0.1:8000/api/assignments/ \
+  -H "Authorization: Token <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"prof": 1, "subject": 1, "section": 1, "meetings": [{"mode": "sync"}, {"mode": "async"}]}'
 ```
 
-Similar endpoints exist for `subjects`, `sections`, `profs`, `assignments`,
-`availability-windows`, and `busy-blocks`.
+Similar endpoints exist for `subjects`, `sections`, `profs`,
+`availability-windows`, and `busy-blocks`. Room and professor responses also
+include a `department_name` for convenience.
 
 ### 3. Generate a schedule
 
@@ -177,8 +228,8 @@ See the Swagger UI for the complete list of endpoints and their fields.
 
 ## Running the demo
 
-A demo command seeds a small example and runs the whole flow against your
-running server.
+A demo command seeds a realistic example dataset and runs the whole flow against
+your running server.
 
 Open two terminals:
 
@@ -192,14 +243,27 @@ python manage.py runserver
 python manage.py demo_schedule
 ```
 
-It creates a dev-only demo registrar (`demoreg`) and three professors, seeds
-subjects, sections, rooms, assignments, and availability, then generates a
-schedule with all three algorithms and prints:
+It creates a dev-only demo registrar (`demoreg` / password `demo12345`) plus
+professors across the CS, IT, MATH and GE departments, and seeds subjects
+(including GE minors such as PE and NSTP), sections, rooms, assignments and
+availability. It then generates a schedule with all three algorithms and prints:
 
 - a comparison table (`feasible`, `runtime_ms`, `soft_score`, class count)
 - a readable Monday–Saturday grid of the best result
 
-Add `--reset` to delete existing schedules, assignments, and availability
+Two dataset sizes are available:
+
+| `--scale` | Professors | Assignments | Weekly meetings | Sections |
+| --------- | ---------- | ----------- | --------------- | -------- |
+| `normal` (default) | 7 | 35 | 53 | 10 |
+| `large` | 11 | 52 | 79 | 14 |
+
+```bash
+# Use the larger dataset (more sections and GE minors)
+python manage.py demo_schedule --scale large
+```
+
+Add `--reset` to delete existing demo schedules, assignments and availability
 before re-running:
 
 ```bash
@@ -217,12 +281,17 @@ python manage.py demo_schedule --reset
 python manage.py test
 ```
 
-The test suite (51 tests) checks, in plain terms:
+The test suite (80 tests) checks, in plain terms:
 
-- **Data rules** — invalid values (zero meetings, a time range that ends before
-  it starts, an unknown day) are rejected.
+- **Data rules** — invalid values (zero meeting length, a time range that ends
+  before it starts, an unknown day) are rejected, and every subject load must
+  include at least one synchronous (`sync` or `lab`) class per week.
 - **The algorithms** — each engine produces a valid schedule, and a tricky
   example shows where `backtracking` succeeds and `greedy` fails.
+- **Departments** — a professor is only placed into rooms of their own
+  department; unassigned rooms/professors stay flexible.
+- **Meeting modes** — each meeting carries its mode and length through to the
+  scheduled classes, and durations default from the chosen mode.
 - **Security** — only the registrar can generate schedules or change catalog
   data; professors can only manage their own availability.
 - **End to end** — one test runs the full journey over HTTP: login, create

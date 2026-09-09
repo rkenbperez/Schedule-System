@@ -48,6 +48,7 @@ def run(
             start=p.start,
             duration_slots=meeting_map[p.meeting_id].duration_slots,
             room_id=p.room_id,
+            mode=meeting_map[p.meeting_id].mode,
         )
         for p in placed.values()
     ]
