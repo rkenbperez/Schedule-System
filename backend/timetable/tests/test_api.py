@@ -49,7 +49,7 @@ class CatalogApiTests(ApiTestCase):
         self.auth(self.prof_token)
         response = self.client.get("/api/rooms/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
+        self.assertEqual(len(response.data["results"]), 1)
 
 
 class AvailabilityApiTests(ApiTestCase):
@@ -87,7 +87,7 @@ class AvailabilityApiTests(ApiTestCase):
         self.auth(self.prof_token)
         response = self.client.get("/api/availability-windows/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 0)
+        self.assertEqual(len(response.data["results"]), 0)
 
     def test_user_without_prof_profile_gets_403(self):
         no_prof = User.objects.create_user(username="noprofile", password="pass12345")

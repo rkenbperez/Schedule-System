@@ -1,7 +1,7 @@
 """Hard-constraint validation shared by all engines."""
 
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from .scenario import Meeting, Placement, Scenario, minutes_to_clock
 from .slots import (
@@ -18,6 +18,7 @@ MAX_CONSECUTIVE_HOURS = 3
 
 
 def _consecutive_hours_violation(
+    scenario: Scenario,
     meeting_map: Dict[int, Meeting],
     valid_placed: Dict[int, Placement],
     placement: Placement,
@@ -30,7 +31,7 @@ def _consecutive_hours_violation(
     # Collect all start positions for this professor on this day
     prof_placements: List[Tuple[int, int]] = []  # (start, duration_slots)
     for other_id, other_placement in valid_placed.items():
-        if meeting_map[other_id].prof_id != placement.meeting.prof_id:
+        if meeting_map[other_id].prof_id != meeting_map[placement.meeting_id].prof_id:
             continue
         if other_placement.day != day:
             continue
@@ -44,7 +45,6 @@ def _consecutive_hours_violation(
     # Check if this placement creates a consecutive run
     my_start = placement.start
     my_duration = minutes(scenario, meeting_map[placement.meeting_id].duration_slots)
-    my_end = my_start + my_duration
 
     # Build the set of occupied hour indices for this professor on this day
     occupied: set[int] = set()
@@ -188,7 +188,9 @@ def hard_violations(scenario: Scenario, placed: Dict[int, Placement]) -> List[st
                 f"on {_day(placement.day)}"
             )
 
-        consec_violation = _consecutive_hours_violation(meeting_map, valid_placed, placement)
+        consec_violation = _consecutive_hours_violation(
+            scenario, meeting_map, valid_placed, placement
+        )
         if consec_violation is not None:
             violations.append(consec_violation)
 
