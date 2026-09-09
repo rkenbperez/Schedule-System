@@ -14,6 +14,67 @@ from .slots import (
 )
 
 
+MAX_CONSECUTIVE_HOURS = 3
+
+
+def _consecutive_hours_violation(
+    meeting_map: Dict[int, Meeting],
+    valid_placed: Dict[int, Placement],
+    placement: Placement,
+    max_consecutive: int = MAX_CONSECUTIVE_HOURS,
+) -> str | None:
+    """Check if the given placement creates >max_consecutive hours of consecutive teaching."""
+    day = placement.day
+    day_start, day_end = scenario.day_ranges[day]
+
+    # Collect all start positions for this professor on this day
+    prof_placements: List[Tuple[int, int]] = []  # (start, duration_slots)
+    for other_id, other_placement in valid_placed.items():
+        if meeting_map[other_id].prof_id != placement.meeting.prof_id:
+            continue
+        if other_placement.day != day:
+            continue
+        other_meeting = meeting_map[other_id]
+        duration = minutes(scenario, other_meeting.duration_slots)
+        prof_placements.append((other_placement.start, duration))
+
+    # Sort by start time
+    prof_placements.sort(key=lambda x: x[0])
+
+    # Check if this placement creates a consecutive run
+    my_start = placement.start
+    my_duration = minutes(scenario, meeting_map[placement.meeting_id].duration_slots)
+    my_end = my_start + my_duration
+
+    # Build the set of occupied hour indices for this professor on this day
+    occupied: set[int] = set()
+    for start, dur in prof_placements:
+        if start >= day_start and start < day_end:
+            for slot in range(dur):
+                hour_idx = start // scenario.slot_minutes + slot
+                occupied.add(hour_idx)
+
+    # Add this placement's hours
+    for slot in range(my_duration):
+        hour_idx = my_start // scenario.slot_minutes + slot
+        occupied.add(hour_idx)
+
+    # Find the longest consecutive run starting from my_start
+    run_length = 0
+    hour = my_start // scenario.slot_minutes
+    while hour in occupied:
+        run_length += 1
+        hour += 1
+
+    if run_length > max_consecutive:
+        return (
+            f"{_label(meeting_map, placement.meeting_id)} teaches "
+            f"{run_length}-consecutive hours on {_day(day)} "
+            f"(exceeds {max_consecutive}-hour limit)"
+        )
+    return None
+
+
 def hard_violations(scenario: Scenario, placed: Dict[int, Placement]) -> List[str]:
     """Return a human-readable list of every hard-rule violation."""
     meeting_map = scenario.meeting_map()
@@ -126,6 +187,10 @@ def hard_violations(scenario: Scenario, placed: Dict[int, Placement]) -> List[st
                 f"({daily_minutes / 60:g}h > {max_hours[meeting.prof_id]}h) "
                 f"on {_day(placement.day)}"
             )
+
+        consec_violation = _consecutive_hours_violation(meeting_map, valid_placed, placement)
+        if consec_violation is not None:
+            violations.append(consec_violation)
 
     return violations
 
