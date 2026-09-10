@@ -158,6 +158,9 @@ class BusyBlockSerializer(serializers.ModelSerializer):
 
 class ScheduleRunSerializer(serializers.ModelSerializer):
     class_count = serializers.SerializerMethodField()
+    spread = serializers.SerializerMethodField()
+    consecutive = serializers.SerializerMethodField()
+    preferred = serializers.SerializerMethodField()
 
     class Meta:
         model = ScheduleRun
@@ -167,6 +170,9 @@ class ScheduleRunSerializer(serializers.ModelSerializer):
             "status",
             "runtime_ms",
             "soft_score",
+            "spread",
+            "consecutive",
+            "preferred",
             "created_by",
             "created_at",
             "class_count",
@@ -174,6 +180,15 @@ class ScheduleRunSerializer(serializers.ModelSerializer):
 
     def get_class_count(self, obj):
         return obj.classes.count()
+
+    def get_spread(self, obj):
+        return (getattr(obj, "breakdown", None) or {}).get("spread", 0.0)
+
+    def get_consecutive(self, obj):
+        return (getattr(obj, "breakdown", None) or {}).get("consecutive", 0.0)
+
+    def get_preferred(self, obj):
+        return (getattr(obj, "breakdown", None) or {}).get("preferred", 0.0)
 
 
 class ScheduledClassSerializer(serializers.ModelSerializer):
