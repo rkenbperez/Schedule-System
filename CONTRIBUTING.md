@@ -17,6 +17,8 @@ Team guide. Read once before your first push.
 ## First-time setup
     git clone https://github.com/rkenbperez/Schedule-System.git
     cd Schedule-System/backend
+    python3 -m venv .venv
+    .venv/bin/python -m pip install -r requirements.txt
     source .venv/bin/activate       # run INSIDE the backend/ folder
     python manage.py migrate
     python manage.py runserver

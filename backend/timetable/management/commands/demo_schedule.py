@@ -294,6 +294,11 @@ class Command(BaseCommand):
 
         self._print_comparison(results)
         best = self._pick_best(results)
+        if not best["feasible"]:
+            self.stdout.write("\nNo feasible schedule generated. Violations:")
+            for violation in best.get("violations", []):
+                self.stdout.write(f"  - {violation}")
+            return
         classes = self._http(
             base, "GET", f"/schedules/runs/{best['run_id']}/classes", headers=headers
         )
@@ -302,11 +307,16 @@ class Command(BaseCommand):
     # -- seeding -----------------------------------------------------------
 
     def _seed_users(self, scale):
-        registrar, created = User.objects.get_or_create(username="demoreg")
-        if created:
+        registrar, _ = User.objects.get_or_create(username="demoreg")
+        update_fields = []
+        if not registrar.is_staff:
             registrar.is_staff = True
+            update_fields.append("is_staff")
+        if not registrar.check_password(DEMO_PASSWORD):
             registrar.set_password(DEMO_PASSWORD)
-            registrar.save()
+            update_fields.append("password")
+        if update_fields:
+            registrar.save(update_fields=update_fields)
 
         data = _dataset(scale)
         departments = {
@@ -322,9 +332,13 @@ class Command(BaseCommand):
             if created:
                 user.set_password(DEMO_PASSWORD)
                 user.save()
-            Professors.objects.get_or_create(
+            professor, _ = Professors.objects.get_or_create(
                 user=user, defaults={"department": departments[prof_depts[username]]}
             )
+            department = departments[prof_depts[username]]
+            if professor.department_id != department.id:
+                professor.department = department
+                professor.save(update_fields=["department"])
 
         return registrar
 
@@ -482,7 +496,7 @@ class Command(BaseCommand):
         )
         if data is not None:
             request.add_header("Content-Type", "application/json")
-        with urllib.request.urlopen(request) as response:
+        with urllib.request.urlopen(request, timeout=60) as response:
             return json.loads(response.read().decode())
 
     def _print_result(self, algorithm, result):

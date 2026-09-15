@@ -270,8 +270,9 @@ before re-running:
 python manage.py demo_schedule --reset
 ```
 
-> The demo accounts exist only on your development machine. They are not
-> created on any deployed server.
+> By default, the command only runs in development. The `--allow-non-debug`
+> override can create fixed-password demo accounts on a deployed server; never
+> use this override in production.
 
 ---
 
@@ -281,7 +282,7 @@ python manage.py demo_schedule --reset
 python manage.py test
 ```
 
-The test suite (80 tests) checks, in plain terms:
+The test suite checks, in plain terms:
 
 - **Data rules** — invalid values (zero meeting length, a time range that ends
   before it starts, an unknown day) are rejected, and every subject load must

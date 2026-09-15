@@ -84,6 +84,8 @@ class Scenario:
         if self.slot_minutes < 1:
             raise ValueError("slot_minutes must be a positive integer")
         for day, (start, end) in self.day_ranges.items():
+            if day not in range(len(DAY_NAMES)):
+                raise ValueError(f"day_ranges key must be between 0 and 5, got {day}")
             if start < 0 or end <= start:
                 raise ValueError(
                     f"day_ranges[{day}] must have 0 <= start < end, got ({start}, {end})"

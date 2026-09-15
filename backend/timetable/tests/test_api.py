@@ -9,6 +9,7 @@ from catalog.models import Department, Room, Section, Subject
 from timetable.models import (
     Assignment,
     AvailabilityWindow,
+    BusyBlock,
     MeetingSlot,
     ScheduledClass,
     ScheduleRun,
@@ -54,6 +55,24 @@ class AuthTests(ApiTestCase):
     def test_unauthenticated_is_rejected(self):
         response = self.client.get("/api/rooms/")
         self.assertEqual(response.status_code, 401)
+
+    def test_api_root_lists_all_resources_once(self):
+        self.auth(self.prof_token)
+        response = self.client.get("/api/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            set(response.data),
+            {
+                "profs",
+                "rooms",
+                "subjects",
+                "sections",
+                "departments",
+                "assignments",
+                "availability-windows",
+                "busy-blocks",
+            },
+        )
 
 
 class CatalogApiTests(ApiTestCase):
@@ -146,6 +165,56 @@ class AvailabilityApiTests(ApiTestCase):
         response = self.client.post("/api/availability-windows/", self._payload(self.prof.id))
         self.assertEqual(response.status_code, 403)
 
+    def test_invalid_availability_range_returns_400(self):
+        self.auth(self.prof_token)
+        payload = self._payload(self.prof.id)
+        payload.update(start_time="17:00:00", end_time="17:00:00")
+        response = self.client.post("/api/availability-windows/", payload)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("end_time", response.data)
+
+    def test_prof_cannot_transfer_availability_on_update(self):
+        other_user = User.objects.create_user(username="prof2", password="pass12345")
+        other = Professors.objects.create(user=other_user, department=self.dept)
+        window = AvailabilityWindow.objects.create(
+            prof=self.prof, day=0, start_time=time(8, 0), end_time=time(17, 0)
+        )
+        self.auth(self.prof_token)
+        response = self.client.patch(
+            f"/api/availability-windows/{window.pk}/", {"prof": other.pk}
+        )
+        self.assertEqual(response.status_code, 200)
+        window.refresh_from_db()
+        self.assertEqual(window.prof, self.prof)
+
+    def test_invalid_busy_block_range_returns_400(self):
+        self.auth(self.prof_token)
+        response = self.client.post(
+            "/api/busy-blocks/",
+            {
+                "prof": self.prof.pk,
+                "day": 0,
+                "start_time": "13:00:00",
+                "end_time": "08:00:00",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("end_time", response.data)
+
+    def test_prof_cannot_transfer_busy_block_on_update(self):
+        other_user = User.objects.create_user(username="prof2", password="pass12345")
+        other = Professors.objects.create(user=other_user, department=self.dept)
+        block = BusyBlock.objects.create(
+            prof=self.prof, day=0, start_time=time(8, 0), end_time=time(9, 0)
+        )
+        self.auth(self.prof_token)
+        response = self.client.patch(
+            f"/api/busy-blocks/{block.pk}/", {"prof": other.pk}
+        )
+        self.assertEqual(response.status_code, 200)
+        block.refresh_from_db()
+        self.assertEqual(block.prof, self.prof)
+
 
 class ScheduleGenerateTests(ApiTestCase):
     def _seed(self):
@@ -164,13 +233,20 @@ class ScheduleGenerateTests(ApiTestCase):
         self.auth(self.reg_token)
         response = self.client.post("/api/schedules/generate", {"algorithm": "greedy"})
         self.assertEqual(response.status_code, 201)
-        self.assertFalse(response.data["feasible"])
-        self.assertIn("consecutive hours", str(response.data["violations"]))
+        self.assertTrue(response.data["feasible"])
+        self.assertFalse(response.data["violations"])
         self.assertEqual(response.data["class_count"], 2)
 
         run = ScheduleRun.objects.get(pk=response.data["run_id"])
         self.assertEqual(run.algorithm, "greedy")
         self.assertEqual(run.classes.count(), 2)
+        self.assertEqual(run.breakdown["total"], run.soft_score)
+
+        detail = self.client.get(f"/api/schedules/runs/{run.pk}")
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.data["spread"], run.breakdown["spread"])
+        self.assertEqual(detail.data["consecutive"], run.breakdown["consecutive"])
+        self.assertEqual(detail.data["preferred"], run.breakdown["preferred"])
 
     def test_generate_invalid_algorithm(self):
         self.auth(self.reg_token)
@@ -206,7 +282,7 @@ class ScheduleGenerateTests(ApiTestCase):
                 self.client.post("/api/schedules/generate", {"algorithm": "greedy"})
         self.assertEqual(ScheduleRun.objects.count(), 0)
 
-def test_generate_places_classes_with_per_slot_duration_and_mode(self):
+    def test_generate_places_classes_with_per_slot_duration_and_mode(self):
         subject = Subject.objects.create(code="CC101", title="Intro", units=3)
         section = Section.objects.create(name="BSIT-3A", headcount=30)
         Room.objects.create(name="R101", capacity=40)
@@ -224,6 +300,8 @@ def test_generate_places_classes_with_per_slot_duration_and_mode(self):
         run = ScheduleRun.objects.get(pk=response.data["run_id"])
         durations = sorted(run.classes.values_list("duration_slots", flat=True))
         modes = sorted(run.classes.values_list("mode", flat=True))
+        self.assertEqual(durations, [2, 3])
+        self.assertEqual(modes, ["lab", "sync"])
 
 
 class AssignmentApiTests(ApiTestCase):
@@ -515,8 +593,8 @@ class FullScheduleFlowTests(ApiTestCase):
             result = self._post(
                 "/api/schedules/generate", {"algorithm": algorithm}
             )
-            self.assertFalse(result["feasible"], result)
-            self.assertEqual(result["status"], ScheduleRun.Status.INFEASIBLE)
+            self.assertTrue(result["feasible"], result)
+            self.assertEqual(result["status"], ScheduleRun.Status.FEASIBLE)
             metrics[algorithm] = result
 
         for algorithm, result in metrics.items():
