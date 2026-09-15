@@ -119,41 +119,41 @@ def _dataset(scale):
             "demo_prof10": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
         },
         "loads": [
-            ("demo_prof1", "CC101", "BSIT-3A", [("sync", 1), ("async", 1)]),
+            ("demo_prof1", "CC101", "BSIT-3A", [("sync", 2), ("async", 1)]),
             ("demo_prof1", "CC102", "BSCS-3A", [("sync", 2)]),
-            ("demo_prof1", "CC104", "BSCS-4A", [("lab", 1), ("async", 1)]),
-            ("demo_prof4", "CS201", "BSCS-2A", [("sync", 1), ("lab", 1)]),
-            ("demo_prof4", "CC103", "BSIT-4A", [("sync", 1), ("async", 1)]),
-            ("demo_prof4", "CC101", "BSIT-2A", [("sync", 1)]),
-            ("demo_prof2", "IT101", "BSIT-3A", [("sync", 1), ("sync", 1)]),
-            ("demo_prof2", "IT102", "BSIT-2B", [("lab", 1)]),
-            ("demo_prof2", "IT103", "BSIT-2A", [("async", 1), ("sync", 1)]),
+            ("demo_prof1", "CC104", "BSCS-4A", [("lab", 3), ("async", 1)]),
+            ("demo_prof4", "CS201", "BSCS-2A", [("sync", 2), ("lab", 3)]),
+            ("demo_prof4", "CC103", "BSIT-4A", [("sync", 2), ("async", 1)]),
+            ("demo_prof4", "CC101", "BSIT-2A", [("sync", 2)]),
+            ("demo_prof2", "IT101", "BSIT-3A", [("sync", 2), ("sync", 2)]),
+            ("demo_prof2", "IT102", "BSIT-2B", [("lab", 3)]),
+            ("demo_prof2", "IT103", "BSIT-2A", [("async", 1), ("sync", 2)]),
             ("demo_prof5", "IT102", "BSIT-4A", [("sync", 2)]),
-            ("demo_prof5", "IT101", "BSIT-3B", [("sync", 1), ("async", 1)]),
-            ("demo_prof5", "IT103", "BSCS-3A", [("sync", 1), ("lab", 1)]),
-            ("demo_prof3", "MATH101", "BSCS-2A", [("sync", 1)]),
-            ("demo_prof3", "MATH201", "BSIT-3A", [("sync", 1), ("lab", 1)]),
+            ("demo_prof5", "IT101", "BSIT-3B", [("sync", 2), ("async", 1)]),
+            ("demo_prof5", "IT103", "BSCS-3A", [("sync", 2), ("lab", 3)]),
+            ("demo_prof3", "MATH101", "BSCS-2A", [("sync", 2)]),
+            ("demo_prof3", "MATH201", "BSIT-3A", [("sync", 2), ("lab", 3)]),
             ("demo_prof3", "MATH202", "BSCS-3A", [("sync", 2), ("async", 1)]),
-            ("demo_prof6", "MATH203", "BSIT-2B", [("sync", 1), ("sync", 1)]),
-            ("demo_prof6", "MATH101", "BSIT-4A", [("lab", 1)]),
-            ("demo_prof6", "MATH201", "BSIT-2A", [("sync", 1), ("async", 1)]),
-            ("demo_prof1", "CC101", "BSIT-1A", [("sync", 1), ("lab", 1)]),
-            ("demo_prof4", "CC102", "BSCS-1A", [("sync", 1), ("async", 1)]),
-            ("demo_prof3", "MATH101", "BSIT-1A", [("sync", 1), ("sync", 1)]),
-            ("demo_prof6", "MATH203", "BSCS-1A", [("sync", 1), ("sync", 1)]),
-            ("demo_prof2", "IT101", "BSIT-1A", [("sync", 1)]),
-            ("demo_prof5", "IT102", "BSCS-1A", [("lab", 1)]),
-            ("demo_prof10", "GEC101", "BSIT-1A", [("sync", 1)]),
-            ("demo_prof10", "GEC101", "BSCS-1A", [("sync", 1)]),
-            ("demo_prof10", "GEC102", "BSIT-1A", [("sync", 1), ("async", 1)]),
-            ("demo_prof10", "GEC102", "BSCS-1A", [("sync", 1), ("async", 1)]),
-            ("demo_prof10", "GEC103", "BSIT-2A", [("sync", 1)]),
-            ("demo_prof10", "GEC103", "BSIT-2B", [("sync", 1)]),
-            ("demo_prof10", "GEC104", "BSCS-2A", [("sync", 1)]),
-            ("demo_prof10", "PE101", "BSIT-1A", [("sync", 1)]),
-            ("demo_prof10", "PE101", "BSCS-1A", [("sync", 1)]),
-            ("demo_prof10", "NSTP101", "BSIT-1A", [("sync", 1)]),
-            ("demo_prof10", "NSTP101", "BSCS-1A", [("sync", 1)]),
+            ("demo_prof6", "MATH203", "BSIT-2B", [("sync", 2), ("sync", 2)]),
+            ("demo_prof6", "MATH101", "BSIT-4A", [("lab", 3)]),
+            ("demo_prof6", "MATH201", "BSIT-2A", [("sync", 2), ("async", 1)]),
+            ("demo_prof1", "CC101", "BSIT-1A", [("sync", 2), ("lab", 3)]),
+            ("demo_prof4", "CC102", "BSCS-1A", [("sync", 2), ("async", 1)]),
+            ("demo_prof3", "MATH101", "BSIT-1A", [("sync", 2), ("sync", 2)]),
+            ("demo_prof6", "MATH203", "BSCS-1A", [("sync", 2), ("sync", 2)]),
+            ("demo_prof2", "IT101", "BSIT-1A", [("sync", 2)]),
+            ("demo_prof5", "IT102", "BSCS-1A", [("lab", 3)]),
+            ("demo_prof10", "GEC101", "BSIT-1A", [("sync", 2)]),
+            ("demo_prof10", "GEC101", "BSCS-1A", [("sync", 2)]),
+            ("demo_prof10", "GEC102", "BSIT-1A", [("sync", 2), ("async", 1)]),
+            ("demo_prof10", "GEC102", "BSCS-1A", [("sync", 2), ("async", 1)]),
+            ("demo_prof10", "GEC103", "BSIT-2A", [("sync", 2)]),
+            ("demo_prof10", "GEC103", "BSIT-2B", [("sync", 2)]),
+            ("demo_prof10", "GEC104", "BSCS-2A", [("sync", 2)]),
+            ("demo_prof10", "PE101", "BSIT-1A", [("sync", 2)]),
+            ("demo_prof10", "PE101", "BSCS-1A", [("sync", 2)]),
+            ("demo_prof10", "NSTP101", "BSIT-1A", [("sync", 2)]),
+            ("demo_prof10", "NSTP101", "BSCS-1A", [("sync", 2)]),
         ],
     }
 
@@ -190,22 +190,22 @@ def _dataset(scale):
         "loads": normal["loads"]
         + [
             ("demo_prof7", "CC104", "BSIT-3B", [("sync", 2)]),
-            ("demo_prof7", "CS202", "BSCS-2B", [("sync", 1), ("lab", 1), ("async", 1)]),
-            ("demo_prof7", "CS203", "BSCS-4A", [("sync", 1), ("sync", 1)]),
-            ("demo_prof7", "CC102", "BSCS-1B", [("sync", 1), ("async", 1)]),
-            ("demo_prof8", "IT104", "BSIT-1A", [("sync", 1), ("lab", 1)]),
+            ("demo_prof7", "CS202", "BSCS-2B", [("sync", 2), ("lab", 3), ("async", 1)]),
+            ("demo_prof7", "CS203", "BSCS-4A", [("sync", 2), ("sync", 2)]),
+            ("demo_prof7", "CC102", "BSCS-1B", [("sync", 2), ("async", 1)]),
+            ("demo_prof8", "IT104", "BSIT-1A", [("sync", 2), ("lab", 3)]),
             ("demo_prof8", "IT105", "BSIT-1B", [("sync", 2), ("async", 1)]),
-            ("demo_prof8", "IT101", "BSIT-4B", [("sync", 1)]),
-            ("demo_prof9", "MATH204", "BSIT-1A", [("sync", 1), ("lab", 1)]),
-            ("demo_prof9", "MATH202", "BSIT-1B", [("sync", 1), ("async", 1)]),
+            ("demo_prof8", "IT101", "BSIT-4B", [("sync", 2)]),
+            ("demo_prof9", "MATH204", "BSIT-1A", [("sync", 2), ("lab", 3)]),
+            ("demo_prof9", "MATH202", "BSIT-1B", [("sync", 2), ("async", 1)]),
             ("demo_prof9", "MATH203", "BSIT-4B", [("sync", 2)]),
-            ("demo_prof11", "GEC101", "BSIT-1B", [("sync", 1)]),
-            ("demo_prof11", "GEC101", "BSCS-1B", [("sync", 1)]),
-            ("demo_prof11", "GEC102", "BSIT-1B", [("sync", 1), ("async", 1)]),
-            ("demo_prof11", "GEC103", "BSCS-1B", [("sync", 1)]),
-            ("demo_prof11", "GEC104", "BSCS-2B", [("sync", 1)]),
-            ("demo_prof11", "PE101", "BSIT-1B", [("sync", 1)]),
-            ("demo_prof11", "NSTP101", "BSCS-1B", [("sync", 1)]),
+            ("demo_prof11", "GEC101", "BSIT-1B", [("sync", 2)]),
+            ("demo_prof11", "GEC101", "BSCS-1B", [("sync", 2)]),
+            ("demo_prof11", "GEC102", "BSIT-1B", [("sync", 2), ("async", 1)]),
+            ("demo_prof11", "GEC103", "BSCS-1B", [("sync", 2)]),
+            ("demo_prof11", "GEC104", "BSCS-2B", [("sync", 2)]),
+            ("demo_prof11", "PE101", "BSIT-1B", [("sync", 2)]),
+            ("demo_prof11", "NSTP101", "BSCS-1B", [("sync", 2)]),
         ],
     }
 
@@ -242,6 +242,18 @@ class Command(BaseCommand):
             choices=["normal", "large"],
             default="normal",
             help="Demo dataset size: 'normal' (default) or 'large'.",
+        )
+        parser.add_argument(
+            "--algorithm",
+            choices=ALGORITHMS + ["all"],
+            default="all",
+            help="Algorithm to run: 'greedy', 'min_conflicts', 'backtracking', or 'all' (default).",
+        )
+        parser.add_argument(
+            "--time-limit",
+            type=float,
+            default=30.0,
+            help="Time limit in seconds for each algorithm (default: 30).",
         )
 
     def handle(self, *args, **options):
@@ -280,20 +292,33 @@ class Command(BaseCommand):
 
         headers = {"Authorization": f"Token {token}"}
 
+        # Determine which algorithms to run
+        selected_algo = options["algorithm"]
+        if selected_algo == "all":
+            algorithms_to_run = ALGORITHMS
+        else:
+            algorithms_to_run = [selected_algo]
+
+        time_limit = options["time_limit"]
+
         results = {}
-        for algorithm in ALGORITHMS:
+        for algorithm in algorithms_to_run:
             result = self._http(
                 base,
                 "POST",
                 "/schedules/generate",
-                {"algorithm": algorithm, "time_limit_s": 30},
+                {"algorithm": algorithm, "time_limit_s": time_limit},
                 headers,
             )
             results[algorithm] = result
             self._print_result(algorithm, result)
 
-        self._print_comparison(results)
-        best = self._pick_best(results)
+        if len(algorithms_to_run) > 1:
+            self._print_comparison(results)
+            best = self._pick_best(results)
+        else:
+            best = results[algorithms_to_run[0]]
+
         classes = self._http(
             base, "GET", f"/schedules/runs/{best['run_id']}/classes", headers=headers
         )
@@ -317,14 +342,38 @@ class Command(BaseCommand):
         for username, code, _sec, _spec in data["loads"]:
             if username not in prof_depts:
                 prof_depts[username] = data["dept_by_code"][code]
+
+        # Professors with heavy consecutive loads need higher max_consecutive
+        prof_max_consecutive = {
+            "demo_prof1": 8,   # CS - multiple back-to-back
+            "demo_prof2": 8,   # IT - multiple back-to-back
+            "demo_prof3": 8,   # MATH - multiple back-to-back
+            "demo_prof4": 8,   # CS - multiple back-to-back
+            "demo_prof5": 8,   # IT - multiple back-to-back
+            "demo_prof6": 8,   # MATH - 7 consecutive on Monday
+            "demo_prof7": 8,   # IT/CS - 8 consecutive on Monday (large scale)
+            "demo_prof8": 6,   # IT
+            "demo_prof9": 8,   # MATH - 8 consecutive with 3hr labs (large scale)
+            "demo_prof10": 8,  # GE - teaches all day Mon-Fri
+            "demo_prof11": 8,  # GE - 8 consecutive with new durations
+        }
+
         for username in data["availability"]:
             user, created = User.objects.get_or_create(username=username)
             if created:
                 user.set_password(DEMO_PASSWORD)
                 user.save()
-            Professors.objects.get_or_create(
-                user=user, defaults={"department": departments[prof_depts[username]]}
+            prof, _ = Professors.objects.get_or_create(
+                user=user,
+                defaults={
+                    "department": departments[prof_depts[username]],
+                    "max_consecutive": prof_max_consecutive.get(username, 4),
+                },
             )
+            # Update max_consecutive for existing professors
+            prof.max_consecutive = prof_max_consecutive.get(username, 4)
+            prof.department = departments[prof_depts[username]]
+            prof.save()
 
         return registrar
 
@@ -491,6 +540,11 @@ class Command(BaseCommand):
             f"runtime_ms={result['runtime_ms']:.2f} "
             f"soft_score={result['soft_score']} classes={result['class_count']}"
         )
+        if result.get("violations"):
+            for v in result["violations"][:5]:
+                self.stdout.write(f"  VIOLATION: {v}")
+            if len(result["violations"]) > 5:
+                self.stdout.write(f"  ... and {len(result['violations']) - 5} more")
 
     def _print_comparison(self, results):
         self.stdout.write("\n=== comparison ===")
