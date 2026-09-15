@@ -59,4 +59,8 @@ coverage.xml
 *.swp
 *.swo
 .DS_Store
-.gstack/
+
+# ==========================================
+# Personal notes (not for the team/public repo)
+# ==========================================
+PLAN.md
