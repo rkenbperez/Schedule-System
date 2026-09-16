@@ -40,3 +40,11 @@ class IsOwnerOrRegistrar(permissions.BasePermission):
         if request.user.is_staff:
             return True
         return obj.prof.user == request.user
+
+
+class IsStudent(permissions.BasePermission):
+    # Future use - student role explicitly denied access to protected endpoints
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated 
+                   and not request.user.is_staff 
+                   and not hasattr(request.user, 'prof'))
