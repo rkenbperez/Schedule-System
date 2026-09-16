@@ -36,11 +36,13 @@ def backtracking(scenario: Scenario, time_limit_s: float = 30.0) -> Dict[int, Pl
         return time.monotonic() - start_time >= time_limit_s
 
     def search(placed: Dict[int, Placement]) -> Optional[Dict[int, Placement]]:
+        nonlocal best_partial
+
         if timed_out():
             return None
 
         if len(placed) > len(best_partial):
-            best_partial.update(placed)
+            best_partial = dict(placed)
 
         if len(placed) == len(meetings):
             return dict(placed)

@@ -147,6 +147,15 @@ class AvailabilityWindowSerializer(serializers.ModelSerializer):
             "is_preferred",
         ]
 
+    def validate(self, attrs):
+        start = attrs.get("start_time", getattr(self.instance, "start_time", None))
+        end = attrs.get("end_time", getattr(self.instance, "end_time", None))
+        if start is not None and end is not None and start >= end:
+            raise serializers.ValidationError(
+                {"end_time": "End time must be later than start time."}
+            )
+        return attrs
+
 
 class BusyBlockSerializer(serializers.ModelSerializer):
     day_display = serializers.CharField(source="get_day_display", read_only=True)
@@ -154,6 +163,15 @@ class BusyBlockSerializer(serializers.ModelSerializer):
     class Meta:
         model = BusyBlock
         fields = ["id", "prof", "day", "day_display", "start_time", "end_time"]
+
+    def validate(self, attrs):
+        start = attrs.get("start_time", getattr(self.instance, "start_time", None))
+        end = attrs.get("end_time", getattr(self.instance, "end_time", None))
+        if start is not None and end is not None and start >= end:
+            raise serializers.ValidationError(
+                {"end_time": "End time must be later than start time."}
+            )
+        return attrs
 
 
 class ScheduleRunSerializer(serializers.ModelSerializer):

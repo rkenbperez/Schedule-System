@@ -1,7 +1,11 @@
+from unittest.mock import patch
+
 from django.test import SimpleTestCase
 
 from timetable.engines import run
 from timetable.engines.constraints import hard_violations
+from timetable.engines.backtracking import backtracking
+from timetable.engines.min_conflicts import _conflicted_meetings
 from timetable.engines.scenario import (
     Availability,
     Meeting,
@@ -98,6 +102,35 @@ class BacktrackingEngineTests(SimpleTestCase):
         self.assertTrue(result.feasible, result.violations)
         self.assertEqual(len(result.classes), 3)
 
+    def test_best_partial_is_one_coherent_branch(self):
+        meetings = [_meeting(mid, prof_id=mid, section_id=mid) for mid in range(1, 5)]
+        scenario = Scenario(rooms=[_room(1)], meetings=meetings)
+
+        def candidates(_scenario, placed, meeting):
+            first = placed.get(1)
+            if first is None:
+                return [(0, 0), (0, 60)] if meeting.meeting_id == 1 else [(0, 0)] * 3
+            if first.start == 0:
+                if meeting.meeting_id == 2:
+                    return [(0, 120)]
+                if 2 in placed and meeting.meeting_id == 3:
+                    return []
+                return [(0, 0)] * 2
+            if meeting.meeting_id == 3:
+                return [(0, 180)]
+            if 3 in placed and meeting.meeting_id == 4:
+                return [(0, 240)]
+            if 4 in placed and meeting.meeting_id == 2:
+                return []
+            return [(0, 0)] * 2
+
+        with patch("timetable.engines.backtracking._candidates", side_effect=candidates), patch(
+            "timetable.engines.backtracking.free_rooms", return_value=[scenario.rooms[0]]
+        ):
+            partial = backtracking(scenario)
+
+        self.assertEqual(set(partial), {1, 3, 4})
+
 
 class MinConflictsEngineTests(SimpleTestCase):
     def test_min_conflicts_reaches_feasible_on_loose_scenario(self):
@@ -105,11 +138,32 @@ class MinConflictsEngineTests(SimpleTestCase):
         result = run("min_conflicts", scenario, seed=0)
         self.assertTrue(result.feasible, result.violations)
 
+    def test_consecutive_limit_keeps_search_conflicted(self):
+        meetings = [
+            _meeting(mid, prof_id=1, section_id=mid) for mid in range(1, 6)
+        ]
+        scenario = Scenario(
+            rooms=[_room(1)],
+            meetings=meetings,
+            availability=[Availability(prof_id=1, day=0, start=7 * 60, end=19 * 60)],
+        )
+        placed = {
+            mid: Placement(
+                meeting_id=mid, day=0, start=(6 + mid) * 60, room_id=1
+            )
+            for mid in range(1, 6)
+        }
+        self.assertTrue(_conflicted_meetings(scenario, placed))
+
 
 class ConstraintValidationTests(SimpleTestCase):
     def test_slot_minutes_zero_rejected(self):
         with self.assertRaises(ValueError):
             Scenario(slot_minutes=0)
+
+    def test_invalid_day_range_key_rejected(self):
+        with self.assertRaises(ValueError):
+            Scenario(day_ranges={6: (7 * 60, 19 * 60)})
 
     def test_out_of_hours_placement_detected(self):
         scenario = Scenario(
@@ -130,6 +184,50 @@ class ConstraintValidationTests(SimpleTestCase):
         placed = {1: Placement(meeting_id=1, day=0, start=8 * 60 + 30, room_id=1)}
         violations = hard_violations(scenario, placed)
         self.assertTrue(any("not aligned" in v for v in violations))
+
+    def test_alignment_is_relative_to_day_start(self):
+        scenario = Scenario(
+            slot_minutes=45,
+            day_ranges={0: (7 * 60, 19 * 60)},
+            rooms=[_room(1, 30)],
+            meetings=[_meeting(1, prof_id=1)],
+            availability=[Availability(prof_id=1, day=0, start=7 * 60, end=19 * 60)],
+        )
+        aligned = {1: Placement(meeting_id=1, day=0, start=7 * 60, room_id=1)}
+        misaligned = {
+            1: Placement(meeting_id=1, day=0, start=7 * 60 + 30, room_id=1)
+        }
+        self.assertFalse(any("not aligned" in v for v in hard_violations(scenario, aligned)))
+        self.assertTrue(any("not aligned" in v for v in hard_violations(scenario, misaligned)))
+
+    def test_consecutive_limit_uses_slot_duration(self):
+        meetings = [
+            _meeting(mid, prof_id=1, section_id=mid) for mid in range(1, 6)
+        ]
+        scenario = Scenario(
+            slot_minutes=45,
+            day_ranges={0: (7 * 60, 19 * 60)},
+            rooms=[_room(1)],
+            meetings=meetings,
+            availability=[Availability(prof_id=1, day=0, start=7 * 60, end=19 * 60)],
+        )
+        placed = {
+            mid: Placement(
+                meeting_id=mid,
+                day=0,
+                start=7 * 60 + (mid - 1) * 45,
+                room_id=1,
+            )
+            for mid in range(1, 5)
+        }
+        four_slots = hard_violations(scenario, placed)
+        self.assertFalse(any("consecutive hours" in v for v in four_slots))
+
+        placed[5] = Placement(
+            meeting_id=5, day=0, start=7 * 60 + 4 * 45, room_id=1
+        )
+        five_slots = hard_violations(scenario, placed)
+        self.assertTrue(any("consecutive hours" in v for v in five_slots))
 
     def test_unknown_day_does_not_crash(self):
         scenario = Scenario(

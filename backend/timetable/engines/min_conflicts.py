@@ -14,6 +14,23 @@ from .scenario import Meeting, Placement, Scenario
 from .slots import legal_rooms, legal_time_slots
 
 
+def _combined_conflicts(
+    scenario: Scenario,
+    remaining: Dict[int, Placement],
+    meeting: Meeting,
+    day: int,
+    start: int,
+    room_id: int,
+) -> int:
+    candidate = dict(remaining)
+    candidate[meeting.meeting_id] = Placement(
+        meeting_id=meeting.meeting_id, day=day, start=start, room_id=room_id
+    )
+    return count_conflicts(
+        scenario, remaining, meeting, day, start, room_id
+    ) + len(hard_violations(scenario, candidate))
+
+
 def _initial_assignment(
     scenario: Scenario, rng: random.Random, deadline: float
 ) -> Dict[int, Placement]:
@@ -40,7 +57,14 @@ def _conflicted_meetings(scenario: Scenario, placed: Dict[int, Placement]) -> li
         meeting = meeting_map[meeting_id]
         placement = placed[meeting_id]
         remaining = {k: v for k, v in placed.items() if k != meeting_id}
-        if count_conflicts(scenario, remaining, meeting, placement.day, placement.start, placement.room_id) > 0:
+        if _combined_conflicts(
+            scenario,
+            remaining,
+            meeting,
+            placement.day,
+            placement.start,
+            placement.room_id,
+        ) > 0:
             conflicted.add(meeting_id)
     return list(conflicted)
 
@@ -75,7 +99,7 @@ def min_conflicts(
         best_candidates = []
         for day, start in legal_time_slots(scenario, meeting, remaining):
             for room in legal_rooms(scenario, meeting):
-                conflicts = count_conflicts(
+                conflicts = _combined_conflicts(
                     scenario, remaining, meeting, day, start, room.id
                 )
                 if best_conflicts is None or conflicts < best_conflicts:

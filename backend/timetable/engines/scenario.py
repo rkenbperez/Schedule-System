@@ -75,7 +75,6 @@ class Scenario:
     availability: List[Availability] = field(default_factory=list)
     busy: List[Busy] = field(default_factory=list)
     prof_daily_hours: Dict[int, int] = field(default_factory=dict)
-    prof_max_consecutive: Dict[int, int] = field(default_factory=dict)
     day_ranges: Dict[int, Tuple[int, int]] = field(
         default_factory=lambda: dict(DEFAULT_DAY_RANGES)
     )
@@ -85,6 +84,8 @@ class Scenario:
         if self.slot_minutes < 1:
             raise ValueError("slot_minutes must be a positive integer")
         for day, (start, end) in self.day_ranges.items():
+            if day not in range(len(DAY_NAMES)):
+                raise ValueError(f"day_ranges key must be between 0 and 5, got {day}")
             if start < 0 or end <= start:
                 raise ValueError(
                     f"day_ranges[{day}] must have 0 <= start < end, got ({start}, {end})"
@@ -98,9 +99,6 @@ class Scenario:
 
     def max_daily_hours(self, prof_id: int) -> int:
         return self.prof_daily_hours.get(prof_id, 8)
-
-    def max_consecutive(self, prof_id: int) -> int:
-        return self.prof_max_consecutive.get(prof_id, 3)
 
 
 @dataclass(frozen=True)
