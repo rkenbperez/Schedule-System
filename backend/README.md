@@ -198,6 +198,12 @@ curl -X POST http://127.0.0.1:8000/api/token/verify/ \
   -d '{"token": "<access-token>"}'
 ```
 
+**JWT Settings (in `core/settings.py`):**
+- Access token lifetime: 1 hour
+- Refresh token lifetime: 7 days
+- Rotate refresh tokens on use
+- Blacklist old refresh tokens after rotation
+
 JWT settings (in `core/settings.py`):
 - Access token lifetime: 1 hour
 - Refresh token lifetime: 7 days
@@ -310,16 +316,20 @@ availability. It then generates a schedule with all three algorithms and prints:
 - a comparison table (`feasible`, `runtime_ms`, `soft_score`, class count)
 - a readable Monday–Saturday grid of the best result
 
-Two dataset sizes are available:
+Three dataset sizes are available:
 
 | `--scale` | Professors | Assignments | Weekly meetings | Sections |
 | --------- | ---------- | ----------- | --------------- | -------- |
 | `normal` (default) | 7 | 35 | 53 | 10 |
 | `large` | 11 | 52 | 79 | 14 |
+| `full` | 16 | 159 | ~180 | 24 |
 
 ```bash
 # Use the larger dataset (more sections and GE minors)
 python manage.py demo_schedule --scale large
+
+# Use the full dataset (near-complete realistic schedules for all sections)
+python manage.py demo_schedule --scale full
 ```
 
 Add `--reset` to delete existing demo schedules, assignments and availability
@@ -329,6 +339,12 @@ before re-running:
 python manage.py demo_schedule --reset
 ```
 
+**Filter by section (new):**
+```bash
+# Show schedule for a specific section with formatted output
+python manage.py demo_schedule --scale full --section BSIT-3A --algorithm min_conflicts --time-limit 300
+```
+
 **CLI options:**
 ```bash
 # Run specific algorithm
@@ -336,9 +352,71 @@ python manage.py demo_schedule --algorithm greedy --time-limit 10
 python manage.py demo_schedule --algorithm min_conflicts --time-limit 60
 python manage.py demo_schedule --algorithm backtracking
 
-# Run all (default)
+# Run all (default varies by scale)
 python manage.py demo_schedule --algorithm all --time-limit 30
 ```
+
+**Smart defaults per scale:**
+| Scale | Default Algorithm | Default Time Limit |
+|-------|------------------|-------------------|
+| normal | `all` | 30s |
+| large | `all` | 60s |
+| full | `min_conflicts` | 120s |
+
+> The demo accounts exist only on your development machine. They are not
+> created on any deployed server.
+
+### Using the demo with JWT
+
+```bash
+# Terminal 1: Start server
+python manage.py runserver
+
+# Terminal 2: Get JWT token for demo registrar
+curl -X POST http://127.0.0.1:8000/api/token/ \
+  -H "Content-Type: application/json" \
+  -d '{"username": "demoreg", "password": "demo12345"}'
+
+# Use access token for API calls
+export ACCESS_TOKEN=<your-access-token>
+
+# Generate schedule with JWT
+curl -X POST http://127.0.0.1:8000/api/schedules/generate \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"algorithm": "min_conflicts", "time_limit_s": 60}'
+
+# View schedule for a specific section
+curl "http://127.0.0.1:8000/api/schedules/runs/<run_id>/classes?section=<section_id>" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+> The demo accounts exist only on your development machine. They are not
+> created on any deployed server.
+
+**Filter by section (new):**
+```bash
+# Show schedule for a specific section with formatted output
+python manage.py demo_schedule --scale full --section BSIT-3A --algorithm min_conflicts --time-limit 300
+```
+
+**CLI options:**
+```bash
+# Run specific algorithm
+python manage.py demo_schedule --algorithm greedy --time-limit 10
+python manage.py demo_schedule --algorithm min_conflicts --time-limit 60
+python manage.py demo_schedule --algorithm backtracking
+
+# Run all (default varies by scale)
+python manage.py demo_schedule --algorithm all --time-limit 30
+```
+
+**Smart defaults per scale:**
+| Scale | Default Algorithm | Default Time Limit |
+|-------|------------------|-------------------|
+| normal | `all` | 30s |
+| large | `all` | 60s |
+| full | `min_conflicts` | 120s |
 
 > The demo accounts exist only on your development machine. They are not
 > created on any deployed server.
