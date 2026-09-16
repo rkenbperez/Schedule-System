@@ -15,48 +15,45 @@ from .slots import (
 )
 
 
-MAX_CONSECUTIVE_HOURS = 3
-
-
 def _consecutive_hours_violation(
     scenario: Scenario,
     meeting_map: Dict[int, Meeting],
     valid_placed: Dict[int, Placement],
     placement: Placement,
-    max_consecutive: int = MAX_CONSECUTIVE_HOURS,
 ) -> str | None:
     """Check if the given placement creates >max_consecutive hours of consecutive teaching."""
     day = placement.day
     day_start, day_end = scenario.day_ranges[day]
+    meeting = meeting_map[placement.meeting_id]
+    max_consecutive = scenario.max_consecutive(meeting.prof_id)
 
     # Collect all start positions for this professor on this day
-    prof_placements: List[Tuple[int, int]] = []  # (start, duration_slots)
+    prof_placements: List[Tuple[int, int]] = []  # (start_minute, duration_slots)
     for other_id, other_placement in valid_placed.items():
-        if meeting_map[other_id].prof_id != meeting_map[placement.meeting_id].prof_id:
+        if meeting_map[other_id].prof_id != meeting.prof_id:
             continue
         if other_placement.day != day:
             continue
         other_meeting = meeting_map[other_id]
-        duration = minutes(scenario, other_meeting.duration_slots)
-        prof_placements.append((other_placement.start, duration))
+        prof_placements.append((other_placement.start, other_meeting.duration_slots))
 
     # Sort by start time
     prof_placements.sort(key=lambda x: x[0])
 
     # Check if this placement creates a consecutive run
     my_start = placement.start
-    my_duration = minutes(scenario, meeting_map[placement.meeting_id].duration_slots)
+    my_duration_slots = meeting.duration_slots
 
     # Build the set of occupied hour indices for this professor on this day
     occupied: set[int] = set()
-    for start, dur in prof_placements:
+    for start, dur_slots in prof_placements:
         if start >= day_start and start < day_end:
-            for slot in range(dur):
+            for slot in range(dur_slots):
                 hour_idx = start // scenario.slot_minutes + slot
                 occupied.add(hour_idx)
 
     # Add this placement's hours
-    for slot in range(my_duration):
+    for slot in range(my_duration_slots):
         hour_idx = my_start // scenario.slot_minutes + slot
         occupied.add(hour_idx)
 

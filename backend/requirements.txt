@@ -1,3 +1,4 @@
 Django>=5.2,<5.3
 djangorestframework>=3.15,<3.16
 drf-spectacular>=0.28,<0.29
+factory-boy>=3.3
