@@ -69,6 +69,13 @@ class AvailabilityWindowViewSet(viewsets.ModelViewSet):
         else:
             serializer.save(prof=prof)
 
+    def perform_update(self, serializer):
+        prof = self._own_prof()
+        if prof is None:
+            serializer.save()
+        else:
+            serializer.save(prof=prof)
+
     def _own_prof(self):
         if self.request.user.is_staff:
             return None
@@ -97,6 +104,13 @@ class BusyBlockViewSet(viewsets.ModelViewSet):
         return qs.filter(prof__user=self.request.user)
 
     def perform_create(self, serializer):
+        prof = self._own_prof()
+        if prof is None:
+            serializer.save()
+        else:
+            serializer.save(prof=prof)
+
+    def perform_update(self, serializer):
         prof = self._own_prof()
         if prof is None:
             serializer.save()
@@ -164,6 +178,7 @@ class ScheduleGenerateView(APIView):
                 ),
                 runtime_ms=result.runtime_ms,
                 soft_score=result.soft_score,
+                breakdown=result.breakdown,
                 created_by=request.user,
             )
 

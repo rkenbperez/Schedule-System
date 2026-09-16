@@ -77,9 +77,6 @@ def build_scenario() -> Scenario:
     prof_daily_hours = {
         prof.pk: prof.max_daily_hours for prof in Professors.objects.all()
     }
-    prof_max_consecutive = {
-        prof.pk: prof.max_consecutive for prof in Professors.objects.all()
-    }
 
     return Scenario(
         rooms=rooms,
@@ -87,5 +84,4 @@ def build_scenario() -> Scenario:
         availability=availability,
         busy=busy,
         prof_daily_hours=prof_daily_hours,
-        prof_max_consecutive=prof_max_consecutive,
     )

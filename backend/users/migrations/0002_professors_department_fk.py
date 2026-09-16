@@ -14,6 +14,15 @@ def migrate_departments(apps, schema_editor):
         prof.save(update_fields=["department"])
 
 
+def restore_department_text(apps, schema_editor):
+    Professors = apps.get_model("users", "Professors")
+    for prof in Professors.objects.select_related("department").all():
+        if prof.department_id is None:
+            continue
+        prof.department_text = prof.department.name
+        prof.save(update_fields=["department_text"])
+
+
 class Migration(migrations.Migration):
     dependencies = [
         ("catalog", "0002_department_room_department"),
@@ -37,7 +46,7 @@ class Migration(migrations.Migration):
                 to="catalog.department",
             ),
         ),
-        migrations.RunPython(migrate_departments, migrations.RunPython.noop),
+        migrations.RunPython(migrate_departments, restore_department_text),
         migrations.RemoveField(
             model_name="professors",
             name="department_text",
