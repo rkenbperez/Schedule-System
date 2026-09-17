@@ -19,6 +19,7 @@ class ScheduleExportView(APIView):
     permission_classes = [IsRegistrar]
 
     @extend_schema(
+        tags=["exports"],
         responses={
             200: OpenApiResponse(
                 description="XLSX file containing the schedule for the given run."
