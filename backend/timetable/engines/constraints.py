@@ -15,24 +15,23 @@ from .slots import (
 )
 
 
-MAX_CONSECUTIVE_HOURS = 3
-
-
 def _consecutive_hours_violation(
     scenario: Scenario,
     meeting_map: Dict[int, Meeting],
     valid_placed: Dict[int, Placement],
     placement: Placement,
-    max_consecutive: int = MAX_CONSECUTIVE_HOURS,
 ) -> str | None:
     """Check if the given placement creates >max_consecutive hours of consecutive teaching."""
     day = placement.day
     day_start, day_end = scenario.day_ranges[day]
+    meeting = meeting_map[placement.meeting_id]
+    prof_id = meeting.prof_id
+    max_consecutive = scenario.max_consecutive(prof_id)
 
     # Collect all start positions for this professor on this day
     prof_placements: List[Tuple[int, int]] = []  # (start, duration_slots)
     for other_id, other_placement in valid_placed.items():
-        if meeting_map[other_id].prof_id != meeting_map[placement.meeting_id].prof_id:
+        if meeting_map[other_id].prof_id != prof_id:
             continue
         if other_placement.day != day:
             continue
@@ -44,7 +43,7 @@ def _consecutive_hours_violation(
 
     # Check if this placement creates a consecutive run
     my_start = placement.start
-    my_duration_slots = meeting_map[placement.meeting_id].duration_slots
+    my_duration_slots = meeting.duration_slots
 
     # Build the set of occupied hour indices for this professor on this day
     occupied: set[int] = set()
