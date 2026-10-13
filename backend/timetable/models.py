@@ -23,6 +23,35 @@ MODE_DURATIONS = {
 }
 
 
+class AcademicTerm(models.Model):
+    SEMESTER_CHOICES = [
+        (1, "First Semester"),
+        (2, "Second Semester"),
+    ]
+    year = models.PositiveSmallIntegerField()
+    semester = models.PositiveSmallIntegerField(choices=SEMESTER_CHOICES)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    is_active = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["year", "semester"], name="unique_term"),
+        ]
+        ordering = ["-year", "-semester"]
+
+    def __str__(self):
+        return f"{self.get_semester_display()} {self.year}"
+
+    @property
+    def code(self):
+        return f"{self.year}-{self.semester}"
+
+    @property
+    def name(self):
+        return f"{self.get_semester_display()} {self.year}"
+
+
 class Assignment(models.Model):
     prof = models.ForeignKey(
         Professors,
@@ -39,17 +68,24 @@ class Assignment(models.Model):
         on_delete=models.CASCADE,
         related_name="assignments",
     )
+    term = models.ForeignKey(
+        AcademicTerm,
+        on_delete=models.CASCADE,
+        related_name="assignments",
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["prof", "subject", "section"],
-                name="unique_prof_subject_section",
+                fields=["prof", "subject", "section", "term"],
+                name="unique_prof_subject_section_term",
             ),
         ]
 
     def __str__(self):
-        return f"{self.prof} - {self.subject} - {self.section}"
+        return f"{self.prof} - {self.subject} - {self.section} ({self.term})"
 
 
 class MeetingSlot(models.Model):
@@ -158,6 +194,14 @@ class ScheduleRun(models.Model):
         blank=True,
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    term = models.ForeignKey(
+        AcademicTerm,
+        on_delete=models.CASCADE,
+        related_name="schedule_runs",
+        null=True,
+        blank=True,
+    )
+    published = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["-created_at"]
@@ -190,6 +234,13 @@ class ScheduledClass(models.Model):
     mode = models.CharField(
         max_length=10,
         choices=MeetingSlot.Mode.choices,
+        null=True,
+        blank=True,
+    )
+    term = models.ForeignKey(
+        AcademicTerm,
+        on_delete=models.CASCADE,
+        related_name="scheduled_classes",
         null=True,
         blank=True,
     )

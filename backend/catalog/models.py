@@ -16,6 +16,15 @@ class Subject(models.Model):
 class Section(models.Model):
     name = models.CharField(max_length=50, unique=True)
     headcount = models.PositiveIntegerField()
+    program = models.CharField(max_length=20, blank=True, default="")  # e.g., "BSIT", "BSCS"
+    year_level = models.PositiveSmallIntegerField(default=1)
+    term = models.ForeignKey(
+        "timetable.AcademicTerm",
+        on_delete=models.CASCADE,
+        related_name="sections",
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         ordering = ["name"]
@@ -44,6 +53,7 @@ class Room(models.Model):
         blank=True,
         related_name="rooms",
     )
+    building = models.CharField(max_length=100, blank=True, default="")
 
     def __str__(self):
         return f"{self.name} (cap {self.capacity})"
