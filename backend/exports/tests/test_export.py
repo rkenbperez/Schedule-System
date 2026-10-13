@@ -1,7 +1,10 @@
+import os
+import tempfile
 from io import BytesIO
 
 from django.contrib.auth import get_user_model
 from openpyxl import load_workbook
+from pypdf import PdfReader
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
@@ -10,6 +13,12 @@ from timetable.models import Assignment, ScheduledClass, ScheduleRun
 from users.models import Professors
 
 User = get_user_model()
+
+TEST_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
+
+
+def ensure_output_dir():
+    os.makedirs(TEST_OUTPUT_DIR, exist_ok=True)
 
 
 class ExportTestCase(APITestCase):
@@ -53,6 +62,7 @@ class ExportTestCase(APITestCase):
         )
 
         self.url = f"/api/exports/schedules/{self.run.pk}.xlsx"
+        self.pdf_url = f"/api/exports/schedules/{self.run.pk}.pdf"
 
     def auth(self, token):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
@@ -61,6 +71,20 @@ class ExportTestCase(APITestCase):
         """Consume a FileResponse's streaming content into an openpyxl workbook."""
         content = b"".join(response.streaming_content)
         return load_workbook(BytesIO(content))
+
+    def _read_pdf(self, response):
+        """Consume a FileResponse's streaming content into a PdfReader."""
+        content = b"".join(response.streaming_content)
+        return PdfReader(BytesIO(content))
+
+    def _save_pdf(self, response, test_name):
+        """Save PDF to output directory for manual inspection."""
+        ensure_output_dir()
+        content = b"".join(response.streaming_content)
+        filepath = os.path.join(TEST_OUTPUT_DIR, f"{test_name}.pdf")
+        with open(filepath, "wb") as f:
+            f.write(content)
+        return filepath
 
 
 class SchedulePdfExportTests(ExportTestCase):
@@ -224,3 +248,5 @@ class ScheduleExportTests(ExportTestCase):
         self.assertEqual(data[6], "prof1")    # username fallback
         self.assertEqual(data[7], "R101")
         self.assertEqual(data[8], "Synchronous")
+
+
