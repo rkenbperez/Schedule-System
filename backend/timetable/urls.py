@@ -19,6 +19,10 @@ from .views import (
     ProfessorScheduleConflictsView,
     ProfessorAvailabilityViewSet,
     ProfessorBusyBlockViewSet,
+    PublicTermsView,
+    PublicTermScheduleView,
+    PublicTermSectionsView,
+    PublicSectionScheduleView,
 )
 
 router = DefaultRouter()
@@ -51,4 +55,9 @@ urlpatterns = [
     path("professor/me/", ProfessorProfileView.as_view(), name="professor-profile"),
     path("professor/me/schedule/", ProfessorScheduleView.as_view(), name="professor-schedule"),
     path("professor/me/schedule/conflicts/", ProfessorScheduleConflictsView.as_view(), name="professor-schedule-conflicts"),
+    # Public Schedule APIs
+    path("public/schedules/", PublicTermsView.as_view(), name="public-terms"),
+    path("public/schedules/<str:term_code>/", PublicTermScheduleView.as_view(), name="public-term-schedule"),
+    path("public/schedules/<str:term_code>/sections/", PublicTermSectionsView.as_view(), name="public-term-sections"),
+    path("public/schedules/<str:term_code>/sections/<int:section_id>/", PublicSectionScheduleView.as_view(), name="public-section-schedule"),
 ] + router.urls

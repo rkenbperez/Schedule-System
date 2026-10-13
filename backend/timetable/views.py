@@ -1286,3 +1286,261 @@ class ProfessorBusyBlockViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         serializer.save(prof=self.request.user.prof)
+
+
+# ==================== PUBLIC SCHEDULE API ====================
+
+@extend_schema(tags=["public"])
+class PublicTermsView(APIView):
+    """List all published terms."""
+    permission_classes = [IsPublicReadOnly]
+
+    def get(self, request):
+        published_runs = ScheduleRun.objects.filter(
+            published=True
+        ).select_related("term").order_by("-term__year", "-term__semester")
+
+        terms = []
+        seen_terms = set()
+        for run in published_runs:
+            if run.term and run.term.id not in seen_terms:
+                seen_terms.add(run.term.id)
+                terms.append({
+                    "id": run.term.id,
+                    "code": run.term.code,
+                    "name": str(run.term),
+                    "year": run.term.year,
+                    "semester": run.term.semester,
+                    "start_date": run.term.start_date,
+                    "end_date": run.term.end_date,
+                    "is_active": run.term.is_active,
+                })
+        return Response(terms)
+
+
+@extend_schema(tags=["public"])
+class PublicTermScheduleView(APIView):
+    """Weekly grid schedule for a published term."""
+    permission_classes = [IsPublicReadOnly]
+
+    def get(self, request, term_code):
+        # Parse term_code like "2024-1" or "2024-2"
+        try:
+            year, semester = map(int, term_code.split("-"))
+        except ValueError:
+            return Response(
+                {"error": "Invalid term code format. Use 'YYYY-S' (e.g., '2024-1')"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        term = get_object_or_404(AcademicTerm, year=year, semester=semester)
+        run_obj = ScheduleRun.objects.filter(term=term, published=True).order_by("-created_at").first()
+
+        if run_obj is None:
+            return Response({
+                "schedule": [],
+                "message": f"No published schedule found for term {term_code}",
+                "term": {
+                    "id": term.id,
+                    "code": term.code,
+                    "name": str(term),
+                },
+            })
+
+        classes = run_obj.classes.select_related(
+            "assignment__prof__user", "assignment__subject", "assignment__section", "room"
+        ).order_by("day", "start_time")
+
+        schedule_data = []
+        for c in classes:
+            schedule_data.append({
+                "id": c.id,
+                "day": c.day,
+                "day_name": c.get_day_display(),
+                "start_time": c.start_time.strftime("%H:%M"),
+                "end_time": c.end_time.strftime("%H:%M"),
+                "duration_slots": c.duration_slots,
+                "subject": {
+                    "code": c.assignment.subject.code,
+                    "title": c.assignment.subject.title,
+                },
+                "section": {
+                    "id": c.assignment.section.id,
+                    "name": c.assignment.section.name,
+                    "program": c.assignment.section.program,
+                    "year_level": c.assignment.section.year_level,
+                },
+                "room": {
+                    "id": c.room.id,
+                    "name": c.room.name,
+                    "building": c.room.building,
+                } if c.room else None,
+                "professor": {
+                    "id": c.assignment.prof.id,
+                    "name": c.assignment.prof.user.get_full_name() or c.assignment.prof.user.username,
+                },
+                "mode": c.mode,
+                "mode_display": c.get_mode_display() if c.mode else None,
+            })
+
+        return Response({
+            "schedule_run": {
+                "id": run_obj.id,
+                "algorithm": run_obj.algorithm,
+                "status": run_obj.status,
+                "published": run_obj.published,
+            },
+            "term": {
+                "id": term.id,
+                "code": term.code,
+                "name": str(term),
+            },
+            "schedule": schedule_data,
+        })
+
+
+@extend_schema(tags=["public"])
+class PublicTermSectionsView(APIView):
+    """All sections with published schedules for a term."""
+    permission_classes = [IsPublicReadOnly]
+
+    def get(self, request, term_code):
+        try:
+            year, semester = map(int, term_code.split("-"))
+        except ValueError:
+            return Response(
+                {"error": "Invalid term code format. Use 'YYYY-S' (e.g., '2024-1')"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        term = get_object_or_404(AcademicTerm, year=year, semester=semester)
+        run_obj = ScheduleRun.objects.filter(term=term, published=True).order_by("-created_at").first()
+
+        if run_obj is None:
+            return Response({
+                "sections": [],
+                "message": f"No published schedule found for term {term_code}",
+            })
+
+        # Get unique sections from published schedule
+        section_ids = run_obj.classes.values_list("assignment__section_id", flat=True).distinct()
+        sections = Section.objects.filter(id__in=section_ids).select_related("term")
+
+        sections_data = []
+        for s in sections:
+            sections_data.append({
+                "id": s.id,
+                "name": s.name,
+                "headcount": s.headcount,
+                "program": s.program,
+                "year_level": s.year_level,
+                "term": {
+                    "id": s.term.id,
+                    "code": s.term.code,
+                    "name": str(s.term),
+                } if s.term else None,
+            })
+
+        return Response({
+            "term": {
+                "id": term.id,
+                "code": term.code,
+                "name": str(term),
+            },
+            "sections": sections_data,
+        })
+
+
+@extend_schema(tags=["public"])
+class PublicSectionScheduleView(APIView):
+    """Published schedule for a specific section."""
+    permission_classes = [IsPublicReadOnly]
+
+    def get(self, request, term_code, section_id):
+        try:
+            year, semester = map(int, term_code.split("-"))
+        except ValueError:
+            return Response(
+                {"error": "Invalid term code format. Use 'YYYY-S' (e.g., '2024-1')"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        term = get_object_or_404(AcademicTerm, year=year, semester=semester)
+        run_obj = ScheduleRun.objects.filter(term=term, published=True).order_by("-created_at").first()
+
+        if run_obj is None:
+            return Response({
+                "schedule": [],
+                "message": f"No published schedule found for term {term_code}",
+            })
+
+        section = get_object_or_404(Section, id=section_id, term=term)
+
+        classes = run_obj.classes.select_related(
+            "assignment__prof__user", "assignment__subject", "assignment__section", "room"
+        ).filter(assignment__section=section).order_by("day", "start_time")
+
+        if not classes.exists():
+            return Response({
+                "schedule": [],
+                "message": f"No published schedule for section {section.name} in term {term_code}",
+                "section": {
+                    "id": section.id,
+                    "name": section.name,
+                    "program": section.program,
+                    "year_level": section.year_level,
+                },
+                "term": {
+                    "id": term.id,
+                    "code": term.code,
+                    "name": str(term),
+                },
+            })
+
+        schedule_data = []
+        for c in classes:
+            schedule_data.append({
+                "id": c.id,
+                "day": c.day,
+                "day_name": c.get_day_display(),
+                "start_time": c.start_time.strftime("%H:%M"),
+                "end_time": c.end_time.strftime("%H:%M"),
+                "duration_slots": c.duration_slots,
+                "subject": {
+                    "code": c.assignment.subject.code,
+                    "title": c.assignment.subject.title,
+                },
+                "room": {
+                    "id": c.room.id,
+                    "name": c.room.name,
+                    "building": c.room.building,
+                } if c.room else None,
+                "professor": {
+                    "id": c.assignment.prof.id,
+                    "name": c.assignment.prof.user.get_full_name() or c.assignment.prof.user.username,
+                },
+                "mode": c.mode,
+                "mode_display": c.get_mode_display() if c.mode else None,
+            })
+
+        return Response({
+            "schedule_run": {
+                "id": run_obj.id,
+                "algorithm": run_obj.algorithm,
+                "status": run_obj.status,
+                "published": run_obj.published,
+            },
+            "section": {
+                "id": section.id,
+                "name": section.name,
+                "program": section.program,
+                "year_level": section.year_level,
+                "headcount": section.headcount,
+            },
+            "term": {
+                "id": term.id,
+                "code": term.code,
+                "name": str(term),
+            },
+            "schedule": schedule_data,
+        })
