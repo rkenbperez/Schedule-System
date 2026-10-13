@@ -43,7 +43,7 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 
 from catalog.models import Department, Room, Section, Subject
-from timetable.models import Assignment, AvailabilityWindow, MeetingSlot
+from timetable.models import AcademicTerm, Assignment, AvailabilityWindow, MeetingSlot
 from users.models import Professors
 
 User = get_user_model()
@@ -438,10 +438,13 @@ class Command(BaseCommand):
         if options["reset"]:
             self._reset()
 
-        registrar = self._seed_users(options["scale"])
-        self._seed_catalog(options["scale"])
-        self._seed_load_and_availability(options["scale"])
-        self._reconcile(options["scale"])
+        # Create or get the active academic term
+        term = self._get_or_create_active_term()
+
+        registrar = self._seed_users(options["scale"], term)
+        self._seed_catalog(options["scale"], term)
+        self._seed_load_and_availability(options["scale"], term)
+        self._reconcile(options["scale"], term)
 
         self.stdout.write(f"Scale: {options['scale']}")
         self.stdout.write(f"Registrar: {registrar.username} / {DEMO_PASSWORD}")
@@ -524,9 +527,27 @@ class Command(BaseCommand):
         else:
             self._print_grid(best["algorithm"], classes)
 
+    def _get_or_create_active_term(self):
+        """Create or get the active academic term for demo."""
+        term, created = AcademicTerm.objects.get_or_create(
+            year=2024,
+            semester=1,
+            defaults={
+                "start_date": "2024-08-01",
+                "end_date": "2024-12-20",
+                "is_active": True,
+            },
+        )
+        if not created and not term.is_active:
+            term.is_active = True
+            term.save(update_fields=["is_active"])
+        # Ensure only one active term
+        AcademicTerm.objects.exclude(pk=term.pk).update(is_active=False)
+        return term
+
     # -- seeding -----------------------------------------------------------
 
-    def _seed_users(self, scale):
+    def _seed_users(self, scale, term):
         registrar, _ = User.objects.get_or_create(username="demoreg")
         update_fields = []
         if not registrar.is_staff:
@@ -562,14 +583,17 @@ class Command(BaseCommand):
 
         return registrar
 
-    def _seed_catalog(self, scale):
+    def _seed_catalog(self, scale, term):
         data = _dataset(scale)
 
         for code, title in data["subjects"]:
             Subject.objects.get_or_create(code=code, defaults={"title": title, "units": 3})
 
         for name, headcount in data["sections"]:
-            Section.objects.get_or_create(name=name, defaults={"headcount": headcount})
+            Section.objects.get_or_create(
+                name=name,
+                defaults={"headcount": headcount, "term": term},
+            )
 
         def department(name):
             return Department.objects.filter(name=name).first()
@@ -587,7 +611,7 @@ class Command(BaseCommand):
                 room.department = department(dept_name) if dept_name else None
                 room.save(update_fields=["capacity", "department"])
 
-    def _seed_load_and_availability(self, scale):
+    def _seed_load_and_availability(self, scale, term):
         data = _dataset(scale)
 
         def prof(username):
@@ -605,6 +629,7 @@ class Command(BaseCommand):
                 prof=prof(username),
                 subject=subject(code),
                 section=section(sec_name),
+                term=term,
             )
             assignment.meetings.all().delete()
             MeetingSlot.objects.bulk_create(
@@ -645,7 +670,7 @@ class Command(BaseCommand):
         Assignment.objects.all().delete()
         AvailabilityWindow.objects.all().delete()
 
-    def _reconcile(self, scale):
+    def _reconcile(self, scale, term):
         """Drop demo-managed records that are not part of the requested scale.
 
         The catalog seed only ever upserts the records the current dataset
