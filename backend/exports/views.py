@@ -107,7 +107,7 @@ class ScheduleExportPDFView(APIView):
         tags=["exports"],
         responses={
             200: OpenApiResponse(
-                description="PDF file containing the weekly grid schedule for the given run."
+                description="PDF file containing the flat-table schedule for the given run."
             )
         }
     )
@@ -137,45 +137,113 @@ class ScheduleExportPDFView(APIView):
         )
 
         styles = getSampleStyleSheet()
-        header_style = styles["Normal"]
+
+        # Header style: 9pt bold, light blue background
+        header_style = styles["Normal"].clone("PDFHeaderStyle")
         header_style.fontName = "Helvetica-Bold"
-        header_style.fontSize = 8
-        header_style.leading = 10
-        cell_style = styles["Normal"]
+        header_style.fontSize = 9
+        header_style.leading = 11
+
+        # Cell style: 8pt normal
+        cell_style = styles["Normal"].clone("PDFCellStyle")
         cell_style.fontName = "Helvetica"
-        cell_style.fontSize = 7
-        cell_style.leading = 9
+        cell_style.fontSize = 8
+        cell_style.leading = 9.5
 
-        time_slots = self._get_time_slots(classes)
-        grid = self._build_grid(classes, time_slots)
+        # Build table data: one row per class, 9 columns matching Excel
+        DATA_COLUMNS = 9
+        header = [
+            Paragraph("Day", header_style),
+            Paragraph("Start", header_style),
+            Paragraph("End", header_style),
+            Paragraph("Subject Code", header_style),
+            Paragraph("Title", header_style),
+            Paragraph("Section", header_style),
+            Paragraph("Professor", header_style),
+            Paragraph("Room", header_style),
+            Paragraph("Mode", header_style),
+        ]
 
-        data = []
-        header_row = [Paragraph("Time", header_style)] + [Paragraph(d, header_style) for d in WEEKDAYS]
-        data.append(header_row)
+        data = [header]
 
-        for time_label, row_data in zip(time_slots, grid):
-            row = [Paragraph(time_label, header_style)]
-            for cell_content in row_data:
-                row.append(Paragraph(cell_content, cell_style))
+        for c in classes:
+            day_label = c.get_day_display()
+            start_label = c.start_time.strftime("%H:%M")
+            end_label = c.end_time.strftime("%H:%M")
+            subject_code = c.assignment.subject.code
+            title = c.assignment.subject.title
+            section = c.assignment.section.name
+            prof_user = c.assignment.prof.user
+            prof_name = prof_user.get_full_name() or prof_user.username
+            room_name = c.room.name if c.room else ""
+            mode_display = c.get_mode_display() if c.mode else ""
+
+            # Build title paragraph with wrapping (max 2 lines, 70mm width)
+            title_para = Paragraph(
+                f"<b>{subject_code}</b><br/>{title}",
+                cell_style,
+            )
+
+            row = [
+                Paragraph(day_label, cell_style),
+                Paragraph(start_label, cell_style),
+                Paragraph(end_label, cell_style),
+                Paragraph(subject_code, cell_style),
+                title_para,
+                Paragraph(section, cell_style),
+                Paragraph(prof_name, cell_style),
+                Paragraph(room_name, cell_style),
+                Paragraph(mode_display, cell_style),
+            ]
             data.append(row)
 
-        col_widths = [2.5*cm] + [18.5*cm/6]*6
-        table = Table(data, colWidths=col_widths, repeatRows=1)
-        table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2c3e50")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("BACKGROUND", (0, 1), (0, -1), colors.HexColor("#ecf0f1")),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#bdc3c7")),
+        # Column widths in points (mm × 2.83465), total ~652pt within A4 landscape usable width ~785pt
+        MM_TO_PT = 2.83465
+        col_widths_pt = [
+            22 * MM_TO_PT,   # Day: 22mm
+            14 * MM_TO_PT,   # Start: 14mm
+            14 * MM_TO_PT,   # End: 14mm
+            22 * MM_TO_PT,   # Subject Code: 22mm
+            70 * MM_TO_PT,   # Title: 70mm
+            20 * MM_TO_PT,   # Section: 20mm
+            26 * MM_TO_PT,   # Professor: 26mm
+            16 * MM_TO_PT,   # Room: 16mm
+            26 * MM_TO_PT,   # Mode: 26mm
+        ]
+
+        table = Table(data, colWidths=col_widths_pt, repeatRows=1)
+
+        # Styling: thin light-gray gridlines (0.25pt)
+        # reportlab TableStyle uses width in points; 0.25pt = 0.25
+        style_cmds = [
+            # Header row: bold background light blue gray
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e8eef5")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1a202c")),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 9),
+            # All cells: thin gridlines 0.25pt light gray
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cbd5e0")),
+            # Vertical alignment: TOP (prevents cell height issues)
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("TOPPADDING", (0, 0), (-1, -1), 3),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            # Header row height emphasis
+            ("TOPPADDING", (0, 0), (-1, 0), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 4),
             ("LEFTPADDING", (0, 0), (-1, -1), 4),
             ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, -1), 7),
-        ]))
+            # Alternating row shading (very light gray)
+            # We'll apply a light shading to every other row starting from row 1 (index 1 is first data row)
+            *[
+                ("BACKGROUND", (0, i), (-1, i), colors.HexColor("#f7fafc"))
+                for i in range(1, len(data), 2)
+            ],
+        ]
 
-        title = Paragraph(f"Schedule Run #{pk} - Weekly Grid", styles["Title"])
+        table.setStyle(TableStyle(style_cmds))
+
+        # Title above the table
+        title = Paragraph(f"Schedule Run #{pk} - Flat Table", styles["Title"])
+
+        # Build the PDF with pagination
         doc.build([title, table])
 
         buf.seek(0)
@@ -186,52 +254,6 @@ class ScheduleExportPDFView(APIView):
             filename=f"schedule_run_{pk}.pdf",
             content_type=PDF_CONTENT_TYPE,
         )
-
-    def _get_time_slots(self, classes):
-        if not classes:
-            return ["08:00-09:00", "09:00-10:00", "10:00-11:00", "11:00-12:00",
-                    "13:00-14:00", "14:00-15:00", "15:00-16:00", "16:00-17:00",
-                    "17:00-18:00", "18:00-19:00", "19:00-20:00"]
-
-        times = set()
-        for c in classes:
-            start = c.start_time
-            end = c.end_time
-            times.add((start, end))
-        sorted_times = sorted(times)
-        return [f"{s.strftime('%H:%M')}-{e.strftime('%H:%M')}" for s, e in sorted_times]
-
-    def _build_grid(self, classes, time_slots):
-        grid = [["" for _ in WEEKDAYS] for _ in time_slots]
-
-        time_slot_map = {}
-        for i, ts in enumerate(time_slots):
-            start_str, end_str = ts.split("-")
-            time_slot_map[(start_str, end_str)] = i
-
-        for c in classes:
-            day_idx = c.day
-            start_str = c.start_time.strftime("%H:%M")
-            end_str = c.end_time.strftime("%H:%M")
-            row_idx = time_slot_map.get((start_str, end_str))
-
-            if row_idx is not None and 0 <= day_idx < 6:
-                prof_user = c.assignment.prof.user
-                prof_name = prof_user.get_full_name() or prof_user.username
-                room_name = c.room.name if c.room else "TBA"
-                cell_text = (
-                    f"{c.assignment.subject.code} - {c.assignment.subject.title}\n"
-                    f"{c.assignment.section.name}\n"
-                    f"{prof_name}\n"
-                    f"{room_name} ({c.get_mode_display() if c.mode else 'N/A'})"
-                )
-                existing = grid[row_idx][day_idx]
-                if existing:
-                    grid[row_idx][day_idx] = existing + "\n\n---\n\n" + cell_text
-                else:
-                    grid[row_idx][day_idx] = cell_text
-
-        return grid
 
 
 class ImportPreviewView(APIView):
