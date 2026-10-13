@@ -8,20 +8,35 @@ from catalog.models import Room
 from users.models import Professors
 
 from .engines.scenario import Availability, Busy, Meeting, RoomRef, Scenario
-from .models import Assignment, AvailabilityWindow, BusyBlock
+from .models import AcademicTerm, Assignment, AvailabilityWindow, BusyBlock
 
 
 def _to_minutes(value):
     return value.hour * 60 + value.minute
 
 
-def build_scenario() -> Scenario:
+def get_active_term():
+    """Get the currently active academic term."""
+    return AcademicTerm.objects.filter(is_active=True).first()
+
+
+def build_scenario(term=None) -> Scenario:
+    """
+    Build a scenario for the given term.
+    If term is None, uses the active term.
+    """
+    if term is None:
+        term = get_active_term()
+        if term is None:
+            raise ValueError("No active term found. Set a term as active or pass one explicitly.")
+
     rooms = [
         RoomRef(
             id=r.pk,
             name=r.name,
             capacity=r.capacity,
             department=r.department.name if r.department else "",
+            building=r.building or "",
         )
         for r in Room.objects.select_related("department")
     ]
@@ -30,7 +45,7 @@ def build_scenario() -> Scenario:
     meeting_id = 1
     for assignment in Assignment.objects.select_related(
         "prof__department", "subject", "section"
-    ).prefetch_related("meetings"):
+    ).prefetch_related("meetings").filter(term=term):
         headcount = assignment.section.headcount
         department = (
             assignment.prof.department.name if assignment.prof.department else ""
@@ -61,7 +76,7 @@ def build_scenario() -> Scenario:
             end=_to_minutes(window.end_time),
             is_preferred=window.is_preferred,
         )
-        for window in AvailabilityWindow.objects.all()
+        for window in AvailabilityWindow.objects.filter(prof__assignments__term=term).distinct()
     ]
 
     busy = [
@@ -71,14 +86,14 @@ def build_scenario() -> Scenario:
             start=_to_minutes(block.start_time),
             end=_to_minutes(block.end_time),
         )
-        for block in BusyBlock.objects.all()
+        for block in BusyBlock.objects.filter(prof__assignments__term=term).distinct()
     ]
 
     prof_daily_hours = {
-        prof.pk: prof.max_daily_hours for prof in Professors.objects.all()
+        prof.pk: prof.max_daily_hours for prof in Professors.objects.filter(assignments__term=term).distinct()
     }
     prof_max_consecutive = {
-        prof.pk: prof.max_consecutive for prof in Professors.objects.all()
+        prof.pk: prof.max_consecutive for prof in Professors.objects.filter(assignments__term=term).distinct()
     }
 
     return Scenario(

@@ -1,12 +1,12 @@
 import factory
 from factory.django import DjangoModelFactory
-from datetime import timedelta
+from datetime import timedelta, date
 from django.utils import timezone
 
 from catalog.models import Department, Room, Section, Subject
 from users.models import Professors
 from timetable.models import (
-    Assignment, AvailabilityWindow, BusyBlock,
+    AcademicTerm, Assignment, AvailabilityWindow, BusyBlock,
     MeetingSlot, ScheduledClass, ScheduleRun
 )
 from django.contrib.auth import get_user_model
@@ -45,11 +45,24 @@ class RoomFactory(DjangoModelFactory):
     department = factory.SubFactory(DepartmentFactory)
 
 
+class AcademicTermFactory(DjangoModelFactory):
+    class Meta:
+        model = AcademicTerm
+    year = factory.Sequence(lambda n: 2024 + n)
+    semester = factory.Iterator([1, 2])
+    start_date = factory.LazyAttribute(lambda o: date(o.year, 8, 1) if o.semester == 1 else date(o.year + 1, 1, 15))
+    end_date = factory.LazyAttribute(lambda o: date(o.year, 12, 20) if o.semester == 1 else date(o.year + 1, 5, 30))
+    is_active = False
+
+
 class SectionFactory(DjangoModelFactory):
     class Meta:
         model = Section
     name = factory.Sequence(lambda n: f"SEC{n:03d}")
     headcount = factory.Iterator([25, 30, 35, 40])
+    program = factory.Iterator(["BSIT", "BSCS", "BSIS"])
+    year_level = factory.Iterator([1, 2, 3, 4])
+    term = factory.SubFactory(AcademicTermFactory)
 
 
 class SubjectFactory(DjangoModelFactory):
@@ -78,6 +91,17 @@ class AssignmentFactory(DjangoModelFactory):
     prof = factory.SubFactory(ProfessorFactory)
     subject = factory.SubFactory(SubjectFactory)
     section = factory.SubFactory(SectionFactory)
+    term = factory.SelfAttribute("section.term")
+
+
+class ScheduleRunFactory(DjangoModelFactory):
+    class Meta:
+        model = ScheduleRun
+    algorithm = "greedy"
+    status = "feasible"
+    runtime_ms = 100.0
+    created_by = factory.SubFactory(RegistrarFactory)
+    term = factory.SubFactory(AcademicTermFactory)
 
 
 class MeetingSlotFactory(DjangoModelFactory):

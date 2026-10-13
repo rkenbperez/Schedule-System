@@ -13,7 +13,8 @@ from users.models import Professors
 from timetable.tests.factories import (
     RegistrarFactory, ProfessorFactory, ProfessorUserFactory,
     DepartmentFactory, RoomFactory, SectionFactory, SubjectFactory,
-    AssignmentFactory, MeetingSlotFactory, AvailabilityWindowFactory, BusyBlockFactory
+    AssignmentFactory, MeetingSlotFactory, AvailabilityWindowFactory, BusyBlockFactory,
+    AcademicTermFactory
 )
 from timetable.engines import run
 from timetable.scenario_builder import build_scenario
@@ -35,10 +36,13 @@ class RBACTests(APITestCase):
         
         self.anonymous_user = None
         
+        # Create active academic term
+        self.term = AcademicTermFactory(is_active=True)
+        
         # Common test data
         self.dept = DepartmentFactory()
         self.room = RoomFactory(department=self.dept)
-        self.section = SectionFactory()
+        self.section = SectionFactory(term=self.term)
         self.subject = SubjectFactory()
         self.assignment = AssignmentFactory(prof=self.prof, subject=self.subject, section=self.section)
         MeetingSlotFactory(assignment=self.assignment, mode="sync", duration_slots=2)
@@ -56,7 +60,7 @@ class RBACTests(APITestCase):
 
     def _generate_schedule(self):
         """Generate a schedule run as registrar using engine directly."""
-        scenario = build_scenario()
+        scenario = build_scenario(term=self.term)
         result = run("greedy", scenario, time_limit_s=30)
         
         run_obj = ScheduleRun.objects.create(
@@ -65,6 +69,7 @@ class RBACTests(APITestCase):
             runtime_ms=result.runtime_ms,
             soft_score=result.soft_score,
             created_by=self.registrar,
+            term=self.term,
         )
         for pc in result.classes:
             ScheduledClass.objects.create(
@@ -75,6 +80,7 @@ class RBACTests(APITestCase):
                 start_time=time(pc.start // 60, pc.start % 60),
                 duration_slots=pc.duration_slots,
                 mode=pc.mode or None,
+                term=self.term,
             )
         return run_obj
 

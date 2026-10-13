@@ -47,11 +47,13 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "prof",
             "subject",
             "section",
+            "term",
             "meetings",
             "prof_name",
             "subject_label",
             "section_name",
         ]
+        read_only_fields = ["term"]
 
     def get_prof_name(self, obj):
         return str(obj.prof)
@@ -116,6 +118,9 @@ class AssignmentSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         meetings = validated_data.pop("meetings", [])
+        section = validated_data.get("section")
+        if section and not validated_data.get("term"):
+            validated_data["term"] = section.term
         with transaction.atomic():
             assignment = Assignment.objects.create(**validated_data)
             self._replace_meetings(assignment, meetings)
@@ -193,6 +198,8 @@ class ScheduleRunSerializer(serializers.ModelSerializer):
             "preferred",
             "created_by",
             "created_at",
+            "term",
+            "published",
             "class_count",
         ]
 
@@ -242,6 +249,7 @@ class ScheduledClassSerializer(serializers.ModelSerializer):
             "duration_slots",
             "mode",
             "mode_display",
+            "term",
         ]
 
     def get_assignment_label(self, obj):

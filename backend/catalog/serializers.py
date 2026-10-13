@@ -12,7 +12,7 @@ class SubjectSerializer(serializers.ModelSerializer):
 class SectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Section
-        fields = ["id", "name", "headcount"]
+        fields = ["id", "name", "headcount", "program", "year_level", "term"]
 
 
 class DepartmentSerializer(serializers.ModelSerializer):
@@ -28,4 +28,4 @@ class RoomSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Room
-        fields = ["id", "name", "capacity", "department", "department_name"]
+        fields = ["id", "name", "capacity", "department", "department_name", "building"]

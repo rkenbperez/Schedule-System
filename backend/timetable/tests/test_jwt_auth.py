@@ -9,6 +9,7 @@ from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
 
 from users.models import Professors
 from catalog.models import Department
+from timetable.models import AcademicTerm
 
 User = get_user_model()
 
@@ -18,6 +19,11 @@ class JWTAuthTests(TestCase):
 
     def setUp(self):
         self.client = APIClient()
+        # Create active academic term
+        AcademicTerm.objects.create(
+            year=2024, semester=1, start_date="2024-08-01", end_date="2024-12-20", is_active=True
+        )
+        
         self.user = User.objects.create_user(
             username="jwtuser", password="jwtpass123"
         )
@@ -262,6 +268,11 @@ class JWTIntegrationTests(TestCase):
 
     def setUp(self):
         self.client = APIClient()
+        # Create active academic term
+        self.term = AcademicTerm.objects.create(
+            year=2024, semester=1, start_date="2024-08-01", end_date="2024-12-20", is_active=True
+        )
+        
         self.registrar = User.objects.create_user(
             username="reg", password="regpass123", is_staff=True
         )
@@ -302,7 +313,7 @@ class JWTIntegrationTests(TestCase):
         subj_id = response.data["id"]
 
         # 5. Create section
-        response = self.client.post("/api/sections/", {"name": "CS-1A", "headcount": 30}, 
+        response = self.client.post("/api/sections/", {"name": "CS-1A", "headcount": 30, "term": self.term.id}, 
                                    format="json", **self.auth_header(self.reg_tokens["access"]))
         self.assertEqual(response.status_code, 201)
         sec_id = response.data["id"]
