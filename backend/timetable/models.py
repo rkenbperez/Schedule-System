@@ -166,6 +166,26 @@ class ScheduleRun(models.Model):
         return f"{self.algorithm} {self.status} ({self.created_at:%Y-%m-%d %H:%M})"
 
 
+class AcademicTerm(models.Model):
+    SEMESTER_CHOICES = (
+        (1, "First Semester"),
+        (2, "Second Semester"),
+    )
+
+    year = models.PositiveSmallIntegerField()
+    semester = models.PositiveSmallIntegerField(choices=SEMESTER_CHOICES, default=1)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    is_active = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-year", "-semester"]
+        unique_together = ("year", "semester")
+
+    def __str__(self):
+        return f"{self.get_semester_display()} {self.year}"
+
+
 class ScheduledClass(models.Model):
     run = models.ForeignKey(
         ScheduleRun,
