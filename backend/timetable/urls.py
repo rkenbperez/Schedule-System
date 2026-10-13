@@ -6,6 +6,7 @@ from .views import (
     ScheduleRunClassesView,
     ScheduleRunDetailView,
     ScheduleRunListView,
+    ScheduleRunPublishedClassesView,
 )
 
 urlpatterns = [
@@ -16,6 +17,11 @@ urlpatterns = [
         "schedules/runs/<int:pk>/classes",
         ScheduleRunClassesView.as_view(),
         name="schedule-run-classes",
+    ),
+    path(
+        "schedules/runs/<int:pk>/classes/published",
+        ScheduleRunPublishedClassesView.as_view(),
+        name="schedule-run-classes-published",
     ),
     path("schedules/my", ScheduleMyView.as_view(), name="schedule-my"),
 ]

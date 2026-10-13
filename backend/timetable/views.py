@@ -16,10 +16,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import viewsets
 
-from core.permissions import IsOwnerOrRegistrar, IsRegistrar, IsRegistrarOrReadOnly
+from core.permissions import IsOwnerOrRegistrar, IsRegistrar, IsRegistrarOrReadOnly, IsProfessor, IsPublicReadOnly
 
 from .engines import ALGORITHMS, run
-from .models import Assignment, AvailabilityWindow, BusyBlock, ScheduledClass, ScheduleRun
+from .models import AcademicTerm, Assignment, AvailabilityWindow, BusyBlock, ScheduledClass, ScheduleRun
 from .scenario_builder import build_scenario
 from .serializers import (
     AssignmentSerializer,
@@ -165,7 +165,14 @@ class ScheduleGenerateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        scenario = build_scenario()
+        term = AcademicTerm.objects.filter(is_active=True).first()
+        if term is None:
+            return Response(
+                {"error": "No active academic term found. Please set a term as active."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        scenario = build_scenario(term=term)
         result = run(algorithm, scenario, time_limit_s=time_limit)
 
         with transaction.atomic():
@@ -180,6 +187,7 @@ class ScheduleGenerateView(APIView):
                 soft_score=result.soft_score,
                 breakdown=result.breakdown,
                 created_by=request.user,
+                term=term,
             )
 
             ScheduledClass.objects.bulk_create(
@@ -192,6 +200,7 @@ class ScheduleGenerateView(APIView):
                         start_time=dtime(pc.start // 60, pc.start % 60),
                         duration_slots=pc.duration_slots,
                         mode=pc.mode or None,
+                        term=term,
                     )
                     for pc in result.classes
                 ]
@@ -237,8 +246,15 @@ class ScheduleRunClassesView(APIView):
             "assignment__prof", "assignment__subject", "assignment__section", "room"
         )
 
-        if not request.user.is_staff:
+        if request.user.is_staff:
+            # Registrar sees all
+            pass
+        elif hasattr(request.user, "prof"):
+            # Professor sees only their classes
             qs = qs.filter(assignment__prof__user=request.user)
+        else:
+            # Other authenticated users (future: student) see nothing by default
+            qs = qs.none()
 
         params = request.query_params
         if params.get("prof"):
@@ -260,24 +276,42 @@ class ScheduleRunClassesView(APIView):
 
 
 @extend_schema(tags=["schedules"])
+class ScheduleRunPublishedClassesView(APIView):
+    """Public read-only access to published schedule run classes."""
+    permission_classes = [IsPublicReadOnly]
+
+    def get(self, request, pk):
+        run_obj = get_object_or_404(ScheduleRun, pk=pk, published=True)
+        qs = run_obj.classes.select_related(
+            "assignment__prof", "assignment__subject", "assignment__section", "room"
+        )
+        return Response(ScheduledClassSerializer(qs, many=True).data)
+
+
+@extend_schema(tags=["schedules"])
 class ScheduleMyView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        run_obj = ScheduleRun.objects.order_by("-created_at").first()
+        run_obj = ScheduleRun.objects.filter(term__is_active=True).order_by("-created_at").first()
         if run_obj is None:
             return Response([])
 
-        qs = run_obj.classes.select_related(
-            "assignment__prof", "assignment__subject", "assignment__section", "room"
-        )
-        if not request.user.is_staff:
-            prof = getattr(request.user, "prof", None)
-            if prof is None:
-                return Response(
-                    {"error": "No professor profile linked to this account."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            qs = qs.filter(assignment__prof=prof)
+        if request.user.is_staff:
+            # Registrar sees all classes in the active term run
+            qs = run_obj.classes.select_related(
+                "assignment__prof", "assignment__subject", "assignment__section", "room"
+            )
+        elif hasattr(request.user, "prof"):
+            # Professor sees only their classes
+            prof = request.user.prof
+            qs = run_obj.classes.select_related(
+                "assignment__prof", "assignment__subject", "assignment__section", "room"
+            ).filter(assignment__prof=prof)
+        else:
+            return Response(
+                {"error": "No professor profile linked to this account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         return Response(ScheduledClassSerializer(qs, many=True).data)
