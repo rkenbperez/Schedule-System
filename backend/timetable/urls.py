@@ -23,6 +23,12 @@ from .views import (
     PublicTermScheduleView,
     PublicTermSectionsView,
     PublicSectionScheduleView,
+    AuditLogListView,
+    GlobalSettingsView,
+    GlobalSettingDetailView,
+    ConflictResolutionListView,
+    ConflictResolutionResolveView,
+    ConflictResolutionIgnoreView,
 )
 
 router = DefaultRouter()
@@ -60,4 +66,11 @@ urlpatterns = [
     path("public/schedules/<str:term_code>/", PublicTermScheduleView.as_view(), name="public-term-schedule"),
     path("public/schedules/<str:term_code>/sections/", PublicTermSectionsView.as_view(), name="public-term-sections"),
     path("public/schedules/<str:term_code>/sections/<int:section_id>/", PublicSectionScheduleView.as_view(), name="public-section-schedule"),
+    # Advanced Features
+    path("audit/", AuditLogListView.as_view(), name="audit-log"),
+    path("settings/", GlobalSettingsView.as_view(), name="global-settings"),
+    path("settings/<str:key>/", GlobalSettingDetailView.as_view(), name="global-setting-detail"),
+    path("admin/schedules/runs/<int:run_id>/conflict-resolutions/", ConflictResolutionListView.as_view(), name="conflict-resolutions"),
+    path("admin/conflict-resolutions/<int:pk>/resolve/", ConflictResolutionResolveView.as_view(), name="conflict-resolution-resolve"),
+    path("admin/conflict-resolutions/<int:pk>/ignore/", ConflictResolutionIgnoreView.as_view(), name="conflict-resolution-ignore"),
 ] + router.urls
