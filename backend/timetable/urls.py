@@ -7,12 +7,6 @@ from .views import (
     ScheduleRunDetailView,
     ScheduleRunListView,
     ScheduleRunPublishedClassesView,
-    AdminDashboardView,
-    AdminStatsView,
-    ScheduleRunConflictsView,
-    ScheduleRunPublishView,
-    BulkCreateSectionsView,
-    BulkCreateAssignmentsView,
 )
 
 urlpatterns = [
