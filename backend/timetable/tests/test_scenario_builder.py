@@ -5,17 +5,23 @@ from django.test import TestCase
 
 from catalog.models import Department, Room, Section, Subject
 from timetable.engines import run
+from timetable.models import AcademicTerm
 from timetable.scenario_builder import build_scenario
 from users.models import Professors
 
 
 class ScenarioBuilderTests(TestCase):
     def setUp(self):
+        # Create active academic term
+        self.term = AcademicTerm.objects.create(
+            year=2024, semester=1, start_date="2024-08-01", end_date="2024-12-20", is_active=True
+        )
+        
         self.prof = Professors.objects.create(
             user=User.objects.create_user(username="prof1", password="pass12345")
         )
         self.subject = Subject.objects.create(code="CC101", title="Intro")
-        self.section = Section.objects.create(name="BSIT-3A", headcount=30)
+        self.section = Section.objects.create(name="BSIT-3A", headcount=30, term=self.term)
         Room.objects.create(name="R201", capacity=40)
 
     def _assignment(self, spec):
@@ -25,6 +31,7 @@ class ScenarioBuilderTests(TestCase):
             prof=self.prof,
             subject=self.subject,
             section=self.section,
+            term=self.term,
         )
         MeetingSlot.objects.bulk_create(
             [

@@ -6,13 +6,15 @@ real HTTP, generates a schedule with all three engines, and prints a metrics
 comparison plus a readable Monday-Saturday grid for the best-scoring feasible
 result.
 
-Two dataset sizes are available via ``--scale``:
+Three dataset sizes are available via ``--scale``:
 
 * ``normal`` (default): 7 professors (CS, IT, MATH and GE), 18 subjects
   (majors plus GE minors such as GEC101, PE101 and NSTP101), 10 sections
   (first years included), 8 rooms and 35 assignments (53 weekly meetings).
 * ``large``: 11 professors, 23 subjects, 14 sections, 12 rooms and 52
   assignments (79 weekly meetings).
+* ``full``: 16 professors, 37 subjects, 24 sections, 18 rooms and ~160
+  assignments (~180 weekly meetings) across all four years of both BSIT and BSCS.
 
 Each run reconciles the database to the chosen scale: demo-managed subjects,
 sections, rooms, assignments and availability that belong to another scale
@@ -27,11 +29,13 @@ Usage (two terminals):
     # terminal 2
     python manage.py demo_schedule
     python manage.py demo_schedule --scale large
+    python manage.py demo_schedule --scale full --section BSIT-3A
     python manage.py demo_schedule --reset
 """
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from django.conf import settings
@@ -209,14 +213,175 @@ def _dataset(scale):
         ],
     }
 
-    data = {"normal": normal, "large": large}[scale]
+    full = {
+        "subjects": large["subjects"]
+        + [
+            ("CS204", "Artificial Intelligence"),
+            ("CS205", "Information Security"),
+            ("CS206", "Data Science Fundamentals"),
+            ("CS207", "Capstone Project 1"),
+            ("IT106", "Cloud Computing"),
+            ("IT107", "Internet of Things"),
+            ("IT108", "DevOps & CI/CD"),
+            ("MATH301", "Advanced Statistics"),
+            ("MATH302", "Operations Research"),
+            ("GEC105", "Ethics & Professional Practice"),
+            ("GEC106", "Technopreneurship"),
+            ("GEC107", "Research Methods"),
+            ("CC105", "Advanced Programming"),
+            ("CC107", "Software Architecture"),
+        ],
+        "sections": large["sections"]
+        + [
+            ("BSIT-1C", 34),
+            ("BSIT-2C", 32),
+            ("BSIT-3C", 31),
+            ("BSIT-4C", 29),
+            ("BSCS-1C", 31),
+            ("BSCS-2C", 29),
+            ("BSCS-3C", 30),
+            ("BSCS-4C", 22),
+            ("BSCS-3B", 30),
+            ("BSCS-4B", 22),
+        ],
+        "rooms": large["rooms"]
+        + [
+            ("R305", 45, "CS"),
+            ("R306", 45, "IT"),
+            ("LAB2", 30, None),
+            ("LAB3", 30, None),
+        ],
+        "availability": {
+            **large["availability"],
+            "demo_prof12": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "demo_prof13": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "demo_prof14": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "demo_prof15": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+        },
+        "loads": large["loads"]
+        + [
+            # BSIT-1C (34 students) - 1st year
+            ("demo_prof1", "CC101", "BSIT-1C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof2", "IT101", "BSIT-1C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof3", "MATH101", "BSIT-1C", [("sync", 2), ("sync", 2)]),
+            ("demo_prof10", "GEC101", "BSIT-1C", [("sync", 2)]),
+            ("demo_prof10", "GEC102", "BSIT-1C", [("sync", 2), ("async", 1)]),
+            ("demo_prof10", "PE101", "BSIT-1C", [("sync", 2)]),
+            ("demo_prof10", "NSTP101", "BSIT-1C", [("sync", 2)]),
+            ("demo_prof12", "CS204", "BSIT-1C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof13", "IT106", "BSIT-1C", [("sync", 2), ("lab", 3)]),
+
+            # BSIT-2C (32 students) - 2nd year
+            ("demo_prof2", "IT102", "BSIT-2C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof2", "IT103", "BSIT-2C", [("async", 1), ("sync", 2)]),
+            ("demo_prof3", "MATH201", "BSIT-2C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof4", "CC103", "BSIT-2C", [("sync", 2), ("async", 1)]),
+            ("demo_prof10", "GEC103", "BSIT-2C", [("sync", 2)]),
+            ("demo_prof10", "GEC104", "BSIT-2C", [("sync", 2)]),
+            ("demo_prof10", "PE101", "BSIT-2C", [("sync", 2)]),
+            ("demo_prof10", "NSTP101", "BSIT-2C", [("sync", 2)]),
+            ("demo_prof13", "IT107", "BSIT-2C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof14", "IT108", "BSIT-2C", [("sync", 2), ("lab", 3)]),
+
+            # BSIT-3C (31 students) - 3rd year
+            ("demo_prof1", "CC104", "BSIT-3C", [("lab", 3), ("async", 1)]),
+            ("demo_prof2", "IT104", "BSIT-3C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof2", "IT105", "BSIT-3C", [("sync", 2), ("async", 1)]),
+            ("demo_prof3", "MATH301", "BSIT-3C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof4", "CC104", "BSIT-3C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof5", "IT106", "BSIT-3C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof7", "CS205", "BSIT-3C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof14", "IT107", "BSIT-3C", [("sync", 2), ("lab", 3)]),
+
+            # BSIT-4C (29 students) - 4th year
+            ("demo_prof1", "CC107", "BSIT-4C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof2", "IT108", "BSIT-4C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof3", "MATH302", "BSIT-4C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof4", "CC105", "BSIT-4C", [("sync", 2), ("async", 1)]),
+            ("demo_prof5", "IT106", "BSIT-4C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof7", "CS206", "BSIT-4C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof12", "CS207", "BSIT-4C", [("sync", 2), ("lab", 3), ("async", 1)]),
+            ("demo_prof13", "IT108", "BSIT-4C", [("sync", 2), ("lab", 3)]),
+
+            # BSCS-1C (31 students) - 1st year
+            ("demo_prof1", "CC101", "BSCS-1C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof2", "IT101", "BSCS-1C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof3", "MATH101", "BSCS-1C", [("sync", 2), ("sync", 2)]),
+            ("demo_prof4", "CC102", "BSCS-1C", [("sync", 2), ("async", 1)]),
+            ("demo_prof10", "GEC101", "BSCS-1C", [("sync", 2)]),
+            ("demo_prof10", "GEC102", "BSCS-1C", [("sync", 2), ("async", 1)]),
+            ("demo_prof10", "PE101", "BSCS-1C", [("sync", 2)]),
+            ("demo_prof10", "NSTP101", "BSCS-1C", [("sync", 2)]),
+            ("demo_prof12", "CS204", "BSCS-1C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof13", "IT106", "BSCS-1C", [("sync", 2), ("lab", 3)]),
+
+            # BSCS-2C (29 students) - 2nd year
+            ("demo_prof1", "CC103", "BSCS-2C", [("sync", 2), ("async", 1)]),
+            ("demo_prof2", "IT102", "BSCS-2C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof3", "MATH201", "BSCS-2C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof4", "CS201", "BSCS-2C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof10", "GEC103", "BSCS-2C", [("sync", 2)]),
+            ("demo_prof10", "GEC104", "BSCS-2C", [("sync", 2)]),
+            ("demo_prof10", "PE101", "BSCS-2C", [("sync", 2)]),
+            ("demo_prof10", "NSTP101", "BSCS-2C", [("sync", 2)]),
+            ("demo_prof12", "CS205", "BSCS-2C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof14", "IT107", "BSCS-2C", [("sync", 2), ("lab", 3)]),
+
+            # BSCS-3C (30 students) - 3rd year
+            ("demo_prof1", "CC104", "BSCS-3C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof2", "IT104", "BSCS-3C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof3", "MATH301", "BSCS-3C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof4", "CC104", "BSCS-3C", [("sync", 2), ("async", 1)]),
+            ("demo_prof5", "IT105", "BSCS-3C", [("sync", 2), ("async", 1)]),
+            ("demo_prof7", "CS202", "BSCS-3C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof12", "CS206", "BSCS-3C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof14", "IT106", "BSCS-3C", [("sync", 2), ("lab", 3)]),
+
+            # BSCS-4C (22 students) - 4th year
+            ("demo_prof1", "CC107", "BSCS-4C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof2", "IT108", "BSCS-4C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof3", "MATH302", "BSCS-4C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof4", "CC105", "BSCS-4C", [("sync", 2), ("async", 1)]),
+            ("demo_prof5", "IT106", "BSCS-4C", [("sync", 2), ("lab", 3)]),
+            ("demo_prof7", "CS203", "BSCS-4C", [("sync", 2), ("sync", 2)]),
+            ("demo_prof12", "CS207", "BSCS-4C", [("sync", 2), ("lab", 3), ("async", 1)]),
+            ("demo_prof13", "IT107", "BSCS-4C", [("sync", 2), ("lab", 3)]),
+
+            # BSCS-3B (30 students)
+            ("demo_prof1", "CC105", "BSCS-3B", [("sync", 2), ("async", 1)]),
+            ("demo_prof2", "IT105", "BSCS-3B", [("sync", 2), ("lab", 3)]),
+            ("demo_prof3", "MATH301", "BSCS-3B", [("sync", 2), ("lab", 3)]),
+            ("demo_prof7", "CS204", "BSCS-3B", [("sync", 2), ("lab", 3)]),
+            ("demo_prof12", "CS205", "BSCS-3B", [("sync", 2), ("lab", 3)]),
+            ("demo_prof13", "IT107", "BSCS-3B", [("sync", 2), ("lab", 3)]),
+            ("demo_prof14", "IT108", "BSCS-3B", [("sync", 2), ("lab", 3)]),
+            ("demo_prof15", "CS206", "BSCS-3B", [("sync", 2), ("lab", 3)]),
+
+            # BSCS-4B (22 students)
+            ("demo_prof1", "CC107", "BSCS-4B", [("sync", 2), ("lab", 3)]),
+            ("demo_prof2", "IT108", "BSCS-4B", [("sync", 2), ("lab", 3)]),
+            ("demo_prof3", "MATH302", "BSCS-4B", [("sync", 2), ("lab", 3)]),
+            ("demo_prof7", "CS203", "BSCS-4B", [("sync", 2), ("sync", 2)]),
+            ("demo_prof12", "CS207", "BSCS-4B", [("sync", 2), ("lab", 3), ("async", 1)]),
+            ("demo_prof13", "IT107", "BSCS-4B", [("sync", 2), ("lab", 3)]),
+            ("demo_prof14", "IT106", "BSCS-4B", [("sync", 2), ("lab", 3)]),
+            ("demo_prof15", "CS206", "BSCS-4B", [("sync", 2), ("lab", 3)]),
+        ],
+    }
+
+    data = {"normal": normal, "large": large, "full": full}[scale]
     dept_by_code = {
         "CC101": "CS", "CC102": "CS", "CC103": "CS", "CC104": "CS",
+        "CC105": "CS", "CC107": "CS",
         "CS201": "CS", "CS202": "CS", "CS203": "CS",
+        "CS204": "CS", "CS205": "CS", "CS206": "CS", "CS207": "CS",
         "IT101": "IT", "IT102": "IT", "IT103": "IT", "IT104": "IT", "IT105": "IT",
+        "IT106": "IT", "IT107": "IT", "IT108": "IT",
         "MATH101": "MATH", "MATH201": "MATH", "MATH202": "MATH",
         "MATH203": "MATH", "MATH204": "MATH",
+        "MATH301": "MATH", "MATH302": "MATH",
         "GEC101": "GE", "GEC102": "GE", "GEC103": "GE", "GEC104": "GE",
+        "GEC105": "GE", "GEC106": "GE", "GEC107": "GE",
         "PE101": "GE", "NSTP101": "GE",
     }
     return {"departments": departments, "dept_by_code": dept_by_code, **data}
@@ -239,9 +404,26 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--scale",
-            choices=["normal", "large"],
+            choices=["normal", "large", "full"],
             default="normal",
-            help="Demo dataset size: 'normal' (default) or 'large'.",
+            help="Demo dataset size: 'normal' (default), 'large', or 'full'.",
+        )
+        parser.add_argument(
+            "--algorithm",
+            choices=ALGORITHMS + ["all"],
+            default=None,
+            help="Algorithm to run: 'greedy', 'min_conflicts', 'backtracking', or 'all' (default varies by scale).",
+        )
+        parser.add_argument(
+            "--time-limit",
+            type=float,
+            default=None,
+            help="Time limit in seconds for each algorithm (default varies by scale: normal=30, large=60, full=120).",
+        )
+        parser.add_argument(
+            "--section",
+            type=str,
+            help="Filter schedule by section name (e.g., 'BSIT-3A')",
         )
 
     def handle(self, *args, **options):
@@ -280,13 +462,34 @@ class Command(BaseCommand):
 
         headers = {"Authorization": f"Token {token}"}
 
+        # Determine defaults based on scale
+        scale = options["scale"]
+        if scale == "full":
+            default_algo = "min_conflicts"
+            default_time_limit = 120.0
+        elif scale == "large":
+            default_algo = "all"
+            default_time_limit = 60.0
+        else:  # normal
+            default_algo = "all"
+            default_time_limit = 30.0
+
+        # Determine which algorithms to run
+        selected_algo = options["algorithm"] if options["algorithm"] is not None else default_algo
+        if selected_algo == "all":
+            algorithms_to_run = ALGORITHMS
+        else:
+            algorithms_to_run = [selected_algo]
+
+        time_limit = options["time_limit"] if options["time_limit"] is not None else default_time_limit
+
         results = {}
-        for algorithm in ALGORITHMS:
+        for algorithm in algorithms_to_run:
             result = self._http(
                 base,
                 "POST",
                 "/schedules/generate",
-                {"algorithm": algorithm, "time_limit_s": 30},
+                {"algorithm": algorithm, "time_limit_s": time_limit},
                 headers,
             )
             results[algorithm] = result
@@ -299,10 +502,26 @@ class Command(BaseCommand):
             for violation in best.get("violations", []):
                 self.stdout.write(f"  - {violation}")
             return
+
+        # Resolve section name to ID if section filter provided
+        section_id = None
+        if options["section"]:
+            section_id = self._get_section_id(options["section"])
+            if section_id is None:
+                return
+
         classes = self._http(
-            base, "GET", f"/schedules/runs/{best['run_id']}/classes", headers=headers
+            base,
+            "GET",
+            f"/schedules/runs/{best['run_id']}/classes",
+            headers=headers,
+            params={"section": section_id} if section_id else None,
         )
-        self._print_grid(best["algorithm"], classes)
+
+        if options["section"]:
+            self._print_section_schedule(best["algorithm"], options["section"], classes)
+        else:
+            self._print_grid(best["algorithm"], classes)
 
     # -- seeding -----------------------------------------------------------
 
@@ -442,7 +661,7 @@ class Command(BaseCommand):
         managed_rooms = set()
         managed_profs = set()
         managed_loads = set()
-        for other in ("normal", "large"):
+        for other in ("normal", "large", "full"):
             other_data = _dataset(other)
             managed_subjects.update(c for c, _ in other_data["subjects"])
             managed_sections.update(n for n, _ in other_data["sections"])
@@ -488,8 +707,11 @@ class Command(BaseCommand):
 
     # -- HTTP + output -----------------------------------------------------
 
-    def _http(self, base, method, path, payload=None, headers=None):
+    def _http(self, base, method, path, payload=None, headers=None, params=None):
         url = base.rstrip("/") + path
+        if params:
+            query = urllib.parse.urlencode(params)
+            url = f"{url}?{query}"
         data = json.dumps(payload).encode() if payload is not None else None
         request = urllib.request.Request(
             url, data=data, method=method, headers=headers or {}
@@ -544,4 +766,31 @@ class Command(BaseCommand):
                     f"  {self._time_range(c):<11}  {subject:<20}  "
                     f"{c['section_name']:<10}  {c['prof_name']:<16}  "
                     f"room {c['room_name']:<10}  {mode}"
+                )
+
+    def _get_section_id(self, section_name):
+        """Resolve section name to ID."""
+        section = Section.objects.filter(name=section_name).first()
+        if not section:
+            self.stderr.write(f"Section '{section_name}' not found.")
+            return None
+        return section.id
+
+    def _print_section_schedule(self, algorithm, section_name, classes):
+        self.stdout.write(f"\n=== Schedule for {section_name} ({algorithm}) ===")
+        by_day = {day: [] for day in range(6)}
+        for c in classes:
+            by_day[c["day"]].append(c)
+        for day, day_classes in by_day.items():
+            if not day_classes:
+                continue
+            self.stdout.write(f"\n{DAY_NAMES[day]}")
+            for c in sorted(day_classes, key=lambda x: x["start_time"]):
+                subject = c["subject_label"]
+                mode = c.get("mode") or c.get("mode_display") or ""
+                prof = c["prof_name"]
+                room = c["room_name"]
+                self.stdout.write(
+                    f"  {self._time_range(c):<11}  {subject:<35}  "
+                    f"room {room:<10}  {mode:<6}  Prof: {prof}"
                 )

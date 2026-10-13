@@ -34,6 +34,7 @@ class RoomRef:
     name: str
     capacity: int
     department: str = ""
+    building: str = ""
 
 
 @dataclass(frozen=True)

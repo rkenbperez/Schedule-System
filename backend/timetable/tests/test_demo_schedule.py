@@ -70,6 +70,9 @@ class DemoScheduleCommandTests(TestCase):
                 reset=False,
                 allow_non_debug=False,
                 scale="normal",
+                algorithm=None,
+                time_limit=None,
+                section=None,
             )
 
         self.assertEqual(http.call_count, 4)
