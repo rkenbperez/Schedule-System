@@ -3,7 +3,7 @@
 from datetime import date, time as dtime
 from django.test import TestCase
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 
 from catalog.models import Department, Room, Section, Subject
 from users.models import Professors
@@ -247,11 +247,13 @@ class EdgeCaseTests(TestCase):
         """Test invalid day values are rejected."""
         prof = ProfessorFactory(department=self.dept)
         
-        with self.assertRaises(IntegrityError):
-            AvailabilityWindowFactory(prof=prof, day=6)  # Sunday (invalid)
+        with transaction.atomic():
+            with self.assertRaises(IntegrityError):
+                AvailabilityWindowFactory(prof=prof, day=6)  # Sunday (invalid)
         
-        with self.assertRaises(IntegrityError):
-            AvailabilityWindowFactory(prof=prof, day=-1)
+        with transaction.atomic():
+            with self.assertRaises(IntegrityError):
+                AvailabilityWindowFactory(prof=prof, day=-1)
 
     def test_time_reversal_rejected(self):
         """Start time after end time should be rejected."""
@@ -563,7 +565,7 @@ class DatabaseConstraintEdgeCases(TestCase):
         self.assertEqual(meeting_count, 2)
         
         assignment.delete()
-        self.assertEqual(MeetingSlot.objects.filter(assignment=assignment).count(), 0)
+        self.assertEqual(MeetingSlot.objects.filter(assignment_id=assignment.id).count(), 0)
 
     def test_cascade_delete_term_removes_sections(self):
         """Deleting term should cascade to sections."""
@@ -573,5 +575,6 @@ class DatabaseConstraintEdgeCases(TestCase):
         section_count = Section.objects.filter(term=self.term).count()
         self.assertEqual(section_count, 2)
         
+        term_id = self.term.id
         self.term.delete()
-        self.assertEqual(Section.objects.filter(term=self.term).count(), 0)
+        self.assertEqual(Section.objects.filter(term_id=term_id).count(), 0)
