@@ -5,12 +5,10 @@ from rest_framework_simplejwt.views import (
     TokenVerifyView,
 )
 
-from .views import JWTLoginView, JWTLogoutView, JWTMeView, LoginView
+from .views import JWTLoginView, JWTLogoutView, JWTMeView
 
 urlpatterns = [
-    # Legacy DRF token auth (deprecated, kept for compatibility)
-    path("auth/login/", LoginView.as_view(), name="login"),
-    # JWT auth endpoints (new)
+    # JWT auth endpoints (primary)
     path("auth/jwt/login/", JWTLoginView.as_view(), name="jwt-login"),
     path("auth/jwt/refresh/", TokenRefreshView.as_view(), name="jwt-refresh"),
     path("auth/jwt/verify/", TokenVerifyView.as_view(), name="jwt-verify"),

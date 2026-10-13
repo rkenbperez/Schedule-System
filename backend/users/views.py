@@ -1,6 +1,5 @@
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view, inline_serializer
 from rest_framework import serializers, status, viewsets
-from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -10,37 +9,8 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from core.permissions import IsRegistrarOrReadOnly
 
 from .models import Professors
-from .serializers import LoginSerializer, ProfessorsSerializer
+from .serializers import ProfessorsSerializer
 from .throttles import LoginRateThrottle
-
-
-@extend_schema(
-    tags=["auth"],
-    request=LoginSerializer,
-    responses={
-        200: OpenApiResponse(description="Login successful, returns an auth token"),
-    },
-)
-class LoginView(APIView):
-    permission_classes = [AllowAny]
-    throttle_classes = [LoginRateThrottle]
-
-    def post(self, request):
-        serializer = LoginSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.validated_data["user"]
-        token, _ = Token.objects.get_or_create(user=user)
-        return Response(
-            {
-                "token": token.key,
-                "user": {
-                    "id": user.id,
-                    "username": user.username,
-                    "is_staff": user.is_staff,
-                },
-            },
-            status=status.HTTP_200_OK,
-        )
 
 
 class JWTLoginView(TokenObtainPairView):
