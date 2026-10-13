@@ -20,12 +20,19 @@ from core.permissions import IsOwnerOrRegistrar, IsRegistrar, IsRegistrarOrReadO
 from rest_framework.permissions import IsAuthenticated
 
 from .engines import ALGORITHMS, run
-from .models import AcademicTerm, Assignment, AvailabilityWindow, BusyBlock, ScheduledClass, ScheduleRun
+from .models import (
+    AcademicTerm, Assignment, AuditLog, AvailabilityWindow, BusyBlock,
+    ConflictResolution, GlobalSettings, ScheduledClass, ScheduleRun
+)
 from .scenario_builder import build_scenario
 from .serializers import (
     AssignmentSerializer,
+    AuditLogSerializer,
     AvailabilityWindowSerializer,
     BusyBlockSerializer,
+    ConflictResolutionSerializer,
+    ConflictResolutionResolveSerializer,
+    GlobalSettingsSerializer,
     ScheduledClassSerializer,
     ScheduleRunSerializer,
 )
@@ -1544,3 +1551,163 @@ class PublicSectionScheduleView(APIView):
             },
             "schedule": schedule_data,
         })
+
+
+# ==================== ADVANCED FEATURES ====================
+
+@extend_schema(tags=["audit"])
+class AuditLogListView(ListAPIView):
+    """List audit log entries."""
+    permission_classes = [IsRegistrar]
+    serializer_class = AuditLogSerializer
+
+    def get_queryset(self):
+        qs = AuditLog.objects.select_related("user").all()
+
+        # Filter by action
+        action = self.request.query_params.get("action")
+        if action:
+            qs = qs.filter(action=action)
+
+        # Filter by model
+        model = self.request.query_params.get("model")
+        if model:
+            qs = qs.filter(model_name=model)
+
+        # Filter by user
+        user = self.request.query_params.get("user")
+        if user:
+            qs = qs.filter(user_id=user)
+
+        # Filter by date range
+        from_date = self.request.query_params.get("from")
+        if from_date:
+            qs = qs.filter(timestamp__gte=from_date)
+        to_date = self.request.query_params.get("to")
+        if to_date:
+            qs = qs.filter(timestamp__lte=to_date)
+
+        return qs.order_by("-timestamp")
+
+
+@extend_schema(tags=["settings"])
+class GlobalSettingsView(APIView):
+    """Get or update global settings."""
+    permission_classes = [IsRegistrar]
+
+    def get(self, request):
+        """Get all settings."""
+        settings = GlobalSettings.objects.all()
+        return Response(GlobalSettingsSerializer(settings, many=True).data)
+
+    def patch(self, request):
+        """Update multiple settings."""
+        updates = request.data.get("settings", [])
+        if not updates:
+            return Response(
+                {"error": "settings list is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        updated = []
+        errors = []
+        for item in updates:
+            key = item.get("key")
+            value = item.get("value")
+            description = item.get("description", "")
+            if not key:
+                errors.append({"key": key, "error": "key is required"})
+                continue
+            try:
+                obj = GlobalSettings.set(key, value, description, request.user)
+                updated.append(GlobalSettingsSerializer(obj).data)
+            except Exception as e:
+                errors.append({"key": key, "error": str(e)})
+
+        return Response({
+            "updated": updated,
+            "errors": errors,
+        })
+
+
+@extend_schema(tags=["settings"])
+class GlobalSettingDetailView(APIView):
+    """Get or update a single setting."""
+    permission_classes = [IsRegistrar]
+
+    def get(self, request, key):
+        setting = get_object_or_404(GlobalSettings, key=key)
+        return Response(GlobalSettingsSerializer(setting).data)
+
+    def patch(self, request, key):
+        setting = get_object_or_404(GlobalSettings, key=key)
+        value = request.data.get("value")
+        description = request.data.get("description", setting.description)
+        if value is None:
+            return Response(
+                {"error": "value is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        setting.value = value
+        setting.description = description
+        setting.updated_by = request.user
+        setting.save()
+        return Response(GlobalSettingsSerializer(setting).data)
+
+
+@extend_schema(tags=["conflicts"])
+class ConflictResolutionListView(ListAPIView):
+    """List conflict resolutions for a schedule run."""
+    permission_classes = [IsRegistrar]
+    serializer_class = ConflictResolutionSerializer
+
+    def get_queryset(self):
+        run_id = self.kwargs.get("run_id")
+        return ConflictResolution.objects.filter(run_id=run_id).select_related("run", "resolved_by")
+
+
+@extend_schema(
+    tags=["conflicts"],
+    request=ConflictResolutionResolveSerializer,
+    responses={
+        200: ConflictResolutionSerializer,
+        404: OpenApiResponse(description="Conflict not found"),
+    },
+)
+class ConflictResolutionResolveView(APIView):
+    """Resolve a conflict."""
+    permission_classes = [IsRegistrar]
+
+    def post(self, request, pk):
+        conflict = get_object_or_404(ConflictResolution, pk=pk)
+        serializer = ConflictResolutionResolveSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        conflict.resolution_type = serializer.validated_data["resolution_type"]
+        conflict.resolution_details = serializer.validated_data.get("resolution_details", {})
+        conflict.status = ConflictResolution.Status.RESOLVED
+        conflict.resolved_by = request.user
+        conflict.resolved_at = timezone.now()
+        conflict.save()
+
+        return Response(ConflictResolutionSerializer(conflict).data)
+
+
+@extend_schema(
+    tags=["conflicts"],
+    responses={
+        200: OpenApiResponse(description="Conflict ignored"),
+        404: OpenApiResponse(description="Conflict not found"),
+    },
+)
+class ConflictResolutionIgnoreView(APIView):
+    """Ignore a conflict."""
+    permission_classes = [IsRegistrar]
+
+    def post(self, request, pk):
+        conflict = get_object_or_404(ConflictResolution, pk=pk)
+        conflict.status = ConflictResolution.Status.IGNORED
+        conflict.resolved_by = request.user
+        conflict.resolved_at = timezone.now()
+        conflict.save()
+        return Response(ConflictResolutionSerializer(conflict).data)

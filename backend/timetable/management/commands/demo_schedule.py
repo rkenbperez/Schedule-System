@@ -447,12 +447,13 @@ class Command(BaseCommand):
         self.stdout.write(f"Registrar: {registrar.username} / {DEMO_PASSWORD}")
 
         try:
-            token = self._http(
+            login_result = self._http(
                 base,
                 "POST",
-                "/auth/login/",
+                "/auth/jwt/login/",
                 {"username": registrar.username, "password": DEMO_PASSWORD},
-            )["token"]
+            )
+            token = login_result["access"]
         except urllib.error.URLError:
             self.stderr.write(
                 "Could not reach the server. Start it first with "
@@ -460,7 +461,7 @@ class Command(BaseCommand):
             )
             return
 
-        headers = {"Authorization": f"Token {token}"}
+        headers = {"Authorization": f"Bearer {token}"}
 
         # Determine defaults based on scale
         scale = options["scale"]

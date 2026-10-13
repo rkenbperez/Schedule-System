@@ -2,9 +2,13 @@ from rest_framework import serializers
 
 from .models import (
     MODE_DURATIONS,
+    AcademicTerm,
     Assignment,
+    AuditLog,
     AvailabilityWindow,
     BusyBlock,
+    ConflictResolution,
+    GlobalSettings,
     MeetingSlot,
     ScheduledClass,
     ScheduleRun,
@@ -266,3 +270,71 @@ class ScheduledClassSerializer(serializers.ModelSerializer):
 
     def get_room_name(self, obj):
         return obj.room.name if obj.room else None
+
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    user_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AuditLog
+        fields = [
+            "id",
+            "user",
+            "user_name",
+            "action",
+            "model_name",
+            "object_id",
+            "object_repr",
+            "changes",
+            "ip_address",
+            "user_agent",
+            "timestamp",
+        ]
+        read_only_fields = fields
+
+    def get_user_name(self, obj):
+        if obj.user:
+            return obj.user.get_full_name() or obj.user.username
+        return "System"
+
+
+class GlobalSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GlobalSettings
+        fields = ["id", "key", "value", "description", "updated_at", "updated_by"]
+        read_only_fields = ["key", "updated_at", "updated_by"]
+
+
+class ConflictResolutionSerializer(serializers.ModelSerializer):
+    run_id = serializers.IntegerField(source="run.id", read_only=True)
+    run_algorithm = serializers.CharField(source="run.algorithm", read_only=True)
+    resolved_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ConflictResolution
+        fields = [
+            "id",
+            "run",
+            "run_id",
+            "run_algorithm",
+            "conflict_type",
+            "conflict_details",
+            "resolution_type",
+            "resolution_details",
+            "status",
+            "resolved_by",
+            "resolved_by_name",
+            "resolved_at",
+            "created_at",
+        ]
+        read_only_fields = ["run", "created_at", "resolved_by", "resolved_at"]
+
+    def get_resolved_by_name(self, obj):
+        if obj.resolved_by:
+            return obj.resolved_by.get_full_name() or obj.resolved_by.username
+        return None
+
+
+class ConflictResolutionResolveSerializer(serializers.Serializer):
+    resolution_type = serializers.ChoiceField(choices=ConflictResolution.ResolutionType.choices)
+    resolution_details = serializers.JSONField(required=False, default=dict)

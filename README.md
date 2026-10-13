@@ -5,10 +5,10 @@ sections they handle, plus the times they are available — into a single weekly
 timetable spread across Monday to Saturday.
 
 The system models an academic institution (departments, rooms, sections,
-subjects, professor workloads), then searches for a conflict-free timetable
-using three interchangeable scheduling algorithms. Because each algorithm is
-measured on the same input with the same scoring function, results can be
-compared directly by runtime and schedule quality.
+subjects, professor workloads, academic terms), then searches for a conflict-free
+timetable using three interchangeable scheduling algorithms. Because each
+algorithm is measured on the same input with the same scoring function, results
+can be compared directly by runtime and schedule quality.
 
 ## Key features
 
@@ -25,8 +25,13 @@ compared directly by runtime and schedule quality.
   or room; capacity respected; availability honoured) are checked for every
   generated schedule, and each subject load is required to keep at least one
   synchronous class per week.
+- **Academic terms** — schedules are scoped to First/Second Semester terms with
+  activation control.
 - **Role-based access** — registrars manage data and generate schedules;
-  professors manage their own availability and view their own timetable.
+  professors manage their own availability and view their own timetable;
+  public read-only access to published schedules.
+- **Advanced features** — audit logging, global settings, conflict resolution
+  tracking.
 - **Interactive API docs** — Swagger UI and ReDoc generated from the API schema.
 
 ## Architecture
@@ -54,7 +59,7 @@ database into an engine input.
 | Engine    | Pure Python (no framework dependency)               |
 | Database  | SQLite (development)                                |
 | Frontend  | React + Vite (planned)                              |
-| Auth      | Token authentication                                |
+| Auth      | JWT (simplejwt) with refresh/blacklist support      |
 
 ## Repository structure
 
@@ -91,9 +96,9 @@ cd backend
 python manage.py test
 ```
 
-The 80-test suite covers data rules, all three engines (including cases where
-the algorithms differ), security, meeting modes, and a full end-to-end flow over
-HTTP.
+The 165-test suite covers data rules, all three engines (including cases where
+the algorithms differ), security, meeting modes, academic terms, JWT auth,
+RBAC, edge cases, scalability, and a full end-to-end flow over HTTP.
 
 ## License
 
