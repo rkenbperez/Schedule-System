@@ -17,6 +17,7 @@ from rest_framework.views import APIView
 from rest_framework import viewsets
 
 from core.permissions import IsOwnerOrRegistrar, IsRegistrar, IsRegistrarOrReadOnly, IsProfessor, IsPublicReadOnly
+from rest_framework.permissions import IsAuthenticated
 
 from .engines import ALGORITHMS, run
 from .models import AcademicTerm, Assignment, AvailabilityWindow, BusyBlock, ScheduledClass, ScheduleRun
@@ -892,3 +893,396 @@ class BulkCreateAssignmentsView(APIView):
             "created_count": len(created),
             "error_count": len(errors),
         }, status=status.HTTP_201_CREATED if created else status.HTTP_400_BAD_REQUEST)
+
+
+# ==================== PROFESSOR PANEL APIs ====================
+
+@extend_schema(tags=["professor"])
+class ProfessorProfileView(APIView):
+    """Current professor profile with current term assignments."""
+    permission_classes = [IsProfessor]
+
+    def get(self, request):
+        prof = request.user.prof
+        active_term = AcademicTerm.objects.filter(is_active=True).first()
+
+        assignments = Assignment.objects.filter(prof=prof).select_related(
+            "subject", "section", "term"
+        ).prefetch_related("meetings")
+
+        if active_term:
+            assignments = assignments.filter(term=active_term)
+
+        assignments_data = []
+        for a in assignments:
+            meetings_data = [
+                {
+                    "id": m.id,
+                    "order": m.order,
+                    "mode": m.mode,
+                    "mode_display": m.get_mode_display(),
+                    "duration_slots": m.duration_slots,
+                }
+                for m in a.meetings.all()
+            ]
+            assignments_data.append({
+                "id": a.id,
+                "subject": {
+                    "id": a.subject.id,
+                    "code": a.subject.code,
+                    "title": a.subject.title,
+                    "units": a.subject.units,
+                },
+                "section": {
+                    "id": a.section.id,
+                    "name": a.section.name,
+                    "headcount": a.section.headcount,
+                    "program": a.section.program,
+                    "year_level": a.section.year_level,
+                },
+                "term": {
+                    "id": a.term.id,
+                    "code": a.term.code,
+                    "name": str(a.term),
+                } if a.term else None,
+                "meetings": meetings_data,
+            })
+
+        return Response({
+            "id": prof.id,
+            "user": {
+                "id": prof.user.id,
+                "username": prof.user.username,
+                "full_name": prof.user.get_full_name() or prof.user.username,
+                "email": prof.user.email,
+            },
+            "department": {
+                "id": prof.department.id,
+                "name": prof.department.name,
+            } if prof.department else None,
+            "max_daily_hours": prof.max_daily_hours,
+            "max_consecutive": prof.max_consecutive,
+            "active_term": {
+                "id": active_term.id,
+                "code": active_term.code,
+                "name": str(active_term),
+            } if active_term else None,
+            "assignments": assignments_data,
+        })
+
+
+@extend_schema(tags=["professor"])
+class ProfessorScheduleView(APIView):
+    """Professor's weekly grid schedule for active term."""
+    permission_classes = [IsProfessor]
+
+    def get(self, request):
+        prof = request.user.prof
+        run_obj = ScheduleRun.objects.filter(
+            term__is_active=True
+        ).order_by("-created_at").first()
+
+        if run_obj is None:
+            return Response({
+                "schedule": [],
+                "message": "No schedule run found for active term",
+            })
+
+        classes = run_obj.classes.select_related(
+            "assignment__prof", "assignment__subject", "assignment__section", "room"
+        ).filter(assignment__prof=prof).order_by("day", "start_time")
+
+        schedule_data = []
+        for c in classes:
+            schedule_data.append({
+                "id": c.id,
+                "day": c.day,
+                "day_name": c.get_day_display(),
+                "start_time": c.start_time.strftime("%H:%M"),
+                "end_time": c.end_time.strftime("%H:%M"),
+                "duration_slots": c.duration_slots,
+                "subject": {
+                    "code": c.assignment.subject.code,
+                    "title": c.assignment.subject.title,
+                },
+                "section": {
+                    "name": c.assignment.section.name,
+                    "program": c.assignment.section.program,
+                    "year_level": c.assignment.section.year_level,
+                },
+                "room": {
+                    "id": c.room.id,
+                    "name": c.room.name,
+                    "building": c.room.building,
+                } if c.room else None,
+                "mode": c.mode,
+                "mode_display": c.get_mode_display() if c.mode else None,
+            })
+
+        return Response({
+            "schedule_run": {
+                "id": run_obj.id,
+                "algorithm": run_obj.algorithm,
+                "status": run_obj.status,
+                "published": run_obj.published,
+            },
+            "schedule": schedule_data,
+        })
+
+
+@extend_schema(tags=["professor"])
+class ProfessorScheduleConflictsView(APIView):
+    """Professor's personal schedule conflicts for active term."""
+    permission_classes = [IsProfessor]
+
+    def get(self, request):
+        prof = request.user.prof
+        run_obj = ScheduleRun.objects.filter(
+            term__is_active=True
+        ).order_by("-created_at").first()
+
+        if run_obj is None:
+            return Response({
+                "conflicts": [],
+                "message": "No schedule run found for active term",
+            })
+
+        classes = run_obj.classes.select_related(
+            "assignment__prof__user", "assignment__subject", "assignment__section", "room"
+        ).filter(assignment__prof=prof).order_by("day", "start_time")
+
+        conflicts = {
+            "room_conflicts": [],
+            "professor_conflicts": [],
+            "section_conflicts": [],
+            "capacity_violations": [],
+            "availability_violations": [],
+            "consecutive_violations": [],
+            "daily_hours_violations": [],
+        }
+
+        # Room double-booking (affecting this professor)
+        room_bookings = {}
+        for c in classes:
+            key = (c.room_id, c.day, c.start_time, c.duration_slots)
+            if key not in room_bookings:
+                room_bookings[key] = []
+            room_bookings[key].append(c)
+        for key, bookings in room_bookings.items():
+            if len(bookings) > 1:
+                conflicts["room_conflicts"].append({
+                    "room": bookings[0].room.name if bookings[0].room else "N/A",
+                    "day": bookings[0].get_day_display(),
+                    "start_time": bookings[0].start_time.strftime("%H:%M"),
+                    "duration_slots": bookings[0].duration_slots,
+                    "classes": [
+                        {
+                            "id": b.id,
+                            "subject": b.assignment.subject.code,
+                            "section": b.assignment.section.name,
+                            "professor": b.assignment.prof.user.get_full_name() or b.assignment.prof.user.username,
+                        }
+                        for b in bookings
+                    ]
+                })
+
+        # Professor double-booking (this professor)
+        prof_bookings = {}
+        for c in classes:
+            key = (c.assignment.prof_id, c.day, c.start_time, c.duration_slots)
+            if key not in prof_bookings:
+                prof_bookings[key] = []
+            prof_bookings[key].append(c)
+        for key, bookings in prof_bookings.items():
+            if len(bookings) > 1:
+                conflicts["professor_conflicts"].append({
+                    "professor": bookings[0].assignment.prof.user.get_full_name() or bookings[0].assignment.prof.user.username,
+                    "day": bookings[0].get_day_display(),
+                    "start_time": bookings[0].start_time.strftime("%H:%M"),
+                    "duration_slots": bookings[0].duration_slots,
+                    "classes": [
+                        {
+                            "id": b.id,
+                            "subject": b.assignment.subject.code,
+                            "section": b.assignment.section.name,
+                        }
+                        for b in bookings
+                    ]
+                })
+
+        # Section double-booking
+        section_bookings = {}
+        for c in classes:
+            key = (c.assignment.section_id, c.day, c.start_time, c.duration_slots)
+            if key not in section_bookings:
+                section_bookings[key] = []
+            section_bookings[key].append(c)
+        for key, bookings in section_bookings.items():
+            if len(bookings) > 1:
+                conflicts["section_conflicts"].append({
+                    "section": bookings[0].assignment.section.name,
+                    "day": bookings[0].get_day_display(),
+                    "start_time": bookings[0].start_time.strftime("%H:%M"),
+                    "duration_slots": bookings[0].duration_slots,
+                    "classes": [
+                        {
+                            "id": b.id,
+                            "subject": b.assignment.subject.code,
+                            "professor": b.assignment.prof.user.get_full_name() or b.assignment.prof.user.username,
+                        }
+                        for b in bookings
+                    ]
+                })
+
+        # Room capacity violations
+        for c in classes:
+            if c.room and c.assignment.section.headcount > c.room.capacity:
+                conflicts["capacity_violations"].append({
+                    "class_id": c.id,
+                    "room": c.room.name,
+                    "capacity": c.room.capacity,
+                    "headcount": c.assignment.section.headcount,
+                    "subject": c.assignment.subject.code,
+                    "section": c.assignment.section.name,
+                })
+
+        # Professor availability violations
+        from timetable.models import AvailabilityWindow
+        availability_map = {}
+        for aw in AvailabilityWindow.objects.filter(prof=prof):
+            key = (aw.prof_id, aw.day)
+            if key not in availability_map:
+                availability_map[key] = []
+            availability_map[key].append((aw.start_time, aw.end_time))
+
+        for c in classes:
+            prof_id = c.assignment.prof_id
+            day = c.day
+            class_start = c.start_time
+            class_end = c.end_time
+            key = (prof_id, day)
+            if key in availability_map:
+                available = False
+                for start, end in availability_map[key]:
+                    if start <= class_start and class_end <= end:
+                        available = True
+                        break
+                if not available:
+                    conflicts["availability_violations"].append({
+                        "class_id": c.id,
+                        "professor": c.assignment.prof.user.get_full_name() or c.assignment.prof.user.username,
+                        "day": c.get_day_display(),
+                        "class_time": f"{class_start.strftime('%H:%M')}-{class_end.strftime('%H:%M')}",
+                        "available_windows": [
+                            f"{s.strftime('%H:%M')}-{e.strftime('%H:%M')}" for s, e in availability_map[key]
+                        ],
+                    })
+
+        # Consecutive hours violations (per professor per day)
+        from collections import defaultdict
+        prof_day_classes = defaultdict(list)
+        for c in classes:
+            prof_day_classes[(c.assignment.prof_id, c.day)].append(c)
+
+        for (prof_id, day), day_classes in prof_day_classes.items():
+            day_classes.sort(key=lambda x: x.start_time)
+            prof_obj = day_classes[0].assignment.prof
+            max_consecutive = prof_obj.max_consecutive
+            for i in range(len(day_classes)):
+                current = day_classes[i]
+                current_end = current.end_time
+                consecutive_slots = current.duration_slots
+                for j in range(i + 1, len(day_classes)):
+                    next_class = day_classes[j]
+                    if next_class.start_time == current_end:
+                        consecutive_slots += next_class.duration_slots
+                        current_end = next_class.end_time
+                    else:
+                        break
+                if consecutive_slots > max_consecutive:
+                    conflicts["consecutive_violations"].append({
+                        "professor": prof_obj.user.get_full_name() or prof_obj.user.username,
+                        "day": day_classes[0].get_day_display(),
+                        "max_consecutive": max_consecutive,
+                        "actual_consecutive": consecutive_slots,
+                        "classes": [
+                            {
+                                "id": c.id,
+                                "subject": c.assignment.subject.code,
+                                "start": c.start_time.strftime("%H:%M"),
+                                "end": c.end_time.strftime("%H:%M"),
+                            }
+                            for c in day_classes[i:i+3]
+                        ]
+                    })
+                    break
+
+        # Daily hours violations
+        for (prof_id, day), day_classes in prof_day_classes.items():
+            prof_obj = day_classes[0].assignment.prof
+            max_daily = prof_obj.max_daily_hours
+            total_slots = sum(c.duration_slots for c in day_classes)
+            if total_slots > max_daily:
+                conflicts["daily_hours_violations"].append({
+                    "professor": prof_obj.user.get_full_name() or prof_obj.user.username,
+                    "day": day_classes[0].get_day_display(),
+                    "max_daily_hours": max_daily,
+                    "actual_hours": total_slots,
+                    "classes": [
+                        {
+                            "id": c.id,
+                            "subject": c.assignment.subject.code,
+                            "start": c.start_time.strftime("%H:%M"),
+                            "end": c.end_time.strftime("%H:%M"),
+                        }
+                        for c in day_classes
+                    ]
+                })
+
+        return Response(conflicts)
+
+
+@extend_schema_view(
+    list=extend_schema(tags=["professor"]),
+    retrieve=extend_schema(tags=["professor"]),
+    create=extend_schema(tags=["professor"]),
+    update=extend_schema(tags=["professor"]),
+    partial_update=extend_schema(tags=["professor"]),
+    destroy=extend_schema(tags=["professor"]),
+)
+class ProfessorAvailabilityViewSet(viewsets.ModelViewSet):
+    """Professor's own availability windows."""
+    serializer_class = AvailabilityWindowSerializer
+    permission_classes = [IsProfessor]
+
+    def get_queryset(self):
+        return AvailabilityWindow.objects.filter(prof=self.request.user.prof)
+
+    def perform_create(self, serializer):
+        serializer.save(prof=self.request.user.prof)
+
+    def perform_update(self, serializer):
+        serializer.save(prof=self.request.user.prof)
+
+
+@extend_schema_view(
+    list=extend_schema(tags=["professor"]),
+    retrieve=extend_schema(tags=["professor"]),
+    create=extend_schema(tags=["professor"]),
+    update=extend_schema(tags=["professor"]),
+    partial_update=extend_schema(tags=["professor"]),
+    destroy=extend_schema(tags=["professor"]),
+)
+class ProfessorBusyBlockViewSet(viewsets.ModelViewSet):
+    """Professor's own busy blocks."""
+    serializer_class = BusyBlockSerializer
+    permission_classes = [IsProfessor]
+
+    def get_queryset(self):
+        return BusyBlock.objects.filter(prof=self.request.user.prof)
+
+    def perform_create(self, serializer):
+        serializer.save(prof=self.request.user.prof)
+
+    def perform_update(self, serializer):
+        serializer.save(prof=self.request.user.prof)

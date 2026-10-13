@@ -1,4 +1,5 @@
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 
 from .views import (
     ScheduleGenerateView,
@@ -13,7 +14,16 @@ from .views import (
     ScheduleRunPublishView,
     BulkCreateSectionsView,
     BulkCreateAssignmentsView,
+    ProfessorProfileView,
+    ProfessorScheduleView,
+    ProfessorScheduleConflictsView,
+    ProfessorAvailabilityViewSet,
+    ProfessorBusyBlockViewSet,
 )
+
+router = DefaultRouter()
+router.register("professor/availability", ProfessorAvailabilityViewSet, basename="professor-availability")
+router.register("professor/busy-blocks", ProfessorBusyBlockViewSet, basename="professor-busy-blocks")
 
 urlpatterns = [
     path("schedules/generate", ScheduleGenerateView.as_view(), name="schedule-generate"),
@@ -37,4 +47,8 @@ urlpatterns = [
     path("admin/schedules/runs/<int:pk>/publish/", ScheduleRunPublishView.as_view(), name="schedule-run-publish"),
     path("admin/sections/bulk/", BulkCreateSectionsView.as_view(), name="bulk-create-sections"),
     path("admin/assignments/bulk/", BulkCreateAssignmentsView.as_view(), name="bulk-create-assignments"),
-]
+    # Professor Panel APIs
+    path("professor/me/", ProfessorProfileView.as_view(), name="professor-profile"),
+    path("professor/me/schedule/", ProfessorScheduleView.as_view(), name="professor-schedule"),
+    path("professor/me/schedule/conflicts/", ProfessorScheduleConflictsView.as_view(), name="professor-schedule-conflicts"),
+] + router.urls
