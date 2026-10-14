@@ -1,4 +1,4 @@
-from datetime import time as dtime
+from datetime import time as dtime, timezone
 
 from drf_spectacular.utils import (
     OpenApiResponse,
@@ -16,13 +16,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import viewsets
 
+from backend.catalog.models import Section
 from core.permissions import IsOwnerOrRegistrar, IsRegistrar, IsRegistrarOrReadOnly, IsProfessor, IsPublicReadOnly
 from rest_framework.permissions import IsAuthenticated
 
 from .engines import ALGORITHMS, run
 from .models import (
     AcademicTerm, Assignment, AuditLog, AvailabilityWindow, BusyBlock,
-    ConflictResolution, GlobalSettings, ScheduledClass, ScheduleRun
+    ConflictResolution, GlobalSettings, MeetingSlot, ScheduledClass, ScheduleRun
 )
 from .scenario_builder import build_scenario
 from .serializers import (
