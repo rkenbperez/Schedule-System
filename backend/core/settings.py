@@ -46,7 +46,7 @@ INSTALLED_APPS = [
     'users',
     'catalog',
     'timetable',
-    'exports',
+    'data_transfer',
 ]
 
 MIDDLEWARE = [

@@ -1,6 +1,5 @@
 from django.apps import AppConfig
 
-
-class ExportsConfig(AppConfig):
+class DataTransferConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'exports'
+    name = 'data_transfer'
