@@ -85,6 +85,7 @@ def generate_schedule_pdf(run_obj):
     header_style = copy(styles["Normal"])
     header_style.fontName = "Helvetica-Bold"
     header_style.fontSize = 8
+    header_style.textColor = colors.white
     
     cell_style = copy(styles["Normal"])
     cell_style.fontName = "Helvetica"
