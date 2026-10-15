@@ -14,7 +14,7 @@ from catalog.models import Department, Room, Section, Subject
 from timetable.models import Assignment, MeetingSlot, AvailabilityWindow, BusyBlock
 from users.models import Professors
 
-from exports.import_utils import processor, parse_time, parse_day, parse_mode
+from data_transfer.import_utils import processor, parse_time, parse_day, parse_mode
 
 User = get_user_model()
 

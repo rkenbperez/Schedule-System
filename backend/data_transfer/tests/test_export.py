@@ -61,8 +61,8 @@ class ExportTestCase(APITestCase):
             mode="sync",
         )
 
-        self.url = f"/api/exports/schedules/{self.run.pk}.xlsx"
-        self.pdf_url = f"/api/exports/schedules/{self.run.pk}.pdf"
+        self.url = f"/api/data_transfer/schedules/{self.run.pk}.xlsx"
+        self.pdf_url = f"/api/data_transfer/schedules/{self.run.pk}.pdf"
 
     def auth(self, token):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
@@ -90,7 +90,7 @@ class ExportTestCase(APITestCase):
 class SchedulePdfExportTests(ExportTestCase):
     def setUp(self):
         super().setUp()
-        self.pdf_url = f"/api/exports/schedules/{self.run.pk}.pdf"
+        self.pdf_url = f"/api/data_transfer/schedules/{self.run.pk}.pdf"
 
     def test_unauthenticated_is_rejected(self):
         response = self.client.get(self.pdf_url)
@@ -113,7 +113,7 @@ class SchedulePdfExportTests(ExportTestCase):
 
     def test_unknown_run_returns_404(self):
         self.auth(self.reg_token)
-        response = self.client.get("/api/exports/schedules/999999.pdf")
+        response = self.client.get("/api/data_transfer/schedules/999999.pdf")
         self.assertEqual(response.status_code, 404)
 
     def test_pdf_has_valid_magic_bytes(self):
@@ -170,7 +170,7 @@ class ExportTestCase(APITestCase):
             mode="sync",
         )
 
-        self.url = f"/api/exports/schedules/{self.run.pk}.xlsx"
+        self.url = f"/api/data_transfer/schedules/{self.run.pk}.xlsx"
 
     def auth(self, token):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
@@ -203,7 +203,7 @@ class ScheduleExportTests(ExportTestCase):
 
     def test_unknown_run_returns_404(self):
         self.auth(self.reg_token)
-        response = self.client.get("/api/exports/schedules/999999.xlsx")
+        response = self.client.get("/api/data_transfer/schedules/999999.xlsx")
         self.assertEqual(response.status_code, 404)
 
     def test_xlsx_contains_expected_headers(self):
