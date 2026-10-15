@@ -1,4 +1,4 @@
-from datetime import time as dtime
+from datetime import time as dtime, timezone
 
 from drf_spectacular.utils import (
     OpenApiResponse,
@@ -16,15 +16,24 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import viewsets
 
-from core.permissions import IsOwnerOrRegistrar, IsRegistrar, IsRegistrarOrReadOnly
+from catalog.models import Section
+from core.permissions import IsOwnerOrRegistrar, IsRegistrar, IsRegistrarOrReadOnly, IsProfessor, IsPublicReadOnly
+from rest_framework.permissions import IsAuthenticated
 
 from .engines import ALGORITHMS, run
-from .models import Assignment, AvailabilityWindow, BusyBlock, ScheduledClass, ScheduleRun
+from .models import (
+    AcademicTerm, Assignment, AuditLog, AvailabilityWindow, BusyBlock,
+    ConflictResolution, GlobalSettings, MeetingSlot, ScheduledClass, ScheduleRun
+)
 from .scenario_builder import build_scenario
 from .serializers import (
     AssignmentSerializer,
+    AuditLogSerializer,
     AvailabilityWindowSerializer,
     BusyBlockSerializer,
+    ConflictResolutionSerializer,
+    ConflictResolutionResolveSerializer,
+    GlobalSettingsSerializer,
     ScheduledClassSerializer,
     ScheduleRunSerializer,
 )
@@ -165,7 +174,14 @@ class ScheduleGenerateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        scenario = build_scenario()
+        term = AcademicTerm.objects.filter(is_active=True).first()
+        if term is None:
+            return Response(
+                {"error": "No active academic term found. Please set a term as active."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        scenario = build_scenario(term=term)
         result = run(algorithm, scenario, time_limit_s=time_limit)
 
         with transaction.atomic():
@@ -180,6 +196,7 @@ class ScheduleGenerateView(APIView):
                 soft_score=result.soft_score,
                 breakdown=result.breakdown,
                 created_by=request.user,
+                term=term,
             )
 
             ScheduledClass.objects.bulk_create(
@@ -192,6 +209,7 @@ class ScheduleGenerateView(APIView):
                         start_time=dtime(pc.start // 60, pc.start % 60),
                         duration_slots=pc.duration_slots,
                         mode=pc.mode or None,
+                        term=term,
                     )
                     for pc in result.classes
                 ]
@@ -237,8 +255,15 @@ class ScheduleRunClassesView(APIView):
             "assignment__prof", "assignment__subject", "assignment__section", "room"
         )
 
-        if not request.user.is_staff:
+        if request.user.is_staff:
+            # Registrar sees all
+            pass
+        elif hasattr(request.user, "prof"):
+            # Professor sees only their classes
             qs = qs.filter(assignment__prof__user=request.user)
+        else:
+            # Other authenticated users (future: student) see nothing by default
+            qs = qs.none()
 
         params = request.query_params
         if params.get("prof"):
@@ -260,24 +285,1430 @@ class ScheduleRunClassesView(APIView):
 
 
 @extend_schema(tags=["schedules"])
+class ScheduleRunPublishedClassesView(APIView):
+    """Public read-only access to published schedule run classes."""
+    permission_classes = [IsPublicReadOnly]
+
+    def get(self, request, pk):
+        run_obj = get_object_or_404(ScheduleRun, pk=pk, published=True)
+        qs = run_obj.classes.select_related(
+            "assignment__prof", "assignment__subject", "assignment__section", "room"
+        )
+        return Response(ScheduledClassSerializer(qs, many=True).data)
+
+
+@extend_schema(tags=["schedules"])
 class ScheduleMyView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        run_obj = ScheduleRun.objects.order_by("-created_at").first()
+        run_obj = ScheduleRun.objects.filter(term__is_active=True).order_by("-created_at").first()
         if run_obj is None:
             return Response([])
 
-        qs = run_obj.classes.select_related(
-            "assignment__prof", "assignment__subject", "assignment__section", "room"
-        )
-        if not request.user.is_staff:
-            prof = getattr(request.user, "prof", None)
-            if prof is None:
-                return Response(
-                    {"error": "No professor profile linked to this account."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            qs = qs.filter(assignment__prof=prof)
+        if request.user.is_staff:
+            # Registrar sees all classes in the active term run
+            qs = run_obj.classes.select_related(
+                "assignment__prof", "assignment__subject", "assignment__section", "room"
+            )
+        elif hasattr(request.user, "prof"):
+            # Professor sees only their classes
+            prof = request.user.prof
+            qs = run_obj.classes.select_related(
+                "assignment__prof", "assignment__subject", "assignment__section", "room"
+            ).filter(assignment__prof=prof)
+        else:
+            return Response(
+                {"error": "No professor profile linked to this account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         return Response(ScheduledClassSerializer(qs, many=True).data)
+
+
+# ==================== ADMIN PANEL APIs ====================
+
+@extend_schema(tags=["admin"])
+class AdminDashboardView(APIView):
+    """Admin dashboard summary: counts, recent runs, conflicts."""
+    permission_classes = [IsRegistrar]
+
+    def get(self, request):
+        from catalog.models import Department, Room, Section, Subject
+        from users.models import Professors
+        from django.db.models import Count
+        from django.utils import timezone
+        from datetime import timedelta
+
+        active_term = AcademicTerm.objects.filter(is_active=True).first()
+
+        # Basic counts
+        total_departments = Department.objects.count()
+        total_rooms = Room.objects.count()
+        total_sections = Section.objects.count()
+        total_subjects = Subject.objects.count()
+        total_professors = Professors.objects.count()
+        total_assignments = Assignment.objects.count()
+        total_runs = ScheduleRun.objects.count()
+
+        # Active term specific counts
+        if active_term:
+            term_sections = Section.objects.filter(term=active_term).count()
+            term_assignments = Assignment.objects.filter(term=active_term).count()
+            term_runs = ScheduleRun.objects.filter(term=active_term).count()
+        else:
+            term_sections = term_assignments = term_runs = 0
+
+        # Recent runs (last 10)
+        recent_runs = ScheduleRun.objects.select_related("term", "created_by").order_by("-created_at")[:10]
+        recent_runs_data = [
+            {
+                "id": r.id,
+                "algorithm": r.algorithm,
+                "status": r.status,
+                "term": str(r.term) if r.term else None,
+                "published": r.published,
+                "runtime_ms": r.runtime_ms,
+                "class_count": r.classes.count(),
+                "created_by": r.created_by.username if r.created_by else None,
+                "created_at": r.created_at,
+            }
+            for r in recent_runs
+        ]
+
+        # Conflict summary for latest feasible run
+        latest_feasible_run = ScheduleRun.objects.filter(status=ScheduleRun.Status.FEASIBLE).order_by("-created_at").first()
+        conflicts_count = 0
+        if latest_feasible_run:
+            conflicts_count = self._count_conflicts(latest_feasible_run)
+
+        return Response({
+            "counts": {
+                "departments": total_departments,
+                "rooms": total_rooms,
+                "sections": total_sections,
+                "subjects": total_subjects,
+                "professors": total_professors,
+                "assignments": total_assignments,
+                "schedule_runs": total_runs,
+            },
+            "active_term": {
+                "id": active_term.id if active_term else None,
+                "name": str(active_term) if active_term else None,
+                "code": active_term.code if active_term else None,
+                "sections": term_sections,
+                "assignments": term_assignments,
+                "runs": term_runs,
+            } if active_term else None,
+            "recent_runs": recent_runs_data,
+            "latest_feasible_run": {
+                "id": latest_feasible_run.id,
+                "conflicts": conflicts_count,
+                "published": latest_feasible_run.published,
+            } if latest_feasible_run else None,
+        })
+
+    def _count_conflicts(self, run_obj):
+        """Count constraint violations in a schedule run."""
+        classes = run_obj.classes.select_related(
+            "assignment__prof", "assignment__subject", "assignment__section", "room"
+        )
+        conflicts = 0
+
+        # Room double-booking
+        room_bookings = {}
+        for c in classes:
+            key = (c.room_id, c.day, c.start_time, c.duration_slots)
+            room_bookings[key] = room_bookings.get(key, 0) + 1
+        conflicts += sum(1 for count in room_bookings.values() if count > 1)
+
+        # Professor double-booking
+        prof_bookings = {}
+        for c in classes:
+            key = (c.assignment.prof_id, c.day, c.start_time, c.duration_slots)
+            prof_bookings[key] = prof_bookings.get(key, 0) + 1
+        conflicts += sum(1 for count in prof_bookings.values() if count > 1)
+
+        # Section double-booking
+        section_bookings = {}
+        for c in classes:
+            key = (c.assignment.section_id, c.day, c.start_time, c.duration_slots)
+            section_bookings[key] = section_bookings.get(key, 0) + 1
+        conflicts += sum(1 for count in section_bookings.values() if count > 1)
+
+        # Room capacity violations
+        for c in classes:
+            if c.room and c.assignment.section.headcount > c.room.capacity:
+                conflicts += 1
+
+        return conflicts
+
+
+@extend_schema(tags=["admin"])
+class AdminStatsView(APIView):
+    """Detailed stats for charts and analytics."""
+    permission_classes = [IsRegistrar]
+
+    def get(self, request):
+        from catalog.models import Department, Room, Section, Subject
+        from users.models import Professors
+        from django.db.models import Count, Avg
+
+        active_term = AcademicTerm.objects.filter(is_active=True).first()
+
+        # Runs by algorithm
+        runs_by_algo = ScheduleRun.objects.values("algorithm").annotate(count=Count("id")).order_by("-count")
+
+        # Runs by status
+        runs_by_status = ScheduleRun.objects.values("status").annotate(count=Count("id")).order_by("-count")
+
+        # Runs by term
+        runs_by_term = ScheduleRun.objects.values("term__year", "term__semester").annotate(count=Count("id")).order_by("-term__year", "-term__semester")
+
+        # Assignments by professor (top 10)
+        assignments_by_prof = Assignment.objects.select_related("prof__user").values(
+            "prof__user__username", "prof__user__first_name", "prof__user__last_name"
+        ).annotate(count=Count("id")).order_by("-count")[:10]
+
+        # Sections by program
+        sections_by_program = Section.objects.values("program").annotate(count=Count("id")).order_by("-count")
+
+        # Sections by year_level
+        sections_by_year = Section.objects.values("year_level").annotate(count=Count("id")).order_by("year_level")
+
+        # Room capacity distribution
+        room_capacities = Room.objects.values("capacity").annotate(count=Count("id")).order_by("capacity")
+
+        # Average runtime by algorithm
+        avg_runtime = ScheduleRun.objects.filter(runtime_ms__gt=0).values("algorithm").annotate(avg_runtime=Avg("runtime_ms")).order_by("avg_runtime")
+
+        return Response({
+            "runs_by_algorithm": list(runs_by_algo),
+            "runs_by_status": list(runs_by_status),
+            "runs_by_term": list(runs_by_term),
+            "assignments_by_professor": list(assignments_by_prof),
+            "sections_by_program": list(sections_by_program),
+            "sections_by_year_level": list(sections_by_year),
+            "room_capacities": list(room_capacities),
+            "avg_runtime_by_algorithm": list(avg_runtime),
+            "active_term": active_term.code if active_term else None,
+        })
+
+
+@extend_schema(tags=["admin"])
+class ScheduleRunConflictsView(APIView):
+    """Get detailed constraint violations for a schedule run."""
+    permission_classes = [IsRegistrar]
+
+    def get(self, request, pk):
+        run_obj = get_object_or_404(ScheduleRun, pk=pk)
+        classes = run_obj.classes.select_related(
+            "assignment__prof__user", "assignment__subject", "assignment__section", "room"
+        ).order_by("day", "start_time")
+
+        conflicts = {
+            "room_conflicts": [],
+            "professor_conflicts": [],
+            "section_conflicts": [],
+            "capacity_violations": [],
+            "availability_violations": [],
+            "consecutive_violations": [],
+            "daily_hours_violations": [],
+        }
+
+        # Room double-booking
+        room_bookings = {}
+        for c in classes:
+            key = (c.room_id, c.day, c.start_time, c.duration_slots)
+            if key not in room_bookings:
+                room_bookings[key] = []
+            room_bookings[key].append(c)
+        for key, bookings in room_bookings.items():
+            if len(bookings) > 1:
+                conflicts["room_conflicts"].append({
+                    "room": bookings[0].room.name if bookings[0].room else "N/A",
+                    "day": bookings[0].get_day_display(),
+                    "start_time": bookings[0].start_time.strftime("%H:%M"),
+                    "duration_slots": bookings[0].duration_slots,
+                    "classes": [
+                        {
+                            "id": b.id,
+                            "subject": b.assignment.subject.code,
+                            "section": b.assignment.section.name,
+                            "professor": b.assignment.prof.user.get_full_name() or b.assignment.prof.user.username,
+                        }
+                        for b in bookings
+                    ]
+                })
+
+        # Professor double-booking
+        prof_bookings = {}
+        for c in classes:
+            key = (c.assignment.prof_id, c.day, c.start_time, c.duration_slots)
+            if key not in prof_bookings:
+                prof_bookings[key] = []
+            prof_bookings[key].append(c)
+        for key, bookings in prof_bookings.items():
+            if len(bookings) > 1:
+                conflicts["professor_conflicts"].append({
+                    "professor": bookings[0].assignment.prof.user.get_full_name() or bookings[0].assignment.prof.user.username,
+                    "day": bookings[0].get_day_display(),
+                    "start_time": bookings[0].start_time.strftime("%H:%M"),
+                    "duration_slots": bookings[0].duration_slots,
+                    "classes": [
+                        {
+                            "id": b.id,
+                            "subject": b.assignment.subject.code,
+                            "section": b.assignment.section.name,
+                        }
+                        for b in bookings
+                    ]
+                })
+
+        # Section double-booking
+        section_bookings = {}
+        for c in classes:
+            key = (c.assignment.section_id, c.day, c.start_time, c.duration_slots)
+            if key not in section_bookings:
+                section_bookings[key] = []
+            section_bookings[key].append(c)
+        for key, bookings in section_bookings.items():
+            if len(bookings) > 1:
+                conflicts["section_conflicts"].append({
+                    "section": bookings[0].assignment.section.name,
+                    "day": bookings[0].get_day_display(),
+                    "start_time": bookings[0].start_time.strftime("%H:%M"),
+                    "duration_slots": bookings[0].duration_slots,
+                    "classes": [
+                        {
+                            "id": b.id,
+                            "subject": b.assignment.subject.code,
+                            "professor": b.assignment.prof.user.get_full_name() or b.assignment.prof.user.username,
+                        }
+                        for b in bookings
+                    ]
+                })
+
+        # Room capacity violations
+        for c in classes:
+            if c.room and c.assignment.section.headcount > c.room.capacity:
+                conflicts["capacity_violations"].append({
+                    "class_id": c.id,
+                    "room": c.room.name,
+                    "capacity": c.room.capacity,
+                    "headcount": c.assignment.section.headcount,
+                    "subject": c.assignment.subject.code,
+                    "section": c.assignment.section.name,
+                })
+
+        # Professor availability violations
+        from timetable.models import AvailabilityWindow
+        availability_map = {}
+        for aw in AvailabilityWindow.objects.all():
+            key = (aw.prof_id, aw.day)
+            if key not in availability_map:
+                availability_map[key] = []
+            availability_map[key].append((aw.start_time, aw.end_time))
+
+        for c in classes:
+            prof_id = c.assignment.prof_id
+            day = c.day
+            class_start = c.start_time
+            class_end = c.end_time
+            key = (prof_id, day)
+            if key in availability_map:
+                available = False
+                for start, end in availability_map[key]:
+                    if start <= class_start and class_end <= end:
+                        available = True
+                        break
+                if not available:
+                    conflicts["availability_violations"].append({
+                        "class_id": c.id,
+                        "professor": c.assignment.prof.user.get_full_name() or c.assignment.prof.user.username,
+                        "day": c.get_day_display(),
+                        "class_time": f"{class_start.strftime('%H:%M')}-{class_end.strftime('%H:%M')}",
+                        "available_windows": [
+                            f"{s.strftime('%H:%M')}-{e.strftime('%H:%M')}" for s, e in availability_map[key]
+                        ],
+                    })
+
+        # Consecutive hours violations (per professor per day)
+        from collections import defaultdict
+        prof_day_classes = defaultdict(list)
+        for c in classes:
+            prof_day_classes[(c.assignment.prof_id, c.day)].append(c)
+
+        for (prof_id, day), day_classes in prof_day_classes.items():
+            day_classes.sort(key=lambda x: x.start_time)
+            prof = day_classes[0].assignment.prof
+            max_consecutive = prof.max_consecutive
+            for i in range(len(day_classes)):
+                current = day_classes[i]
+                current_end = current.end_time
+                consecutive_slots = current.duration_slots
+                for j in range(i + 1, len(day_classes)):
+                    next_class = day_classes[j]
+                    if next_class.start_time == current_end:
+                        consecutive_slots += next_class.duration_slots
+                        current_end = next_class.end_time
+                    else:
+                        break
+                if consecutive_slots > max_consecutive:
+                    conflicts["consecutive_violations"].append({
+                        "professor": prof.user.get_full_name() or prof.user.username,
+                        "day": day_classes[0].get_day_display(),
+                        "max_consecutive": max_consecutive,
+                        "actual_consecutive": consecutive_slots,
+                        "classes": [
+                            {
+                                "id": c.id,
+                                "subject": c.assignment.subject.code,
+                                "start": c.start_time.strftime("%H:%M"),
+                                "end": c.end_time.strftime("%H:%M"),
+                            }
+                            for c in day_classes[i:i+3]
+                        ]
+                    })
+                    break  # Report first violation per professor per day
+
+        # Daily hours violations
+        for (prof_id, day), day_classes in prof_day_classes.items():
+            prof = day_classes[0].assignment.prof
+            max_daily = prof.max_daily_hours
+            total_slots = sum(c.duration_slots for c in day_classes)
+            if total_slots > max_daily:
+                conflicts["daily_hours_violations"].append({
+                    "professor": prof.user.get_full_name() or prof.user.username,
+                    "day": day_classes[0].get_day_display(),
+                    "max_daily_hours": max_daily,
+                    "actual_hours": total_slots,
+                    "classes": [
+                        {
+                            "id": c.id,
+                            "subject": c.assignment.subject.code,
+                            "start": c.start_time.strftime("%H:%M"),
+                            "end": c.end_time.strftime("%H:%M"),
+                        }
+                        for c in day_classes
+                    ]
+                })
+
+        return Response(conflicts)
+
+
+@extend_schema(
+    tags=["admin"],
+    request=inline_serializer(
+        name="PublishScheduleRequest",
+        fields={
+            "published": serializers.BooleanField(),
+        },
+    ),
+    responses={
+        200: OpenApiResponse(description="Schedule publish status updated"),
+        404: OpenApiResponse(description="Schedule run not found"),
+    },
+)
+class ScheduleRunPublishView(APIView):
+    """Publish or unpublish a schedule run."""
+    permission_classes = [IsRegistrar]
+
+    def patch(self, request, pk):
+        run_obj = get_object_or_404(ScheduleRun, pk=pk)
+        published = request.data.get("published")
+        if published is None:
+            return Response(
+                {"error": "published field is required (true/false)"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        run_obj.published = bool(published)
+        run_obj.save(update_fields=["published"])
+        return Response({
+            "id": run_obj.id,
+            "published": run_obj.published,
+            "message": f"Schedule run {'published' if published else 'unpublished'} successfully",
+        })
+
+
+@extend_schema(
+    tags=["admin"],
+    request=inline_serializer(
+        name="BulkCreateSectionsRequest",
+        fields={
+            "sections": serializers.ListField(
+                child=inline_serializer(
+                    name="SectionInput",
+                    fields={
+                        "name": serializers.CharField(max_length=50),
+                        "headcount": serializers.IntegerField(min_value=1),
+                        "program": serializers.CharField(max_length=20, required=False, default=""),
+                        "year_level": serializers.IntegerField(min_value=1, max_value=6, required=False, default=1),
+                        "term": serializers.IntegerField(required=False),
+                    },
+                ),
+            ),
+        },
+    ),
+    responses={
+        201: OpenApiResponse(description="Sections created"),
+        400: OpenApiResponse(description="Validation errors"),
+    },
+)
+class BulkCreateSectionsView(APIView):
+    """Bulk create sections."""
+    permission_classes = [IsRegistrar]
+
+    def post(self, request):
+        sections_data = request.data.get("sections", [])
+        if not sections_data:
+            return Response(
+                {"error": "sections list is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        active_term = AcademicTerm.objects.filter(is_active=True).first()
+        created = []
+        errors = []
+
+        for idx, data in enumerate(sections_data):
+            try:
+                term_id = data.get("term", active_term.id if active_term else None)
+                if not term_id:
+                    errors.append({"index": idx, "error": "term is required and no active term found"})
+                    continue
+
+                term = AcademicTerm.objects.get(pk=term_id)
+                section = Section.objects.create(
+                    name=data["name"],
+                    headcount=data["headcount"],
+                    program=data.get("program", ""),
+                    year_level=data.get("year_level", 1),
+                    term=term,
+                )
+                created.append({
+                    "id": section.id,
+                    "name": section.name,
+                    "headcount": section.headcount,
+                    "program": section.program,
+                    "year_level": section.year_level,
+                    "term": str(section.term),
+                })
+            except Exception as e:
+                errors.append({"index": idx, "error": str(e)})
+
+        return Response({
+            "created": created,
+            "errors": errors,
+            "created_count": len(created),
+            "error_count": len(errors),
+        }, status=status.HTTP_201_CREATED if created else status.HTTP_400_BAD_REQUEST)
+
+
+@extend_schema(
+    tags=["admin"],
+    request=inline_serializer(
+        name="BulkCreateAssignmentsRequest",
+        fields={
+            "assignments": serializers.ListField(
+                child=inline_serializer(
+                    name="AssignmentInput",
+                    fields={
+                        "prof": serializers.IntegerField(),
+                        "subject": serializers.IntegerField(),
+                        "section": serializers.IntegerField(),
+                        "term": serializers.IntegerField(required=False),
+                        "meetings": serializers.ListField(
+                            child=inline_serializer(
+                                name="MeetingInput",
+                                fields={
+                                    "mode": serializers.ChoiceField(choices=["async", "sync", "lab"]),
+                                    "duration_slots": serializers.IntegerField(min_value=1, required=False),
+                                },
+                            ),
+                            required=False,
+                        ),
+                    },
+                ),
+            ),
+        },
+    ),
+    responses={
+        201: OpenApiResponse(description="Assignments created"),
+        400: OpenApiResponse(description="Validation errors"),
+    },
+)
+class BulkCreateAssignmentsView(APIView):
+    """Bulk create assignments with meetings."""
+    permission_classes = [IsRegistrar]
+
+    def post(self, request):
+        assignments_data = request.data.get("assignments", [])
+        if not assignments_data:
+            return Response(
+                {"error": "assignments list is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        active_term = AcademicTerm.objects.filter(is_active=True).first()
+        created = []
+        errors = []
+
+        for idx, data in enumerate(assignments_data):
+            try:
+                term_id = data.get("term", active_term.id if active_term else None)
+                if not term_id:
+                    errors.append({"index": idx, "error": "term is required and no active term found"})
+                    continue
+
+                term = AcademicTerm.objects.get(pk=term_id)
+                assignment = Assignment.objects.create(
+                    prof_id=data["prof"],
+                    subject_id=data["subject"],
+                    section_id=data["section"],
+                    term=term,
+                )
+
+                meetings_data = data.get("meetings", [])
+                if not meetings_data:
+                    meetings_data = [{"mode": "sync", "duration_slots": 2}]
+
+                for order, m_data in enumerate(meetings_data, start=1):
+                    MeetingSlot.objects.create(
+                        assignment=assignment,
+                        order=order,
+                        mode=m_data.get("mode", "sync"),
+                        duration_slots=m_data.get("duration_slots", {"sync": 2, "async": 1, "lab": 3}.get(m_data.get("mode", "sync"), 1)),
+                    )
+
+                created.append({
+                    "id": assignment.id,
+                    "prof": assignment.prof_id,
+                    "subject": assignment.subject_id,
+                    "section": assignment.section_id,
+                    "term": str(assignment.term),
+                    "meetings": [
+                        {"order": m.order, "mode": m.mode, "duration_slots": m.duration_slots}
+                        for m in assignment.meetings.all()
+                    ],
+                })
+            except Exception as e:
+                errors.append({"index": idx, "error": str(e)})
+
+        return Response({
+            "created": created,
+            "errors": errors,
+            "created_count": len(created),
+            "error_count": len(errors),
+        }, status=status.HTTP_201_CREATED if created else status.HTTP_400_BAD_REQUEST)
+
+
+# ==================== PROFESSOR PANEL APIs ====================
+
+@extend_schema(tags=["professor"])
+class ProfessorProfileView(APIView):
+    """Current professor profile with current term assignments."""
+    permission_classes = [IsProfessor]
+
+    def get(self, request):
+        prof = request.user.prof
+        active_term = AcademicTerm.objects.filter(is_active=True).first()
+
+        assignments = Assignment.objects.filter(prof=prof).select_related(
+            "subject", "section", "term"
+        ).prefetch_related("meetings")
+
+        if active_term:
+            assignments = assignments.filter(term=active_term)
+
+        assignments_data = []
+        for a in assignments:
+            meetings_data = [
+                {
+                    "id": m.id,
+                    "order": m.order,
+                    "mode": m.mode,
+                    "mode_display": m.get_mode_display(),
+                    "duration_slots": m.duration_slots,
+                }
+                for m in a.meetings.all()
+            ]
+            assignments_data.append({
+                "id": a.id,
+                "subject": {
+                    "id": a.subject.id,
+                    "code": a.subject.code,
+                    "title": a.subject.title,
+                    "units": a.subject.units,
+                },
+                "section": {
+                    "id": a.section.id,
+                    "name": a.section.name,
+                    "headcount": a.section.headcount,
+                    "program": a.section.program,
+                    "year_level": a.section.year_level,
+                },
+                "term": {
+                    "id": a.term.id,
+                    "code": a.term.code,
+                    "name": str(a.term),
+                } if a.term else None,
+                "meetings": meetings_data,
+            })
+
+        return Response({
+            "id": prof.id,
+            "user": {
+                "id": prof.user.id,
+                "username": prof.user.username,
+                "full_name": prof.user.get_full_name() or prof.user.username,
+                "email": prof.user.email,
+            },
+            "department": {
+                "id": prof.department.id,
+                "name": prof.department.name,
+            } if prof.department else None,
+            "max_daily_hours": prof.max_daily_hours,
+            "max_consecutive": prof.max_consecutive,
+            "active_term": {
+                "id": active_term.id,
+                "code": active_term.code,
+                "name": str(active_term),
+            } if active_term else None,
+            "assignments": assignments_data,
+        })
+
+
+@extend_schema(tags=["professor"])
+class ProfessorScheduleView(APIView):
+    """Professor's weekly grid schedule for active term."""
+    permission_classes = [IsProfessor]
+
+    def get(self, request):
+        prof = request.user.prof
+        run_obj = ScheduleRun.objects.filter(
+            term__is_active=True
+        ).order_by("-created_at").first()
+
+        if run_obj is None:
+            return Response({
+                "schedule": [],
+                "message": "No schedule run found for active term",
+            })
+
+        classes = run_obj.classes.select_related(
+            "assignment__prof", "assignment__subject", "assignment__section", "room"
+        ).filter(assignment__prof=prof).order_by("day", "start_time")
+
+        schedule_data = []
+        for c in classes:
+            schedule_data.append({
+                "id": c.id,
+                "day": c.day,
+                "day_name": c.get_day_display(),
+                "start_time": c.start_time.strftime("%H:%M"),
+                "end_time": c.end_time.strftime("%H:%M"),
+                "duration_slots": c.duration_slots,
+                "subject": {
+                    "code": c.assignment.subject.code,
+                    "title": c.assignment.subject.title,
+                },
+                "section": {
+                    "name": c.assignment.section.name,
+                    "program": c.assignment.section.program,
+                    "year_level": c.assignment.section.year_level,
+                },
+                "room": {
+                    "id": c.room.id,
+                    "name": c.room.name,
+                    "building": c.room.building,
+                } if c.room else None,
+                "mode": c.mode,
+                "mode_display": c.get_mode_display() if c.mode else None,
+            })
+
+        return Response({
+            "schedule_run": {
+                "id": run_obj.id,
+                "algorithm": run_obj.algorithm,
+                "status": run_obj.status,
+                "published": run_obj.published,
+            },
+            "schedule": schedule_data,
+        })
+
+
+@extend_schema(tags=["professor"])
+class ProfessorScheduleConflictsView(APIView):
+    """Professor's personal schedule conflicts for active term."""
+    permission_classes = [IsProfessor]
+
+    def get(self, request):
+        prof = request.user.prof
+        run_obj = ScheduleRun.objects.filter(
+            term__is_active=True
+        ).order_by("-created_at").first()
+
+        if run_obj is None:
+            return Response({
+                "conflicts": [],
+                "message": "No schedule run found for active term",
+            })
+
+        classes = run_obj.classes.select_related(
+            "assignment__prof__user", "assignment__subject", "assignment__section", "room"
+        ).filter(assignment__prof=prof).order_by("day", "start_time")
+
+        conflicts = {
+            "room_conflicts": [],
+            "professor_conflicts": [],
+            "section_conflicts": [],
+            "capacity_violations": [],
+            "availability_violations": [],
+            "consecutive_violations": [],
+            "daily_hours_violations": [],
+        }
+
+        # Room double-booking (affecting this professor)
+        room_bookings = {}
+        for c in classes:
+            key = (c.room_id, c.day, c.start_time, c.duration_slots)
+            if key not in room_bookings:
+                room_bookings[key] = []
+            room_bookings[key].append(c)
+        for key, bookings in room_bookings.items():
+            if len(bookings) > 1:
+                conflicts["room_conflicts"].append({
+                    "room": bookings[0].room.name if bookings[0].room else "N/A",
+                    "day": bookings[0].get_day_display(),
+                    "start_time": bookings[0].start_time.strftime("%H:%M"),
+                    "duration_slots": bookings[0].duration_slots,
+                    "classes": [
+                        {
+                            "id": b.id,
+                            "subject": b.assignment.subject.code,
+                            "section": b.assignment.section.name,
+                            "professor": b.assignment.prof.user.get_full_name() or b.assignment.prof.user.username,
+                        }
+                        for b in bookings
+                    ]
+                })
+
+        # Professor double-booking (this professor)
+        prof_bookings = {}
+        for c in classes:
+            key = (c.assignment.prof_id, c.day, c.start_time, c.duration_slots)
+            if key not in prof_bookings:
+                prof_bookings[key] = []
+            prof_bookings[key].append(c)
+        for key, bookings in prof_bookings.items():
+            if len(bookings) > 1:
+                conflicts["professor_conflicts"].append({
+                    "professor": bookings[0].assignment.prof.user.get_full_name() or bookings[0].assignment.prof.user.username,
+                    "day": bookings[0].get_day_display(),
+                    "start_time": bookings[0].start_time.strftime("%H:%M"),
+                    "duration_slots": bookings[0].duration_slots,
+                    "classes": [
+                        {
+                            "id": b.id,
+                            "subject": b.assignment.subject.code,
+                            "section": b.assignment.section.name,
+                        }
+                        for b in bookings
+                    ]
+                })
+
+        # Section double-booking
+        section_bookings = {}
+        for c in classes:
+            key = (c.assignment.section_id, c.day, c.start_time, c.duration_slots)
+            if key not in section_bookings:
+                section_bookings[key] = []
+            section_bookings[key].append(c)
+        for key, bookings in section_bookings.items():
+            if len(bookings) > 1:
+                conflicts["section_conflicts"].append({
+                    "section": bookings[0].assignment.section.name,
+                    "day": bookings[0].get_day_display(),
+                    "start_time": bookings[0].start_time.strftime("%H:%M"),
+                    "duration_slots": bookings[0].duration_slots,
+                    "classes": [
+                        {
+                            "id": b.id,
+                            "subject": b.assignment.subject.code,
+                            "professor": b.assignment.prof.user.get_full_name() or b.assignment.prof.user.username,
+                        }
+                        for b in bookings
+                    ]
+                })
+
+        # Room capacity violations
+        for c in classes:
+            if c.room and c.assignment.section.headcount > c.room.capacity:
+                conflicts["capacity_violations"].append({
+                    "class_id": c.id,
+                    "room": c.room.name,
+                    "capacity": c.room.capacity,
+                    "headcount": c.assignment.section.headcount,
+                    "subject": c.assignment.subject.code,
+                    "section": c.assignment.section.name,
+                })
+
+        # Professor availability violations
+        from timetable.models import AvailabilityWindow
+        availability_map = {}
+        for aw in AvailabilityWindow.objects.filter(prof=prof):
+            key = (aw.prof_id, aw.day)
+            if key not in availability_map:
+                availability_map[key] = []
+            availability_map[key].append((aw.start_time, aw.end_time))
+
+        for c in classes:
+            prof_id = c.assignment.prof_id
+            day = c.day
+            class_start = c.start_time
+            class_end = c.end_time
+            key = (prof_id, day)
+            if key in availability_map:
+                available = False
+                for start, end in availability_map[key]:
+                    if start <= class_start and class_end <= end:
+                        available = True
+                        break
+                if not available:
+                    conflicts["availability_violations"].append({
+                        "class_id": c.id,
+                        "professor": c.assignment.prof.user.get_full_name() or c.assignment.prof.user.username,
+                        "day": c.get_day_display(),
+                        "class_time": f"{class_start.strftime('%H:%M')}-{class_end.strftime('%H:%M')}",
+                        "available_windows": [
+                            f"{s.strftime('%H:%M')}-{e.strftime('%H:%M')}" for s, e in availability_map[key]
+                        ],
+                    })
+
+        # Consecutive hours violations (per professor per day)
+        from collections import defaultdict
+        prof_day_classes = defaultdict(list)
+        for c in classes:
+            prof_day_classes[(c.assignment.prof_id, c.day)].append(c)
+
+        for (prof_id, day), day_classes in prof_day_classes.items():
+            day_classes.sort(key=lambda x: x.start_time)
+            prof_obj = day_classes[0].assignment.prof
+            max_consecutive = prof_obj.max_consecutive
+            for i in range(len(day_classes)):
+                current = day_classes[i]
+                current_end = current.end_time
+                consecutive_slots = current.duration_slots
+                for j in range(i + 1, len(day_classes)):
+                    next_class = day_classes[j]
+                    if next_class.start_time == current_end:
+                        consecutive_slots += next_class.duration_slots
+                        current_end = next_class.end_time
+                    else:
+                        break
+                if consecutive_slots > max_consecutive:
+                    conflicts["consecutive_violations"].append({
+                        "professor": prof_obj.user.get_full_name() or prof_obj.user.username,
+                        "day": day_classes[0].get_day_display(),
+                        "max_consecutive": max_consecutive,
+                        "actual_consecutive": consecutive_slots,
+                        "classes": [
+                            {
+                                "id": c.id,
+                                "subject": c.assignment.subject.code,
+                                "start": c.start_time.strftime("%H:%M"),
+                                "end": c.end_time.strftime("%H:%M"),
+                            }
+                            for c in day_classes[i:i+3]
+                        ]
+                    })
+                    break
+
+        # Daily hours violations
+        for (prof_id, day), day_classes in prof_day_classes.items():
+            prof_obj = day_classes[0].assignment.prof
+            max_daily = prof_obj.max_daily_hours
+            total_slots = sum(c.duration_slots for c in day_classes)
+            if total_slots > max_daily:
+                conflicts["daily_hours_violations"].append({
+                    "professor": prof_obj.user.get_full_name() or prof_obj.user.username,
+                    "day": day_classes[0].get_day_display(),
+                    "max_daily_hours": max_daily,
+                    "actual_hours": total_slots,
+                    "classes": [
+                        {
+                            "id": c.id,
+                            "subject": c.assignment.subject.code,
+                            "start": c.start_time.strftime("%H:%M"),
+                            "end": c.end_time.strftime("%H:%M"),
+                        }
+                        for c in day_classes
+                    ]
+                })
+
+        return Response(conflicts)
+
+
+@extend_schema_view(
+    list=extend_schema(tags=["professor"]),
+    retrieve=extend_schema(tags=["professor"]),
+    create=extend_schema(tags=["professor"]),
+    update=extend_schema(tags=["professor"]),
+    partial_update=extend_schema(tags=["professor"]),
+    destroy=extend_schema(tags=["professor"]),
+)
+class ProfessorAvailabilityViewSet(viewsets.ModelViewSet):
+    """Professor's own availability windows."""
+    serializer_class = AvailabilityWindowSerializer
+    permission_classes = [IsProfessor]
+
+    def get_queryset(self):
+        return AvailabilityWindow.objects.filter(prof=self.request.user.prof)
+
+    def perform_create(self, serializer):
+        serializer.save(prof=self.request.user.prof)
+
+    def perform_update(self, serializer):
+        serializer.save(prof=self.request.user.prof)
+
+
+@extend_schema_view(
+    list=extend_schema(tags=["professor"]),
+    retrieve=extend_schema(tags=["professor"]),
+    create=extend_schema(tags=["professor"]),
+    update=extend_schema(tags=["professor"]),
+    partial_update=extend_schema(tags=["professor"]),
+    destroy=extend_schema(tags=["professor"]),
+)
+class ProfessorBusyBlockViewSet(viewsets.ModelViewSet):
+    """Professor's own busy blocks."""
+    serializer_class = BusyBlockSerializer
+    permission_classes = [IsProfessor]
+
+    def get_queryset(self):
+        return BusyBlock.objects.filter(prof=self.request.user.prof)
+
+    def perform_create(self, serializer):
+        serializer.save(prof=self.request.user.prof)
+
+    def perform_update(self, serializer):
+        serializer.save(prof=self.request.user.prof)
+
+
+# ==================== PUBLIC SCHEDULE API ====================
+
+@extend_schema(tags=["public"])
+class PublicTermsView(APIView):
+    """List all published terms."""
+    permission_classes = [IsPublicReadOnly]
+
+    def get(self, request):
+        published_runs = ScheduleRun.objects.filter(
+            published=True
+        ).select_related("term").order_by("-term__year", "-term__semester")
+
+        terms = []
+        seen_terms = set()
+        for run in published_runs:
+            if run.term and run.term.id not in seen_terms:
+                seen_terms.add(run.term.id)
+                terms.append({
+                    "id": run.term.id,
+                    "code": run.term.code,
+                    "name": str(run.term),
+                    "year": run.term.year,
+                    "semester": run.term.semester,
+                    "start_date": run.term.start_date,
+                    "end_date": run.term.end_date,
+                    "is_active": run.term.is_active,
+                })
+        return Response(terms)
+
+
+@extend_schema(tags=["public"])
+class PublicTermScheduleView(APIView):
+    """Weekly grid schedule for a published term."""
+    permission_classes = [IsPublicReadOnly]
+
+    def get(self, request, term_code):
+        # Parse term_code like "2024-1" or "2024-2"
+        try:
+            year, semester = map(int, term_code.split("-"))
+        except ValueError:
+            return Response(
+                {"error": "Invalid term code format. Use 'YYYY-S' (e.g., '2024-1')"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        term = get_object_or_404(AcademicTerm, year=year, semester=semester)
+        run_obj = ScheduleRun.objects.filter(term=term, published=True).order_by("-created_at").first()
+
+        if run_obj is None:
+            return Response({
+                "schedule": [],
+                "message": f"No published schedule found for term {term_code}",
+                "term": {
+                    "id": term.id,
+                    "code": term.code,
+                    "name": str(term),
+                },
+            })
+
+        classes = run_obj.classes.select_related(
+            "assignment__prof__user", "assignment__subject", "assignment__section", "room"
+        ).order_by("day", "start_time")
+
+        schedule_data = []
+        for c in classes:
+            schedule_data.append({
+                "id": c.id,
+                "day": c.day,
+                "day_name": c.get_day_display(),
+                "start_time": c.start_time.strftime("%H:%M"),
+                "end_time": c.end_time.strftime("%H:%M"),
+                "duration_slots": c.duration_slots,
+                "subject": {
+                    "code": c.assignment.subject.code,
+                    "title": c.assignment.subject.title,
+                },
+                "section": {
+                    "id": c.assignment.section.id,
+                    "name": c.assignment.section.name,
+                    "program": c.assignment.section.program,
+                    "year_level": c.assignment.section.year_level,
+                },
+                "room": {
+                    "id": c.room.id,
+                    "name": c.room.name,
+                    "building": c.room.building,
+                } if c.room else None,
+                "professor": {
+                    "id": c.assignment.prof.id,
+                    "name": c.assignment.prof.user.get_full_name() or c.assignment.prof.user.username,
+                },
+                "mode": c.mode,
+                "mode_display": c.get_mode_display() if c.mode else None,
+            })
+
+        return Response({
+            "schedule_run": {
+                "id": run_obj.id,
+                "algorithm": run_obj.algorithm,
+                "status": run_obj.status,
+                "published": run_obj.published,
+            },
+            "term": {
+                "id": term.id,
+                "code": term.code,
+                "name": str(term),
+            },
+            "schedule": schedule_data,
+        })
+
+
+@extend_schema(tags=["public"])
+class PublicTermSectionsView(APIView):
+    """All sections with published schedules for a term."""
+    permission_classes = [IsPublicReadOnly]
+
+    def get(self, request, term_code):
+        try:
+            year, semester = map(int, term_code.split("-"))
+        except ValueError:
+            return Response(
+                {"error": "Invalid term code format. Use 'YYYY-S' (e.g., '2024-1')"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        term = get_object_or_404(AcademicTerm, year=year, semester=semester)
+        run_obj = ScheduleRun.objects.filter(term=term, published=True).order_by("-created_at").first()
+
+        if run_obj is None:
+            return Response({
+                "sections": [],
+                "message": f"No published schedule found for term {term_code}",
+            })
+
+        # Get unique sections from published schedule
+        section_ids = run_obj.classes.values_list("assignment__section_id", flat=True).distinct()
+        sections = Section.objects.filter(id__in=section_ids).select_related("term")
+
+        sections_data = []
+        for s in sections:
+            sections_data.append({
+                "id": s.id,
+                "name": s.name,
+                "headcount": s.headcount,
+                "program": s.program,
+                "year_level": s.year_level,
+                "term": {
+                    "id": s.term.id,
+                    "code": s.term.code,
+                    "name": str(s.term),
+                } if s.term else None,
+            })
+
+        return Response({
+            "term": {
+                "id": term.id,
+                "code": term.code,
+                "name": str(term),
+            },
+            "sections": sections_data,
+        })
+
+
+@extend_schema(tags=["public"])
+class PublicSectionScheduleView(APIView):
+    """Published schedule for a specific section."""
+    permission_classes = [IsPublicReadOnly]
+
+    def get(self, request, term_code, section_id):
+        try:
+            year, semester = map(int, term_code.split("-"))
+        except ValueError:
+            return Response(
+                {"error": "Invalid term code format. Use 'YYYY-S' (e.g., '2024-1')"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        term = get_object_or_404(AcademicTerm, year=year, semester=semester)
+        run_obj = ScheduleRun.objects.filter(term=term, published=True).order_by("-created_at").first()
+
+        if run_obj is None:
+            return Response({
+                "schedule": [],
+                "message": f"No published schedule found for term {term_code}",
+            })
+
+        section = get_object_or_404(Section, id=section_id, term=term)
+
+        classes = run_obj.classes.select_related(
+            "assignment__prof__user", "assignment__subject", "assignment__section", "room"
+        ).filter(assignment__section=section).order_by("day", "start_time")
+
+        if not classes.exists():
+            return Response({
+                "schedule": [],
+                "message": f"No published schedule for section {section.name} in term {term_code}",
+                "section": {
+                    "id": section.id,
+                    "name": section.name,
+                    "program": section.program,
+                    "year_level": section.year_level,
+                },
+                "term": {
+                    "id": term.id,
+                    "code": term.code,
+                    "name": str(term),
+                },
+            })
+
+        schedule_data = []
+        for c in classes:
+            schedule_data.append({
+                "id": c.id,
+                "day": c.day,
+                "day_name": c.get_day_display(),
+                "start_time": c.start_time.strftime("%H:%M"),
+                "end_time": c.end_time.strftime("%H:%M"),
+                "duration_slots": c.duration_slots,
+                "subject": {
+                    "code": c.assignment.subject.code,
+                    "title": c.assignment.subject.title,
+                },
+                "room": {
+                    "id": c.room.id,
+                    "name": c.room.name,
+                    "building": c.room.building,
+                } if c.room else None,
+                "professor": {
+                    "id": c.assignment.prof.id,
+                    "name": c.assignment.prof.user.get_full_name() or c.assignment.prof.user.username,
+                },
+                "mode": c.mode,
+                "mode_display": c.get_mode_display() if c.mode else None,
+            })
+
+        return Response({
+            "schedule_run": {
+                "id": run_obj.id,
+                "algorithm": run_obj.algorithm,
+                "status": run_obj.status,
+                "published": run_obj.published,
+            },
+            "section": {
+                "id": section.id,
+                "name": section.name,
+                "program": section.program,
+                "year_level": section.year_level,
+                "headcount": section.headcount,
+            },
+            "term": {
+                "id": term.id,
+                "code": term.code,
+                "name": str(term),
+            },
+            "schedule": schedule_data,
+        })
+
+
+# ==================== ADVANCED FEATURES ====================
+
+@extend_schema(tags=["audit"])
+class AuditLogListView(ListAPIView):
+    """List audit log entries."""
+    permission_classes = [IsRegistrar]
+    serializer_class = AuditLogSerializer
+
+    def get_queryset(self):
+        qs = AuditLog.objects.select_related("user").all()
+
+        # Filter by action
+        action = self.request.query_params.get("action")
+        if action:
+            qs = qs.filter(action=action)
+
+        # Filter by model
+        model = self.request.query_params.get("model")
+        if model:
+            qs = qs.filter(model_name=model)
+
+        # Filter by user
+        user = self.request.query_params.get("user")
+        if user:
+            qs = qs.filter(user_id=user)
+
+        # Filter by date range
+        from_date = self.request.query_params.get("from")
+        if from_date:
+            qs = qs.filter(timestamp__gte=from_date)
+        to_date = self.request.query_params.get("to")
+        if to_date:
+            qs = qs.filter(timestamp__lte=to_date)
+
+        return qs.order_by("-timestamp")
+
+
+@extend_schema(tags=["settings"])
+class GlobalSettingsView(APIView):
+    """Get or update global settings."""
+    permission_classes = [IsRegistrar]
+
+    def get(self, request):
+        """Get all settings."""
+        settings = GlobalSettings.objects.all()
+        return Response(GlobalSettingsSerializer(settings, many=True).data)
+
+    def patch(self, request):
+        """Update multiple settings."""
+        updates = request.data.get("settings", [])
+        if not updates:
+            return Response(
+                {"error": "settings list is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        updated = []
+        errors = []
+        for item in updates:
+            key = item.get("key")
+            value = item.get("value")
+            description = item.get("description", "")
+            if not key:
+                errors.append({"key": key, "error": "key is required"})
+                continue
+            try:
+                obj = GlobalSettings.set(key, value, description, request.user)
+                updated.append(GlobalSettingsSerializer(obj).data)
+            except Exception as e:
+                errors.append({"key": key, "error": str(e)})
+
+        return Response({
+            "updated": updated,
+            "errors": errors,
+        })
+
+
+@extend_schema(tags=["settings"])
+class GlobalSettingDetailView(APIView):
+    """Get or update a single setting."""
+    permission_classes = [IsRegistrar]
+
+    def get(self, request, key):
+        setting = get_object_or_404(GlobalSettings, key=key)
+        return Response(GlobalSettingsSerializer(setting).data)
+
+    def patch(self, request, key):
+        setting = get_object_or_404(GlobalSettings, key=key)
+        value = request.data.get("value")
+        description = request.data.get("description", setting.description)
+        if value is None:
+            return Response(
+                {"error": "value is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        setting.value = value
+        setting.description = description
+        setting.updated_by = request.user
+        setting.save()
+        return Response(GlobalSettingsSerializer(setting).data)
+
+
+@extend_schema(tags=["conflicts"])
+class ConflictResolutionListView(ListAPIView):
+    """List conflict resolutions for a schedule run."""
+    permission_classes = [IsRegistrar]
+    serializer_class = ConflictResolutionSerializer
+
+    def get_queryset(self):
+        run_id = self.kwargs.get("run_id")
+        return ConflictResolution.objects.filter(run_id=run_id).select_related("run", "resolved_by")
+
+
+@extend_schema(
+    tags=["conflicts"],
+    request=ConflictResolutionResolveSerializer,
+    responses={
+        200: ConflictResolutionSerializer,
+        404: OpenApiResponse(description="Conflict not found"),
+    },
+)
+class ConflictResolutionResolveView(APIView):
+    """Resolve a conflict."""
+    permission_classes = [IsRegistrar]
+
+    def post(self, request, pk):
+        conflict = get_object_or_404(ConflictResolution, pk=pk)
+        serializer = ConflictResolutionResolveSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        conflict.resolution_type = serializer.validated_data["resolution_type"]
+        conflict.resolution_details = serializer.validated_data.get("resolution_details", {})
+        conflict.status = ConflictResolution.Status.RESOLVED
+        conflict.resolved_by = request.user
+        conflict.resolved_at = timezone.now()
+        conflict.save()
+
+        return Response(ConflictResolutionSerializer(conflict).data)
+
+
+@extend_schema(
+    tags=["conflicts"],
+    responses={
+        200: OpenApiResponse(description="Conflict ignored"),
+        404: OpenApiResponse(description="Conflict not found"),
+    },
+)
+class ConflictResolutionIgnoreView(APIView):
+    """Ignore a conflict."""
+    permission_classes = [IsRegistrar]
+
+    def post(self, request, pk):
+        conflict = get_object_or_404(ConflictResolution, pk=pk)
+        conflict.status = ConflictResolution.Status.IGNORED
+        conflict.resolved_by = request.user
+        conflict.resolved_at = timezone.now()
+        conflict.save()
+        return Response(ConflictResolutionSerializer(conflict).data)

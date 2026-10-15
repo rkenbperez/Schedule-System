@@ -7,6 +7,7 @@ from django.test import SimpleTestCase, TestCase
 
 from catalog.models import Room, Section, Subject
 from users.models import Professors
+from timetable.models import AcademicTerm
 
 from timetable.models import (
     Assignment,
@@ -20,22 +21,41 @@ from timetable.models import (
 
 class AssignmentTests(TestCase):
     def setUp(self):
+        # Create active academic term
+        self.term = AcademicTerm.objects.create(
+            year=2024, semester=1, start_date="2024-08-01", end_date="2024-12-20", is_active=True
+        )
+        
         user = User.objects.create_user(username="prof1", password="pass12345")
         self.prof = Professors.objects.create(user=user)
         self.subject = Subject.objects.create(code="CC101", title="Intro")
-        self.section = Section.objects.create(name="BSIT-3A", headcount=40)
+        self.section = Section.objects.create(name="BSIT-3A", headcount=40, term=self.term)
 
-    def _assignment(self):
+    def _assignment(self, term=None):
+        if term is None:
+            term = self.term
         return Assignment.objects.create(
             prof=self.prof,
             subject=self.subject,
             section=self.section,
+            term=term,
         )
 
     def test_duplicate_assignment_rejected(self):
+        """Duplicate assignment within same term should be rejected."""
         self._assignment()
         with self.assertRaises(IntegrityError):
             self._assignment()
+
+    def test_same_assignment_different_term_allowed(self):
+        """Same prof/subject/section with different term should be allowed."""
+        term2 = AcademicTerm.objects.create(
+            year=2024, semester=2, start_date="2025-01-15", end_date="2025-05-30", is_active=False
+        )
+        self._assignment(term=self.term)
+        # This should not raise - different term
+        assignment2 = self._assignment(term=term2)
+        self.assertEqual(assignment2.term, term2)
 
     def test_valid_assignment_accepted(self):
         assignment = self._assignment()
@@ -147,19 +167,26 @@ class TimeRangeTests(TestCase):
 
 class ScheduledClassTests(TestCase):
     def setUp(self):
+        # Create active academic term
+        self.term = AcademicTerm.objects.create(
+            year=2024, semester=1, start_date="2024-08-01", end_date="2024-12-20", is_active=True
+        )
+        
         user = User.objects.create_user(username="prof3", password="pass12345")
         self.prof = Professors.objects.create(user=user)
         self.subject = Subject.objects.create(code="CC102", title="Math")
-        self.section = Section.objects.create(name="BSIT-3B", headcount=35)
+        self.section = Section.objects.create(name="BSIT-3B", headcount=35, term=self.term)
         self.room = Room.objects.create(name="R201", capacity=50)
         self.assignment = Assignment.objects.create(
             prof=self.prof,
             subject=self.subject,
             section=self.section,
+            term=self.term,
         )
         self.run = ScheduleRun.objects.create(
             algorithm="greedy",
             status=ScheduleRun.Status.FEASIBLE,
+            term=self.term,
         )
 
     def test_zero_duration_slots_rejected(self):
