@@ -7,4 +7,4 @@ class LoginRateThrottle(SimpleRateThrottle):
         username = request.data.get("username", "")
         ident = self.get_ident(request) # clients IP
         return self.cache_format % {"scope": self.scope, "ident": f"{ident}:{username}"}
-    
+        

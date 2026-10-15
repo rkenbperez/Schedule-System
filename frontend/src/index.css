@@ -1,0 +1,72 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-apple-green-50: #f0faf4;
+  --color-apple-green-100: #dcf5e5;
+  --color-apple-green-200: #bbead0;
+  --color-apple-green-300: #88d9af;
+  --color-apple-green-400: #4ec088;
+  --color-apple-green-500: #2ba66a;
+  --color-apple-green-600: #1d8754;
+  --color-apple-green-700: #196c45;
+  --color-apple-green-800: #18563a;
+  --color-apple-green-900: #154731;
+
+  --color-surface: #ffffff;
+  --color-surface-secondary: #f5f5f7;
+  --color-surface-tertiary: #fafafa;
+  --color-border: #e5e5ea;
+  --color-border-light: #f0f0f2;
+  --color-text-primary: #1d1d1f;
+  --color-text-secondary: #86868b;
+  --color-text-tertiary: #aeaeb2;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+
+  --font-sf:
+    'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    Helvetica, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  overflow-x: hidden;
+}
+
+html {
+  font-family: var(--font-sf);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--color-surface-secondary);
+  color: var(--color-text-primary);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #c7c7cc;
+  border-radius: 3px;
+}
