@@ -1,12 +1,22 @@
 import io
 import json
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
-from catalog.models import Department
-from timetable.management.commands.demo_schedule import Command, DEMO_PASSWORD
+from catalog.models import Department, Section, Subject
+from timetable.management.commands.demo_schedule import (
+    Command,
+    DEMO_PASSWORD,
+    _dataset,
+)
+from timetable.models import (
+    AcademicTerm,
+    Assignment,
+    GlobalSettings,
+)
 from users.models import Professors
 
 
@@ -35,6 +45,77 @@ class DemoScheduleCommandTests(TestCase):
         self.assertTrue(registrar.check_password(DEMO_PASSWORD))
         self.assertTrue(professor_user.check_password("professor-password"))
         self.assertEqual(professor.department.name, "CS")
+
+    @patch("timetable.management.commands.demo_schedule._dataset")
+    def test_seed_uses_configured_mode_defaults(self, dataset):
+        dataset.return_value = {
+            "subjects": [("CC101", "Programming Fundamentals")],
+            "sections": [("BSIT-1A", 30)],
+            "availability": {
+                "demo_prof1": [(0, "07:00:00", "19:00:00", True)]
+            },
+            "loads": [
+                (
+                    "demo_prof1",
+                    "CC101",
+                    "BSIT-1A",
+                    [
+                        ("sync", None),
+                        ("lab", None),
+                        ("async", None),
+                        ("sync", 6),
+                    ],
+                )
+            ],
+        }
+        term = AcademicTerm.objects.create(
+            year=2025,
+            semester=1,
+            start_date=date(2025, 8, 1),
+            end_date=date(2025, 12, 15),
+            is_active=True,
+        )
+        department = Department.objects.create(name="CS")
+        professor_user = User.objects.create_user(
+            username="demo_prof1", password="professor-password"
+        )
+        Professors.objects.create(user=professor_user, department=department)
+        Subject.objects.create(code="CC101", title="Programming Fundamentals")
+        Section.objects.create(
+            name="BSIT-1A",
+            headcount=30,
+            program="BSIT",
+            year_level=1,
+            term=term,
+        )
+        GlobalSettings.set("async_duration_default", 2)
+        GlobalSettings.set("sync_duration_default", 4)
+        GlobalSettings.set("lab_duration_default", 5)
+
+        Command()._seed_load_and_availability("normal", term)
+
+        assignment = Assignment.objects.get(
+            prof=professor_user.prof,
+            subject__code="CC101",
+            section__name="BSIT-1A",
+        )
+        self.assertEqual(
+            list(
+                assignment.meetings.order_by("order").values_list(
+                    "mode", "duration_slots"
+                )
+            ),
+            [("sync", 4), ("lab", 5), ("async", 2), ("sync", 6)],
+        )
+
+    def test_demo_fixture_delegates_durations_to_mode_defaults(self):
+        for scale in ("normal", "large", "full"):
+            for _username, _code, _section, spec in _dataset(scale)["loads"]:
+                with self.subTest(scale=scale, spec=spec):
+                    self.assertTrue(spec)
+                    for mode, duration in spec:
+                        self.assertIn(mode, ("sync", "lab", "async"))
+                        self.assertIsNone(duration)
 
     @patch("timetable.management.commands.demo_schedule.urllib.request.urlopen")
     def test_http_uses_finite_timeout(self, urlopen):

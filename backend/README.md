@@ -405,6 +405,11 @@ Two dataset sizes are available:
 python manage.py demo_schedule --scale large
 ```
 
+Demo meetings use the registrar-configured defaults for their mode (async 1h,
+sync 2h, lab 3h unless changed in Global Settings). Run the command again after
+changing those settings to reseed meetings; use `--reset` to clear old demo
+schedules first.
+
 Add `--reset` to delete existing demo schedules, assignments and availability
 before re-running:
 
