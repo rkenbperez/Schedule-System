@@ -49,10 +49,15 @@ runs:
 | `sync`      | 2 hours        |
 | `lab`       | 3 hours        |
 
+The registrar can change these global defaults with the
+`async_duration_default`, `sync_duration_default`, and `lab_duration_default`
+settings (values are positive integers measured in hours). The defaults apply
+whenever a meeting omits `duration_slots`; existing meetings are not changed.
+
 A professor's load can mix modes — for example one assignment may have a
 synchronous 2-hour lecture on Monday and an asynchronous 1-hour session on
-Wednesday. The registrar can override the default length of any meeting with
-`duration_slots`. The chosen mode and length are saved with each scheduled
+Wednesday. The registrar can also override the default length of any meeting
+with `duration_slots`. The chosen mode and length are saved with each scheduled
 class so the output shows whether a class is asynchronous, synchronous, or a
 laboratory session.
 
@@ -231,7 +236,8 @@ curl -X POST http://127.0.0.1:8000/api/admin/terms/ \
 
 # An assignment links a professor, subject, and section to one or more weekly
 # meetings. Each meeting has a mode; length defaults from the mode (async 1h,
-# sync 2h, lab 3h) but can be overridden per meeting with "duration_slots":
+# sync 2h, lab 3h unless the registrar changes the defaults) but can be
+# overridden per meeting with "duration_slots":
 curl -X POST http://127.0.0.1:8000/api/assignments/ \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
@@ -293,16 +299,22 @@ Manage global system settings:
 curl http://127.0.0.1:8000/api/settings/ \
   -H "Authorization: Bearer <token>"
 
-# Bulk update
+# Bulk update (meeting duration defaults are positive integers, in hours)
 curl -X PATCH http://127.0.0.1:8000/api/settings/ \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
-  -d '{"settings": [{"key": "max_daily_hours_default", "value": 8}]}'
+  -d '{"settings": [
+    {"key": "async_duration_default", "value": 1},
+    {"key": "sync_duration_default", "value": 2},
+    {"key": "lab_duration_default", "value": 3}
+  ]}'
 
 # Get/update single setting
-curl http://127.0.0.1:8000/api/settings/max_daily_hours_default/ \
+curl http://127.0.0.1:8000/api/settings/sync_duration_default/ \
   -H "Authorization: Bearer <token>"
 ```
+The duration defaults only affect meetings created without an explicit
+`duration_slots`; existing meetings are unchanged.
 
 ### Conflict Resolution
 Track and resolve schedule conflicts:
