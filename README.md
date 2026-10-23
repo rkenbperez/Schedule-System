@@ -31,6 +31,8 @@ can be compared directly by runtime and schedule quality.
 - **Role-based access** — registrars manage data and generate schedules;
   professors manage their own availability and view their own timetable;
   public read-only access to published schedules.
+- **Registrar analytics** — coverage, workload, room utilization, section
+  coverage, schedule quality, and conflict summaries by term or run.
 - **Advanced features** — audit logging, global settings, conflict resolution
   tracking.
 - **Interactive API docs** — Swagger UI and ReDoc generated from the API schema.
