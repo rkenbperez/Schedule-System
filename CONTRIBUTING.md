@@ -42,7 +42,15 @@ your commit message → Create PR. Ask a teammate to review before merging.
     python manage.py check          # no errors
     python manage.py makemigrations # only if you changed models
     python manage.py migrate
-    python manage.py test           # all tests pass
+    python manage.py test           # known failures exist; see docs/testing.md
+
+Run the tests for the area you touched, even if the full suite is not green.
+Update [docs/testing.md](docs/testing.md) if you fix or discover a known failure.
+
+If you changed an API schema, regenerate the committed OpenAPI artifact:
+
+    cd backend
+    python manage.py spectacular --file ../docs/api/openapi.yaml
 
 ## Commit messages
 Format: `type: short summary`
@@ -54,6 +62,26 @@ Format: `type: short summary`
 ## Branch names
 - `feature/<what>` → `feature/availability-api`
 - `fix/<what>`    → `fix/prof-overlap-bug`
+- `docs/<what>`   → `docs/industry-standard-documentation`
+
+## Documentation changes
+
+The documentation source of truth is [`docs/`](docs/README.md). Keep the root
+README as a landing page and the backend README as a setup/runbook.
+
+When behavior changes:
+
+- Update the affected requirements/use cases and the traceability matrix.
+- Update API tables or examples, then regenerate `docs/api/openapi.yaml`.
+- Update architecture, data-model, or data-flow diagrams if the change affects
+  them.
+- Use Mermaid in fenced `mermaid` blocks; verify the diagram renders on GitHub.
+- Use the status labels **Implemented**, **Legacy**, **Planned**, and
+  **Known gap** accurately.
+- Do not put secrets, tokens, or real credentials in examples.
+- Check relative links before opening the PR.
+
+Documentation-only changes still need a PR; do not push directly to `staging`.
 
 ## Tagging + Releases (milestones only, after merge)
     git checkout staging

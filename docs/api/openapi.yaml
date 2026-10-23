@@ -1,0 +1,3667 @@
+openapi: 3.0.3
+info:
+  title: Schedule API
+  version: 1.0.0
+  description: API documentation for Schedule project
+paths:
+  /api/admin/analytics/overview/:
+    get:
+      operationId: admin_analytics_overview_retrieve
+      parameters:
+      - in: query
+        name: run
+        schema:
+          type: integer
+        description: Schedule run ID. Defaults to latest published, then latest feasible.
+      - in: query
+        name: term
+        schema:
+          type: string
+        description: Term ID or YYYY-S code. Defaults to the active term.
+      tags:
+      - analytics
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/admin/analytics/quality/:
+    get:
+      operationId: admin_analytics_quality_retrieve
+      parameters:
+      - in: query
+        name: algorithm
+        schema:
+          type: string
+      - in: query
+        name: from
+        schema:
+          type: string
+        description: Run date lower bound, YYYY-MM-DD.
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Page size, 1-200. Default 50.
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Zero-based result offset.
+      - in: query
+        name: run
+        schema:
+          type: integer
+        description: Schedule run ID. Defaults to latest published, then latest feasible.
+      - in: query
+        name: status
+        schema:
+          type: string
+      - in: query
+        name: term
+        schema:
+          type: string
+        description: Term ID or YYYY-S code. Defaults to the active term.
+      - in: query
+        name: to
+        schema:
+          type: string
+        description: Run date upper bound, YYYY-MM-DD.
+      tags:
+      - analytics
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/admin/analytics/rooms/:
+    get:
+      operationId: admin_analytics_rooms_retrieve
+      parameters:
+      - in: query
+        name: building
+        schema:
+          type: string
+      - in: query
+        name: department
+        schema:
+          type: integer
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Page size, 1-200. Default 50.
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Zero-based result offset.
+      - in: query
+        name: run
+        schema:
+          type: integer
+        description: Schedule run ID. Defaults to latest published, then latest feasible.
+      - in: query
+        name: term
+        schema:
+          type: string
+        description: Term ID or YYYY-S code. Defaults to the active term.
+      tags:
+      - analytics
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/admin/analytics/sections/:
+    get:
+      operationId: admin_analytics_sections_retrieve
+      parameters:
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Page size, 1-200. Default 50.
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Zero-based result offset.
+      - in: query
+        name: program
+        schema:
+          type: string
+      - in: query
+        name: run
+        schema:
+          type: integer
+        description: Schedule run ID. Defaults to latest published, then latest feasible.
+      - in: query
+        name: term
+        schema:
+          type: string
+        description: Term ID or YYYY-S code. Defaults to the active term.
+      tags:
+      - analytics
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/admin/analytics/workload/:
+    get:
+      operationId: admin_analytics_workload_retrieve
+      parameters:
+      - in: query
+        name: department
+        schema:
+          type: integer
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Page size, 1-200. Default 50.
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Zero-based result offset.
+      - in: query
+        name: run
+        schema:
+          type: integer
+        description: Schedule run ID. Defaults to latest published, then latest feasible.
+      - in: query
+        name: term
+        schema:
+          type: string
+        description: Term ID or YYYY-S code. Defaults to the active term.
+      tags:
+      - analytics
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/admin/assignments/bulk/:
+    post:
+      operationId: admin_assignments_bulk_create
+      description: Bulk create assignments with meetings.
+      tags:
+      - admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkCreateAssignmentsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkCreateAssignmentsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkCreateAssignmentsRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '201':
+          description: Assignments created
+        '400':
+          description: Validation errors
+  /api/admin/conflict-resolutions/{id}/ignore/:
+    post:
+      operationId: admin_conflict_resolutions_ignore_create
+      description: Ignore a conflict.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - conflicts
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: Conflict ignored
+        '404':
+          description: Conflict not found
+  /api/admin/conflict-resolutions/{id}/resolve/:
+    post:
+      operationId: admin_conflict_resolutions_resolve_create
+      description: Resolve a conflict.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - conflicts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConflictResolutionResolve'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ConflictResolutionResolve'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ConflictResolutionResolve'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConflictResolution'
+          description: ''
+        '404':
+          description: Conflict not found
+  /api/admin/dashboard/:
+    get:
+      operationId: admin_dashboard_retrieve
+      description: 'Admin dashboard summary: counts, recent runs, conflicts.'
+      tags:
+      - admin
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/admin/schedules/runs/{id}/conflicts/:
+    get:
+      operationId: admin_schedules_runs_conflicts_retrieve
+      description: Get detailed constraint violations for a schedule run.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - admin
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/admin/schedules/runs/{id}/publish/:
+    patch:
+      operationId: admin_schedules_runs_publish_partial_update
+      description: Publish or unpublish a schedule run.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedPublishScheduleRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedPublishScheduleRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedPublishScheduleRequest'
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: Schedule publish status updated
+        '404':
+          description: Schedule run not found
+  /api/admin/schedules/runs/{run_id}/conflict-resolutions/:
+    get:
+      operationId: admin_schedules_runs_conflict_resolutions_list
+      description: List conflict resolutions for a schedule run.
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - in: path
+        name: run_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - conflicts
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedConflictResolutionList'
+          description: ''
+  /api/admin/sections/bulk/:
+    post:
+      operationId: admin_sections_bulk_create
+      description: Bulk create sections.
+      tags:
+      - admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkCreateSectionsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkCreateSectionsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkCreateSectionsRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '201':
+          description: Sections created
+        '400':
+          description: Validation errors
+  /api/admin/stats/:
+    get:
+      operationId: admin_stats_retrieve
+      description: Detailed stats for charts and analytics.
+      tags:
+      - admin
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/assignments/:
+    get:
+      operationId: assignments_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - timetable
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAssignmentList'
+          description: ''
+    post:
+      operationId: assignments_create
+      tags:
+      - timetable
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Assignment'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Assignment'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Assignment'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+          description: ''
+  /api/assignments/{id}/:
+    get:
+      operationId: assignments_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this assignment.
+        required: true
+      tags:
+      - timetable
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+          description: ''
+    put:
+      operationId: assignments_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this assignment.
+        required: true
+      tags:
+      - timetable
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Assignment'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Assignment'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Assignment'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+          description: ''
+    patch:
+      operationId: assignments_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this assignment.
+        required: true
+      tags:
+      - timetable
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedAssignment'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedAssignment'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedAssignment'
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+          description: ''
+    delete:
+      operationId: assignments_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this assignment.
+        required: true
+      tags:
+      - timetable
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/audit/:
+    get:
+      operationId: audit_list
+      description: List audit log entries.
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - audit
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAuditLogList'
+          description: ''
+  /api/auth/jwt/login/:
+    post:
+      operationId: auth_jwt_login_create
+      description: Returns access + refresh tokens. Use access token as 'Bearer <token>'
+        in Authorization header.
+      summary: Obtain JWT token pair
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPair'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPair'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPair'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JWTTokenPair'
+          description: ''
+        '401':
+          description: Invalid credentials
+  /api/auth/jwt/logout/:
+    post:
+      operationId: auth_jwt_logout_create
+      description: Blacklist refresh token (logout).
+      summary: Logout - blacklist refresh token
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '205':
+          description: Token blacklisted
+        '400':
+          description: Invalid token
+  /api/auth/jwt/me/:
+    get:
+      operationId: auth_jwt_me_retrieve
+      description: Current user profile + role.
+      summary: Get current user profile
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUser'
+          description: ''
+  /api/auth/jwt/refresh/:
+    post:
+      operationId: auth_jwt_refresh_create
+      description: |-
+        Takes a refresh type JSON web token and returns an access type JSON web
+        token if the refresh token is valid.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefresh'
+          description: ''
+  /api/auth/jwt/verify/:
+    post:
+      operationId: auth_jwt_verify_create
+      description: |-
+        Takes a token and indicates if it is valid.  This view provides no
+        information about a token's fitness for a particular use.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenVerify'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenVerify'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenVerify'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenVerify'
+          description: ''
+  /api/availability-windows/:
+    get:
+      operationId: availability_windows_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - timetable
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAvailabilityWindowList'
+          description: ''
+    post:
+      operationId: availability_windows_create
+      tags:
+      - timetable
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AvailabilityWindow'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AvailabilityWindow'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AvailabilityWindow'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityWindow'
+          description: ''
+  /api/availability-windows/{id}/:
+    get:
+      operationId: availability_windows_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - timetable
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityWindow'
+          description: ''
+    put:
+      operationId: availability_windows_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - timetable
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AvailabilityWindow'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AvailabilityWindow'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AvailabilityWindow'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityWindow'
+          description: ''
+    patch:
+      operationId: availability_windows_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - timetable
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedAvailabilityWindow'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedAvailabilityWindow'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedAvailabilityWindow'
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityWindow'
+          description: ''
+    delete:
+      operationId: availability_windows_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - timetable
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/busy-blocks/:
+    get:
+      operationId: busy_blocks_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - timetable
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBusyBlockList'
+          description: ''
+    post:
+      operationId: busy_blocks_create
+      tags:
+      - timetable
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusyBlock'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BusyBlock'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BusyBlock'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusyBlock'
+          description: ''
+  /api/busy-blocks/{id}/:
+    get:
+      operationId: busy_blocks_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - timetable
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusyBlock'
+          description: ''
+    put:
+      operationId: busy_blocks_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - timetable
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusyBlock'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BusyBlock'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BusyBlock'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusyBlock'
+          description: ''
+    patch:
+      operationId: busy_blocks_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - timetable
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedBusyBlock'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedBusyBlock'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedBusyBlock'
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusyBlock'
+          description: ''
+    delete:
+      operationId: busy_blocks_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - timetable
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/departments/:
+    get:
+      operationId: departments_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - catalog
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDepartmentList'
+          description: ''
+    post:
+      operationId: departments_create
+      tags:
+      - catalog
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Department'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Department'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Department'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Department'
+          description: ''
+  /api/departments/{id}/:
+    get:
+      operationId: departments_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this department.
+        required: true
+      tags:
+      - catalog
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Department'
+          description: ''
+    put:
+      operationId: departments_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this department.
+        required: true
+      tags:
+      - catalog
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Department'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Department'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Department'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Department'
+          description: ''
+    patch:
+      operationId: departments_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this department.
+        required: true
+      tags:
+      - catalog
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedDepartment'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedDepartment'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedDepartment'
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Department'
+          description: ''
+    delete:
+      operationId: departments_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this department.
+        required: true
+      tags:
+      - catalog
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/exports/schedules/{id}.pdf:
+    get:
+      operationId: exports_schedules_.pdf_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - exports
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: PDF file containing the list schedule for the given run.
+  /api/exports/schedules/{id}.xlsx:
+    get:
+      operationId: exports_schedules_.xlsx_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - exports
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: XLSX file containing the schedule for the given run.
+  /api/imports/commit/:
+    post:
+      operationId: imports_commit_create
+      tags:
+      - imports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                preview_token:
+                  type: string
+              required:
+              - preview_token
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: Import committed successfully
+        '400':
+          description: Invalid or expired preview token
+  /api/imports/preview/:
+    post:
+      operationId: imports_preview_create
+      tags:
+      - imports
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required:
+              - file
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: Preview of import changes
+        '400':
+          description: Validation errors
+  /api/imports/template/:
+    get:
+      operationId: imports_template_retrieve
+      tags:
+      - imports
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: XLSX template file
+  /api/imports/template/csv/:
+    get:
+      operationId: imports_template_csv_retrieve
+      tags:
+      - imports
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: CSV template ZIP file
+  /api/professor/availability/:
+    get:
+      operationId: professor_availability_list
+      description: Professor's own availability windows.
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - professor
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAvailabilityWindowList'
+          description: ''
+    post:
+      operationId: professor_availability_create
+      description: Professor's own availability windows.
+      tags:
+      - professor
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AvailabilityWindow'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AvailabilityWindow'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AvailabilityWindow'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityWindow'
+          description: ''
+  /api/professor/availability/{id}/:
+    get:
+      operationId: professor_availability_retrieve
+      description: Professor's own availability windows.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - professor
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityWindow'
+          description: ''
+    put:
+      operationId: professor_availability_update
+      description: Professor's own availability windows.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - professor
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AvailabilityWindow'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AvailabilityWindow'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AvailabilityWindow'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityWindow'
+          description: ''
+    patch:
+      operationId: professor_availability_partial_update
+      description: Professor's own availability windows.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - professor
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedAvailabilityWindow'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedAvailabilityWindow'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedAvailabilityWindow'
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityWindow'
+          description: ''
+    delete:
+      operationId: professor_availability_destroy
+      description: Professor's own availability windows.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - professor
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/professor/busy-blocks/:
+    get:
+      operationId: professor_busy_blocks_list
+      description: Professor's own busy blocks.
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - professor
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBusyBlockList'
+          description: ''
+    post:
+      operationId: professor_busy_blocks_create
+      description: Professor's own busy blocks.
+      tags:
+      - professor
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusyBlock'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BusyBlock'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BusyBlock'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusyBlock'
+          description: ''
+  /api/professor/busy-blocks/{id}/:
+    get:
+      operationId: professor_busy_blocks_retrieve
+      description: Professor's own busy blocks.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - professor
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusyBlock'
+          description: ''
+    put:
+      operationId: professor_busy_blocks_update
+      description: Professor's own busy blocks.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - professor
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusyBlock'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BusyBlock'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BusyBlock'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusyBlock'
+          description: ''
+    patch:
+      operationId: professor_busy_blocks_partial_update
+      description: Professor's own busy blocks.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - professor
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedBusyBlock'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedBusyBlock'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedBusyBlock'
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusyBlock'
+          description: ''
+    delete:
+      operationId: professor_busy_blocks_destroy
+      description: Professor's own busy blocks.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+        required: true
+      tags:
+      - professor
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/professor/me/:
+    get:
+      operationId: professor_me_retrieve
+      description: Current professor profile with current term assignments.
+      tags:
+      - professor
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/professor/me/schedule/:
+    get:
+      operationId: professor_me_schedule_retrieve
+      description: Professor's weekly grid schedule for active term.
+      tags:
+      - professor
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/professor/me/schedule/conflicts/:
+    get:
+      operationId: professor_me_schedule_conflicts_retrieve
+      description: Professor's personal schedule conflicts for active term.
+      tags:
+      - professor
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/profs/:
+    get:
+      operationId: profs_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedProfessorsList'
+          description: ''
+    post:
+      operationId: profs_create
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Professors'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Professors'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Professors'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Professors'
+          description: ''
+  /api/profs/{id}/:
+    get:
+      operationId: profs_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this professors.
+        required: true
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Professors'
+          description: ''
+    put:
+      operationId: profs_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this professors.
+        required: true
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Professors'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Professors'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Professors'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Professors'
+          description: ''
+    patch:
+      operationId: profs_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this professors.
+        required: true
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedProfessors'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedProfessors'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedProfessors'
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Professors'
+          description: ''
+    delete:
+      operationId: profs_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this professors.
+        required: true
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/public/schedules/:
+    get:
+      operationId: public_schedules_retrieve
+      description: List all published terms.
+      tags:
+      - public
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/public/schedules/{term_code}/:
+    get:
+      operationId: public_schedules_retrieve_2
+      description: Weekly grid schedule for a published term.
+      parameters:
+      - in: path
+        name: term_code
+        schema:
+          type: string
+        required: true
+      tags:
+      - public
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/public/schedules/{term_code}/sections/:
+    get:
+      operationId: public_schedules_sections_retrieve
+      description: All sections with published schedules for a term.
+      parameters:
+      - in: path
+        name: term_code
+        schema:
+          type: string
+        required: true
+      tags:
+      - public
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/public/schedules/{term_code}/sections/{section_id}/:
+    get:
+      operationId: public_schedules_sections_retrieve_2
+      description: Published schedule for a specific section.
+      parameters:
+      - in: path
+        name: section_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: term_code
+        schema:
+          type: string
+        required: true
+      tags:
+      - public
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/rooms/:
+    get:
+      operationId: rooms_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - catalog
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRoomList'
+          description: ''
+    post:
+      operationId: rooms_create
+      tags:
+      - catalog
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Room'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Room'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Room'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+          description: ''
+  /api/rooms/{id}/:
+    get:
+      operationId: rooms_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this room.
+        required: true
+      tags:
+      - catalog
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+          description: ''
+    put:
+      operationId: rooms_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this room.
+        required: true
+      tags:
+      - catalog
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Room'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Room'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Room'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+          description: ''
+    patch:
+      operationId: rooms_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this room.
+        required: true
+      tags:
+      - catalog
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedRoom'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedRoom'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedRoom'
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Room'
+          description: ''
+    delete:
+      operationId: rooms_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this room.
+        required: true
+      tags:
+      - catalog
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/schedules/generate:
+    post:
+      operationId: schedules_generate_create
+      tags:
+      - schedules
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleGenerateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ScheduleGenerateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ScheduleGenerateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '201':
+          description: Schedule generated and persisted
+        '400':
+          description: Invalid algorithm or time limit
+  /api/schedules/my:
+    get:
+      operationId: schedules_my_retrieve
+      tags:
+      - schedules
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/schedules/runs:
+    get:
+      operationId: schedules_runs_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - schedules
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedScheduleRunList'
+          description: ''
+  /api/schedules/runs/{id}:
+    get:
+      operationId: schedules_runs_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - schedules
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleRun'
+          description: ''
+  /api/schedules/runs/{id}/classes:
+    get:
+      operationId: schedules_runs_classes_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - schedules
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/schedules/runs/{id}/classes/published:
+    get:
+      operationId: schedules_runs_classes_published_retrieve
+      description: Public read-only access to published schedule run classes.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - schedules
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/sections/:
+    get:
+      operationId: sections_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - catalog
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSectionList'
+          description: ''
+    post:
+      operationId: sections_create
+      tags:
+      - catalog
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Section'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Section'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Section'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Section'
+          description: ''
+  /api/sections/{id}/:
+    get:
+      operationId: sections_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this section.
+        required: true
+      tags:
+      - catalog
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Section'
+          description: ''
+    put:
+      operationId: sections_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this section.
+        required: true
+      tags:
+      - catalog
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Section'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Section'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Section'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Section'
+          description: ''
+    patch:
+      operationId: sections_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this section.
+        required: true
+      tags:
+      - catalog
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedSection'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedSection'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedSection'
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Section'
+          description: ''
+    delete:
+      operationId: sections_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this section.
+        required: true
+      tags:
+      - catalog
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/settings/:
+    get:
+      operationId: settings_retrieve
+      description: Get all settings.
+      tags:
+      - settings
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: settings_partial_update
+      description: Update multiple settings.
+      tags:
+      - settings
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/settings/{key}/:
+    get:
+      operationId: settings_retrieve_2
+      description: Get or update a single setting.
+      parameters:
+      - in: path
+        name: key
+        schema:
+          type: string
+        required: true
+      tags:
+      - settings
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: settings_partial_update_2
+      description: Get or update a single setting.
+      parameters:
+      - in: path
+        name: key
+        schema:
+          type: string
+        required: true
+      tags:
+      - settings
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/subjects/:
+    get:
+      operationId: subjects_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      tags:
+      - catalog
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSubjectList'
+          description: ''
+    post:
+      operationId: subjects_create
+      tags:
+      - catalog
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Subject'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Subject'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Subject'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subject'
+          description: ''
+  /api/subjects/{id}/:
+    get:
+      operationId: subjects_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this subject.
+        required: true
+      tags:
+      - catalog
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subject'
+          description: ''
+    put:
+      operationId: subjects_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this subject.
+        required: true
+      tags:
+      - catalog
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Subject'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Subject'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Subject'
+        required: true
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subject'
+          description: ''
+    patch:
+      operationId: subjects_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this subject.
+        required: true
+      tags:
+      - catalog
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedSubject'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedSubject'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedSubject'
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subject'
+          description: ''
+    delete:
+      operationId: subjects_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this subject.
+        required: true
+      tags:
+      - catalog
+      security:
+      - jwtAuth: []
+      - tokenAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/token/:
+    post:
+      operationId: token_create
+      description: |-
+        Takes a set of user credentials and returns an access and refresh JSON web
+        token pair to prove the authentication of those credentials.
+      tags:
+      - token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPair'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPair'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPair'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenObtainPair'
+          description: ''
+  /api/token/refresh/:
+    post:
+      operationId: token_refresh_create
+      description: |-
+        Takes a refresh type JSON web token and returns an access type JSON web
+        token if the refresh token is valid.
+      tags:
+      - token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefresh'
+          description: ''
+  /api/token/verify/:
+    post:
+      operationId: token_verify_create
+      description: |-
+        Takes a token and indicates if it is valid.  This view provides no
+        information about a token's fitness for a particular use.
+      tags:
+      - token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenVerify'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenVerify'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenVerify'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenVerify'
+          description: ''
+components:
+  schemas:
+    ActionEnum:
+      enum:
+      - create
+      - update
+      - delete
+      - generate
+      - publish
+      - import
+      - export
+      - bulk_create
+      - bulk_update
+      type: string
+      description: |-
+        * `create` - Create
+        * `update` - Update
+        * `delete` - Delete
+        * `generate` - Generate Schedule
+        * `publish` - Publish Schedule
+        * `import` - Import Data
+        * `export` - Export Data
+        * `bulk_create` - Bulk Create
+        * `bulk_update` - Bulk Update
+    Assignment:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        prof:
+          type: integer
+        subject:
+          type: integer
+        section:
+          type: integer
+        term:
+          type: integer
+          readOnly: true
+          nullable: true
+        meetings:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeetingSlot'
+        prof_name:
+          type: string
+          readOnly: true
+        subject_label:
+          type: string
+          readOnly: true
+        section_name:
+          type: string
+          readOnly: true
+      required:
+      - id
+      - meetings
+      - prof
+      - prof_name
+      - section
+      - section_name
+      - subject
+      - subject_label
+      - term
+    AssignmentInput:
+      type: object
+      properties:
+        prof:
+          type: integer
+        subject:
+          type: integer
+        section:
+          type: integer
+        term:
+          type: integer
+        meetings:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeetingInput'
+      required:
+      - prof
+      - section
+      - subject
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        user:
+          type: integer
+          readOnly: true
+          nullable: true
+        user_name:
+          type: string
+          readOnly: true
+        action:
+          allOf:
+          - $ref: '#/components/schemas/ActionEnum'
+          readOnly: true
+        model_name:
+          type: string
+          readOnly: true
+        object_id:
+          type: string
+          readOnly: true
+        object_repr:
+          type: string
+          readOnly: true
+        changes:
+          readOnly: true
+        ip_address:
+          type: string
+          readOnly: true
+          nullable: true
+        user_agent:
+          type: string
+          readOnly: true
+        timestamp:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - action
+      - changes
+      - id
+      - ip_address
+      - model_name
+      - object_id
+      - object_repr
+      - timestamp
+      - user
+      - user_agent
+      - user_name
+    AvailabilityWindow:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        prof:
+          type: integer
+        day:
+          allOf:
+          - $ref: '#/components/schemas/DayEnum'
+          minimum: -9223372036854775808
+          maximum: 9223372036854775807
+        day_display:
+          type: string
+          readOnly: true
+        start_time:
+          type: string
+          format: time
+        end_time:
+          type: string
+          format: time
+        is_preferred:
+          type: boolean
+      required:
+      - day
+      - day_display
+      - end_time
+      - id
+      - prof
+      - start_time
+    BlankEnum:
+      enum:
+      - ''
+    BulkCreateAssignmentsRequest:
+      type: object
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssignmentInput'
+      required:
+      - assignments
+    BulkCreateSectionsRequest:
+      type: object
+      properties:
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/SectionInput'
+      required:
+      - sections
+    BusyBlock:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        prof:
+          type: integer
+        day:
+          allOf:
+          - $ref: '#/components/schemas/DayEnum'
+          minimum: -9223372036854775808
+          maximum: 9223372036854775807
+        day_display:
+          type: string
+          readOnly: true
+        start_time:
+          type: string
+          format: time
+        end_time:
+          type: string
+          format: time
+      required:
+      - day
+      - day_display
+      - end_time
+      - id
+      - prof
+      - start_time
+    ConflictResolution:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        run:
+          type: integer
+          readOnly: true
+        run_id:
+          type: integer
+          readOnly: true
+        run_algorithm:
+          type: string
+          readOnly: true
+        conflict_type:
+          type: string
+          maxLength: 50
+        conflict_details: {}
+        resolution_type:
+          oneOf:
+          - $ref: '#/components/schemas/ResolutionTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        resolution_details: {}
+        status:
+          $ref: '#/components/schemas/ConflictResolutionStatusEnum'
+        resolved_by:
+          type: integer
+          readOnly: true
+          nullable: true
+        resolved_by_name:
+          type: string
+          readOnly: true
+        resolved_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - conflict_details
+      - conflict_type
+      - created_at
+      - id
+      - resolved_at
+      - resolved_by
+      - resolved_by_name
+      - run
+      - run_algorithm
+      - run_id
+    ConflictResolutionResolve:
+      type: object
+      properties:
+        resolution_type:
+          $ref: '#/components/schemas/ResolutionTypeEnum'
+        resolution_details: {}
+      required:
+      - resolution_type
+    ConflictResolutionStatusEnum:
+      enum:
+      - pending
+      - resolved
+      - ignored
+      type: string
+      description: |-
+        * `pending` - Pending
+        * `resolved` - Resolved
+        * `ignored` - Ignored
+    CurrentUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        first_name:
+          type: string
+        last_name:
+          type: string
+        is_staff:
+          type: boolean
+        role:
+          type: string
+        professor:
+          $ref: '#/components/schemas/ProfessorProfile'
+      required:
+      - email
+      - first_name
+      - id
+      - is_staff
+      - last_name
+      - role
+      - username
+    DayEnum:
+      enum:
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      type: integer
+      description: |-
+        * `0` - Monday
+        * `1` - Tuesday
+        * `2` - Wednesday
+        * `3` - Thursday
+        * `4` - Friday
+        * `5` - Saturday
+    Department:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 100
+      required:
+      - id
+      - name
+    JWTTokenPair:
+      type: object
+      properties:
+        access:
+          type: string
+        refresh:
+          type: string
+      required:
+      - access
+      - refresh
+    LogoutRequest:
+      type: object
+      properties:
+        refresh:
+          type: string
+      required:
+      - refresh
+    MeetingInput:
+      type: object
+      properties:
+        mode:
+          $ref: '#/components/schemas/MeetingInputModeEnum'
+        duration_slots:
+          type: integer
+          minimum: 1
+      required:
+      - mode
+    MeetingInputModeEnum:
+      enum:
+      - async
+      - sync
+      - lab
+      type: string
+      description: |-
+        * `async` - async
+        * `sync` - sync
+        * `lab` - lab
+    MeetingSlot:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        order:
+          type: integer
+          readOnly: true
+        mode:
+          allOf:
+          - $ref: '#/components/schemas/MeetingSlotModeEnum'
+          default: sync
+        mode_display:
+          type: string
+          readOnly: true
+        duration_slots:
+          type: integer
+          minimum: 1
+      required:
+      - id
+      - mode_display
+      - order
+    MeetingSlotModeEnum:
+      enum:
+      - async
+      - sync
+      - lab
+      type: string
+      description: |-
+        * `async` - Asynchronous
+        * `sync` - Synchronous
+        * `lab` - Laboratory
+    PaginatedAssignmentList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Assignment'
+    PaginatedAuditLogList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+    PaginatedAvailabilityWindowList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailabilityWindow'
+    PaginatedBusyBlockList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/BusyBlock'
+    PaginatedConflictResolutionList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConflictResolution'
+    PaginatedDepartmentList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Department'
+    PaginatedProfessorsList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Professors'
+    PaginatedRoomList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Room'
+    PaginatedScheduleRunList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleRun'
+    PaginatedSectionList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Section'
+    PaginatedSubjectList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Subject'
+    PatchedAssignment:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        prof:
+          type: integer
+        subject:
+          type: integer
+        section:
+          type: integer
+        term:
+          type: integer
+          readOnly: true
+          nullable: true
+        meetings:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeetingSlot'
+        prof_name:
+          type: string
+          readOnly: true
+        subject_label:
+          type: string
+          readOnly: true
+        section_name:
+          type: string
+          readOnly: true
+    PatchedAvailabilityWindow:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        prof:
+          type: integer
+        day:
+          allOf:
+          - $ref: '#/components/schemas/DayEnum'
+          minimum: -9223372036854775808
+          maximum: 9223372036854775807
+        day_display:
+          type: string
+          readOnly: true
+        start_time:
+          type: string
+          format: time
+        end_time:
+          type: string
+          format: time
+        is_preferred:
+          type: boolean
+    PatchedBusyBlock:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        prof:
+          type: integer
+        day:
+          allOf:
+          - $ref: '#/components/schemas/DayEnum'
+          minimum: -9223372036854775808
+          maximum: 9223372036854775807
+        day_display:
+          type: string
+          readOnly: true
+        start_time:
+          type: string
+          format: time
+        end_time:
+          type: string
+          format: time
+    PatchedDepartment:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 100
+    PatchedProfessors:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        user:
+          type: integer
+        username:
+          type: string
+          readOnly: true
+        full_name:
+          type: string
+          readOnly: true
+        department:
+          type: integer
+          nullable: true
+        department_name:
+          type: string
+          readOnly: true
+          default: ''
+        max_daily_hours:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        max_consecutive:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+    PatchedPublishScheduleRequest:
+      type: object
+      properties:
+        published:
+          type: boolean
+    PatchedRoom:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 50
+        capacity:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        department:
+          type: integer
+          nullable: true
+        department_name:
+          type: string
+          readOnly: true
+          default: ''
+        building:
+          type: string
+          maxLength: 100
+    PatchedSection:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 50
+        headcount:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        program:
+          type: string
+          maxLength: 20
+        year_level:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        term:
+          type: integer
+          nullable: true
+    PatchedSubject:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        code:
+          type: string
+          maxLength: 20
+        title:
+          type: string
+          maxLength: 200
+        units:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+    ProfessorProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+        department:
+          type: string
+        max_daily_hours:
+          type: integer
+        max_consecutive:
+          type: integer
+      required:
+      - department
+      - id
+      - max_consecutive
+      - max_daily_hours
+    Professors:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        user:
+          type: integer
+        username:
+          type: string
+          readOnly: true
+        full_name:
+          type: string
+          readOnly: true
+        department:
+          type: integer
+          nullable: true
+        department_name:
+          type: string
+          readOnly: true
+          default: ''
+        max_daily_hours:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        max_consecutive:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+      required:
+      - department_name
+      - full_name
+      - id
+      - user
+      - username
+    ResolutionTypeEnum:
+      enum:
+      - move_class
+      - swap_rooms
+      - swap_times
+      - change_professor
+      - split_class
+      - manual
+      type: string
+      description: |-
+        * `move_class` - Move Class
+        * `swap_rooms` - Swap Rooms
+        * `swap_times` - Swap Times
+        * `change_professor` - Change Professor
+        * `split_class` - Split Class
+        * `manual` - Manual Resolution
+    Room:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 50
+        capacity:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        department:
+          type: integer
+          nullable: true
+        department_name:
+          type: string
+          readOnly: true
+          default: ''
+        building:
+          type: string
+          maxLength: 100
+      required:
+      - capacity
+      - department_name
+      - id
+      - name
+    ScheduleGenerateRequest:
+      type: object
+      properties:
+        algorithm:
+          type: string
+        time_limit_s:
+          type: number
+          format: double
+      required:
+      - algorithm
+    ScheduleRun:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        algorithm:
+          type: string
+          maxLength: 50
+        status:
+          $ref: '#/components/schemas/ScheduleRunStatusEnum'
+        runtime_ms:
+          type: number
+          format: double
+        soft_score:
+          type: number
+          format: double
+          nullable: true
+        spread:
+          type: string
+          readOnly: true
+        consecutive:
+          type: string
+          readOnly: true
+        preferred:
+          type: string
+          readOnly: true
+        created_by:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        term:
+          type: integer
+          nullable: true
+        published:
+          type: boolean
+        class_count:
+          type: string
+          readOnly: true
+      required:
+      - algorithm
+      - class_count
+      - consecutive
+      - created_at
+      - id
+      - preferred
+      - spread
+      - status
+    ScheduleRunStatusEnum:
+      enum:
+      - feasible
+      - infeasible
+      type: string
+      description: |-
+        * `feasible` - Feasible
+        * `infeasible` - Infeasible
+    Section:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 50
+        headcount:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        program:
+          type: string
+          maxLength: 20
+        year_level:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        term:
+          type: integer
+          nullable: true
+      required:
+      - headcount
+      - id
+      - name
+    SectionInput:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 50
+        headcount:
+          type: integer
+          minimum: 1
+        program:
+          type: string
+          default: ''
+          maxLength: 20
+        year_level:
+          type: integer
+          maximum: 6
+          minimum: 1
+          default: 1
+        term:
+          type: integer
+      required:
+      - headcount
+      - name
+    Subject:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        code:
+          type: string
+          maxLength: 20
+        title:
+          type: string
+          maxLength: 200
+        units:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+      required:
+      - code
+      - id
+      - title
+    TokenObtainPair:
+      type: object
+      properties:
+        username:
+          type: string
+          writeOnly: true
+        password:
+          type: string
+          writeOnly: true
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+          readOnly: true
+      required:
+      - access
+      - password
+      - refresh
+      - username
+    TokenRefresh:
+      type: object
+      properties:
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+      required:
+      - access
+      - refresh
+    TokenVerify:
+      type: object
+      properties:
+        token:
+          type: string
+          writeOnly: true
+      required:
+      - token
+  securitySchemes:
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    tokenAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Token-based authentication with required prefix "Token"
