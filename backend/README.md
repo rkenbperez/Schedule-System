@@ -284,6 +284,42 @@ See the Swagger UI for the complete list of endpoints and their fields.
 
 ## Advanced Features
 
+### Analytics (Registrar)
+
+Registrar-only operational analytics are available under
+`/api/admin/analytics/`. Every endpoint returns
+`{"meta": {...}, "summary": {...}, "data": {...}}`.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/admin/analytics/overview/` | Combined coverage, quality, workload, room, section, and conflict summary |
+| `GET /api/admin/analytics/quality/` | Schedule-run history, runtime, feasibility, and soft-score quality |
+| `GET /api/admin/analytics/workload/` | Professor teaching hours, daily peaks, consecutive hours, and limits |
+| `GET /api/admin/analytics/rooms/` | Room utilization, capacity fit, and a weekly occupancy heatmap |
+| `GET /api/admin/analytics/sections/` | Section-level meeting coverage |
+
+Selection and filters:
+
+- `term` — term ID or `YYYY-S` code. Defaults to the active term.
+- `run` — schedule run ID. Defaults to the latest published run, then the
+  latest feasible run, then the latest run.
+- `department`, `program`, `building` — catalog filters where applicable.
+- `algorithm`, `status`, `from`, `to` — run-quality filters.
+- `limit` and `offset` — list pagination (`limit` 1-200, default 50).
+
+```bash
+# Overview for the current active term and its latest published run
+curl http://127.0.0.1:8000/api/admin/analytics/overview/ \
+  -H "Authorization: Bearer <token>"
+
+# Workload for one term
+curl "http://127.0.0.1:8000/api/admin/analytics/workload/?term=2024-1" \
+  -H "Authorization: Bearer <token>"
+```
+
+The older `/api/admin/stats/` and `/api/admin/dashboard/` endpoints remain for
+compatibility. New integrations should use the analytics endpoints.
+
 ### Audit Log
 View audit trail of all important actions:
 ```bash

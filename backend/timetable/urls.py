@@ -1,6 +1,13 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
+from .analytics.views import (
+    AnalyticsOverviewView,
+    AnalyticsQualityView,
+    AnalyticsRoomsView,
+    AnalyticsSectionsView,
+    AnalyticsWorkloadView,
+)
 from .views import (
     ScheduleGenerateView,
     ScheduleMyView,
@@ -53,6 +60,11 @@ urlpatterns = [
     # Admin Panel APIs
     path("admin/dashboard/", AdminDashboardView.as_view(), name="admin-dashboard"),
     path("admin/stats/", AdminStatsView.as_view(), name="admin-stats"),
+    path("admin/analytics/overview/", AnalyticsOverviewView.as_view(), name="analytics-overview"),
+    path("admin/analytics/quality/", AnalyticsQualityView.as_view(), name="analytics-quality"),
+    path("admin/analytics/workload/", AnalyticsWorkloadView.as_view(), name="analytics-workload"),
+    path("admin/analytics/rooms/", AnalyticsRoomsView.as_view(), name="analytics-rooms"),
+    path("admin/analytics/sections/", AnalyticsSectionsView.as_view(), name="analytics-sections"),
     path("admin/schedules/runs/<int:pk>/conflicts/", ScheduleRunConflictsView.as_view(), name="schedule-run-conflicts"),
     path("admin/schedules/runs/<int:pk>/publish/", ScheduleRunPublishView.as_view(), name="schedule-run-publish"),
     path("admin/sections/bulk/", BulkCreateSectionsView.as_view(), name="bulk-create-sections"),
