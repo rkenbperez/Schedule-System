@@ -18,7 +18,8 @@ can be compared directly by runtime and schedule quality.
   well a timetable spreads each professor's load across the week and how close
   it stays to their preferred windows.
 - **Per-meeting modes** — every weekly meeting is labelled `async`, `sync`, or
-  `lab`, each with a default length that a registrar can override.
+  `lab`, each with a registrar-configurable default length and a per-meeting
+  override.
 - **Department-scoped rooms** — a professor is only placed in rooms of their own
   department; unassigned rooms are shared.
 - **Rule enforcement** — hard constraints (no double-booked professor, section,

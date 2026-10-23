@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -7,9 +7,11 @@ from rest_framework.test import APITestCase
 
 from catalog.models import Department, Room, Section, Subject
 from timetable.models import (
+    AcademicTerm,
     Assignment,
     AvailabilityWindow,
     BusyBlock,
+    GlobalSettings,
     MeetingSlot,
     ScheduledClass,
     ScheduleRun,
@@ -345,6 +347,7 @@ class AssignmentApiTests(ApiTestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(len(response.data["meetings"]), 2)
+        self.assertEqual(response.data["meetings"][0]["duration_slots"], 2)
         self.assertEqual(response.data["meetings"][1]["mode"], "async")
         self.assertEqual(response.data["meetings"][1]["duration_slots"], 1)
 
@@ -449,6 +452,149 @@ class AssignmentApiTests(ApiTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 400)
+
+
+class GlobalSettingsApiTests(ApiTestCase):
+    def _patch_settings(self, updates):
+        return self.client.patch(
+            "/api/settings/",
+            {"settings": updates},
+            format="json",
+        )
+
+    def _seed_assignment_inputs(self):
+        subject = Subject.objects.create(code="CC101", title="Intro", units=3)
+        section = Section.objects.create(name="BSIT-3A", headcount=30)
+        return subject, section
+
+    def test_duration_defaults_are_seeded(self):
+        self.auth(self.reg_token)
+        response = self.client.get("/api/settings/")
+        self.assertEqual(response.status_code, 200)
+        values = {item["key"]: item["value"] for item in response.data}
+        self.assertEqual(values["async_duration_default"], 1)
+        self.assertEqual(values["sync_duration_default"], 2)
+        self.assertEqual(values["lab_duration_default"], 3)
+
+    def test_assignment_uses_updated_duration_defaults(self):
+        self.auth(self.reg_token)
+        response = self._patch_settings(
+            [
+                {"key": "sync_duration_default", "value": 4},
+                {"key": "async_duration_default", "value": 3},
+                {"key": "lab_duration_default", "value": 5},
+            ]
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["errors"], [])
+
+        subject, section = self._seed_assignment_inputs()
+        response = self.client.post(
+            "/api/assignments/",
+            {
+                "prof": self.prof.id,
+                "subject": subject.id,
+                "section": section.id,
+                "meetings": [
+                    {"mode": "sync"},
+                    {"mode": "async"},
+                    {"mode": "lab"},
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(
+            [m["duration_slots"] for m in response.data["meetings"]],
+            [4, 3, 5],
+        )
+
+    def test_explicit_duration_overrides_setting(self):
+        self.auth(self.reg_token)
+        self._patch_settings([{"key": "sync_duration_default", "value": 4}])
+        subject, section = self._seed_assignment_inputs()
+        response = self.client.post(
+            "/api/assignments/",
+            {
+                "prof": self.prof.id,
+                "subject": subject.id,
+                "section": section.id,
+                "meetings": [{"mode": "sync", "duration_slots": 1}],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["meetings"][0]["duration_slots"], 1)
+
+    def test_bulk_assignment_uses_configured_default(self):
+        term = AcademicTerm.objects.create(
+            year=2026,
+            semester=1,
+            start_date=date(2026, 8, 1),
+            end_date=date(2026, 12, 20),
+            is_active=True,
+        )
+        subject, section = self._seed_assignment_inputs()
+        self.auth(self.reg_token)
+        self._patch_settings([{"key": "sync_duration_default", "value": 4}])
+        response = self.client.post(
+            "/api/admin/assignments/bulk/",
+            {
+                "assignments": [
+                    {
+                        "prof": self.prof.id,
+                        "subject": subject.id,
+                        "section": section.id,
+                        "term": term.id,
+                    }
+                ]
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(
+            response.data["created"][0]["meetings"][0]["duration_slots"], 4
+        )
+
+    def test_setting_update_preserves_description(self):
+        self.auth(self.reg_token)
+        response = self._patch_settings(
+            [{"key": "sync_duration_default", "value": 4}]
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["errors"], [])
+        setting = GlobalSettings.objects.get(key="sync_duration_default")
+        self.assertEqual(setting.value, 4)
+        self.assertEqual(
+            setting.description,
+            "Default synchronous meeting duration in hours (1 slot = 1 hour).",
+        )
+
+    def test_invalid_duration_setting_is_rejected(self):
+        self.auth(self.reg_token)
+        response = self.client.patch(
+            "/api/settings/sync_duration_default/",
+            {"value": 0},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+        response = self._patch_settings(
+            [{"key": "lab_duration_default", "value": "3"}]
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["errors"]), 1)
+        self.assertEqual(GlobalSettings.get("lab_duration_default"), 3)
+
+    def test_non_registrar_cannot_access_settings(self):
+        self.auth(self.prof_token)
+        self.assertEqual(self.client.get("/api/settings/").status_code, 403)
+        response = self.client.patch(
+            "/api/settings/sync_duration_default/",
+            {"value": 4},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
 
 
 class ScheduleViewTests(ApiTestCase):

@@ -422,7 +422,13 @@ class ImportProcessor:
             from django.db import transaction
             from catalog.models import Department, Room, Subject, Section
             from users.models import Professors
-            from timetable.models import Assignment, MeetingSlot, AvailabilityWindow, BusyBlock
+            from timetable.models import (
+                Assignment,
+                AvailabilityWindow,
+                BusyBlock,
+                MeetingSlot,
+                get_mode_duration,
+            )
             from django.contrib.auth import get_user_model
 
             User = get_user_model()
@@ -538,11 +544,15 @@ class ImportProcessor:
                 # Meetings
                 for row in parsed_data.get("Meetings", []):
                     pk = row.get("id")
+                    mode = parse_mode(row["mode"])
                     defaults = {
                         "assignment_id": parse_int(row["assignment_id"]),
                         "order": parse_int(row["order"]),
-                        "mode": parse_mode(row["mode"]),
-                        "duration_slots": parse_int(row.get("duration_slots")) or 1,
+                        "mode": mode,
+                        "duration_slots": (
+                            parse_int(row.get("duration_slots"))
+                            or get_mode_duration(mode)
+                        ),
                     }
                     if pk:
                         obj, created = MeetingSlot.objects.update_or_create(id=pk, defaults=defaults)

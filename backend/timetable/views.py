@@ -23,7 +23,8 @@ from rest_framework.permissions import IsAuthenticated
 from .engines import ALGORITHMS, run
 from .models import (
     AcademicTerm, Assignment, AuditLog, AvailabilityWindow, BusyBlock,
-    ConflictResolution, GlobalSettings, MeetingSlot, ScheduledClass, ScheduleRun
+    ConflictResolution, GlobalSettings, MeetingSlot, ScheduledClass, ScheduleRun,
+    get_mode_durations, validate_setting_value,
 )
 from .scenario_builder import build_scenario
 from .serializers import (
@@ -851,6 +852,7 @@ class BulkCreateAssignmentsView(APIView):
             )
 
         active_term = AcademicTerm.objects.filter(is_active=True).first()
+        mode_durations = get_mode_durations()
         created = []
         errors = []
 
@@ -871,14 +873,18 @@ class BulkCreateAssignmentsView(APIView):
 
                 meetings_data = data.get("meetings", [])
                 if not meetings_data:
-                    meetings_data = [{"mode": "sync", "duration_slots": 2}]
+                    meetings_data = [{"mode": "sync"}]
 
                 for order, m_data in enumerate(meetings_data, start=1):
+                    mode = m_data.get("mode", "sync")
                     MeetingSlot.objects.create(
                         assignment=assignment,
                         order=order,
-                        mode=m_data.get("mode", "sync"),
-                        duration_slots=m_data.get("duration_slots", {"sync": 2, "async": 1, "lab": 3}.get(m_data.get("mode", "sync"), 1)),
+                        mode=mode,
+                        duration_slots=m_data.get(
+                            "duration_slots",
+                            mode_durations.get(mode, 1),
+                        ),
                     )
 
                 created.append({
@@ -1615,11 +1621,12 @@ class GlobalSettingsView(APIView):
         for item in updates:
             key = item.get("key")
             value = item.get("value")
-            description = item.get("description", "")
+            description = item.get("description")
             if not key:
                 errors.append({"key": key, "error": "key is required"})
                 continue
             try:
+                validate_setting_value(key, value)
                 obj = GlobalSettings.set(key, value, description, request.user)
                 updated.append(GlobalSettingsSerializer(obj).data)
             except Exception as e:
@@ -1647,6 +1654,13 @@ class GlobalSettingDetailView(APIView):
         if value is None:
             return Response(
                 {"error": "value is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            validate_setting_value(key, value)
+        except ValueError as exc:
+            return Response(
+                {"error": str(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         setting.value = value
