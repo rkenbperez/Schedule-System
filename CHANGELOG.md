@@ -4,15 +4,12 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 semantic versioning where practical.
 
-> **Version metadata note:** `backend/VERSION` still contains `0.1.0.0` and is not
-> authoritative. The Git tags are the release reference; the latest tag is
-> `v1.2.0`, and `staging` contains changes after that tag. Dates for the earlier
-> tags were not recorded in the repository.
-
-## [Unreleased]
+## [1.3.0] - 2026-10-24
 
 ### Added
 
+- Public `GET /api/health/` endpoint that verifies database connectivity and
+  returns `200` or `503`.
 - Registrar analytics APIs for overview, schedule quality, professor workload,
   room utilization, and section coverage.
 - Shared conflict auditor used by analytics and the existing conflict
@@ -31,6 +28,9 @@ semantic versioning where practical.
   helper instead of hardcoded values.
 - Global settings updates preserve existing descriptions when omitted and
   validate duration values as positive whole numbers.
+- Documentation now has one owner per topic, current test status, and a single
+  consolidated production-readiness section.
+- The stale `plan.md` implementation plan was removed.
 
 ### Fixed
 
@@ -38,14 +38,6 @@ semantic versioning where practical.
   meetings.
 - Conflict detection now catches partial interval overlaps rather than only
   classes with identical start times and durations.
-
-### Known gaps
-
-- Login throttling is defined but not attached to the login view.
-- Audit-log and conflict-resolution records are not created automatically.
-- The full test suite is not green; see [Testing](docs/testing.md).
-- The frontend and student/enrollment/program features are not implemented.
-- Production settings are not hardened.
 
 ## [1.2.0]
 

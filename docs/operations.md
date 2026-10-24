@@ -334,8 +334,9 @@ Restore by replacing the file while the server is stopped and running
 `python manage.py migrate` if the schema changed. Do not copy a live database
 while writes are in progress.
 
-For production, use the database vendor's backup and point-in-time recovery
-mechanisms. See [Deployment](deployment.md).
+For production, use the planned PostgreSQL backup strategy in
+[Deployment: Database and backups](deployment.md#database-and-backups-planned):
+nightly encrypted logical dumps, offsite retention, and restore drills.
 
 ## Troubleshooting
 
@@ -373,4 +374,3 @@ mechanisms. See [Deployment](deployment.md).
 - [Configuration](configuration.md)
 - [Deployment](deployment.md)
 - [Testing](testing.md)
-- [Troubleshooting in the backend README](../backend/README.md)

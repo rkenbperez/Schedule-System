@@ -35,7 +35,8 @@ Open http://127.0.0.1:8000/api/schema/swagger-ui/ to see the API docs.
     git push origin feature/my-thing
 
 Then on GitHub: **Compare & pull request** → base branch = `staging` → title =
-your commit message → Create PR. Ask a teammate to review before merging.
+your Conventional Commit message (for example, `docs: consolidate documentation`)
+→ Create PR. Ask a teammate to review before merging.
 
 ## Check before you push
     cd backend
@@ -86,8 +87,8 @@ Documentation-only changes still need a PR; do not push directly to `staging`.
 ## Tagging + Releases (milestones only, after merge)
     git checkout staging
     git pull origin staging
-    git tag -a v0.2.0 -m "Phase 2: solver engines"
-    git push origin v0.2.0        # tags are NOT sent by a normal git push
+    git tag -a v1.3.0 -m "Release 1.3.0"
+    git push origin v1.3.0        # tags are NOT sent by a normal git push
 
 Then github.com → **Releases → Draft a new release** → pick the tag → add notes
 → Publish. These snapshots are what the thesis panel will see.

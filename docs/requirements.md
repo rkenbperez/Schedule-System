@@ -116,12 +116,12 @@ carefully when activating terms.
 | NFR-02 | Security | Refresh-token rotation and blacklist on logout | Implemented |
 | NFR-03 | Security | Login brute-force protection | Known gap: `LoginRateThrottle` is defined but not attached to the login view; use proxy-level limits |
 | NFR-04 | Performance | Schedule generation returns within a usable interactive time for demo-scale data | Demo-scale runs complete in milliseconds to seconds; large inputs are request-blocking |
-| NFR-05 | Scalability | Support the institution's catalog size without unbounded memory growth | Tests exercise up to 1000 sections; no production capacity benchmark |
+| NFR-05 | Scalability | Support the institution's catalog size without unbounded memory growth | Tests exercise up to 1000 sections; 100/200-section cases currently fail consecutive-hour checks; no production capacity benchmark |
 | NFR-06 | Reliability | Persist failed generation attempts for diagnosis | Implemented |
 | NFR-07 | Reliability | Avoid partial schedule writes | Generation writes within a transaction |
 | NFR-08 | Maintainability | Engine independent of Django | Implemented as pure Python |
-| NFR-09 | Testability | Deterministic unit/API tests for rules and engines | 207 test methods (291 tests discovered); known pre-existing failures |
-| NFR-10 | Portability | Run on Python 3.14 and SQLite in development | Implemented |
+| NFR-09 | Testability | Deterministic unit/API tests for rules and engines | See [Testing](testing.md) for the current suite result and known failures |
+| NFR-10 | Portability | Run on Python 3.14 and SQLite in development; PostgreSQL planned for production | Implemented for development |
 | NFR-11 | Operability | Generated API schema and interactive documentation | drf-spectacular, Swagger UI, ReDoc |
 | NFR-12 | Observability | Trace important actions | Audit-log model and read API exist; automatic writes are a known gap |
 | NFR-13 | Usability | Predictable JSON errors and pagination | DRF defaults; analytics uses a limit/offset envelope |

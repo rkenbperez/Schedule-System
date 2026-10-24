@@ -3,11 +3,11 @@
 This page describes the automated test strategy, how to run the suite, what is
 covered, and which failures are currently known.
 
-> **Current status:** the full suite is not green. At the time of writing,
-> Django discovers **291 tests** and the full run reports **15 failures and
-> 13 errors** after about four minutes. The failures are concentrated in legacy
-> API, demo-command, large-scale, and export tests. Do not treat a full-suite
-> run as a release gate yet; triage the known failures first.
+> **Current status:** the full suite is not green. On 2026-10-24 the suite
+> discovered **293 tests** and reported **16 failures and 13 errors** in about
+> 8.5 minutes. Failures are concentrated in legacy API routing/auth, export
+> routing, demo-command drift, and scalability/stress limits. Do not treat a
+> full-suite run as a release gate yet; triage the known failures first.
 
 ## Running the tests
 
@@ -59,7 +59,7 @@ python manage.py makemigrations --check --dry-run
 | Import/export | `TestCase`/`APITestCase` with generated XLSX, CSV ZIP, and PDF responses |
 | Factories | `factory_boy` factories in `backend/timetable/tests/factories.py` |
 | Determinism | Min-conflicts accepts a seed; tests use fixed seeds where behavior depends on randomness |
-| Database | SQLite test database created by Django |
+| Database | SQLite test database created by Django in development; a PostgreSQL service is planned for CI |
 
 The suite is intentionally layered: engine tests run without Django, model tests
 check database rules, API tests exercise serializers and permissions, and the
@@ -89,25 +89,28 @@ starting point when validating a change to scheduling or access control.
 
 ## Current known failures
 
-These results were captured from the `staging`-based documentation branch and
-should be re-checked before release. They are pre-existing failures, not
-documentation changes.
+These results were captured from the current `staging` branch during the
+documentation refresh. They are pre-existing failures, not documentation
+changes. Re-check before release.
 
 | Area | Result | Representative tests / cause |
 | --- | --- | --- |
 | `timetable.tests.test_api` | 6 failures, 5 errors | API root contents, legacy login path, generation setup, class filters, own-schedule views |
-| `timetable.tests.test_demo_schedule` | 2 errors | Demo test mocks and a `_seed_users` signature mismatch |
+| `data_transfer` | 7 failures, 3 errors | XLSX/PDF export routing, contents, headers, and permission checks |
+| `users.tests` | 3 errors | `reverse("login")` no longer resolves after the JWT route rename |
+| `timetable.tests.test_demo_schedule` | 2 errors | Demo mocks and a `_seed_users` signature mismatch |
 | `timetable.tests.test_scalability` | 2 failures | 100- and 200-section loads produce consecutive-hour hard violations |
-| `data_transfer` | 7 failures, 3 errors | XLSX/PDF export contents, headers, and permission checks |
-| Combined full run | 3 additional failures/errors | Appear only when suites share process state; likely test isolation/order |
+| `timetable.tests.test_stress` | 1 failure | `min_conflicts` exceeds the 35-second large-scenario limit (35.66s) |
 
-Known examples from the isolated runs:
+Representative failing tests:
 
 - `test_api_root_lists_all_resources_once`
 - `test_generate_happy_path`
 - `test_classes_include_end_time`
+- `test_login_returns_token`
 - `test_seed_users_reconciles_registrar_and_professor_department`
 - `test_100_sections_load`
+- `test_large_scenario_performance`
 - `test_xlsx_contains_schedule_row`
 - `test_pdf_has_valid_magic_bytes`
 

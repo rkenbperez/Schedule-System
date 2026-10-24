@@ -22,56 +22,15 @@ flowchart LR
 - `pip` and `venv`
 - A POSIX-like shell; the documented commands use macOS/Linux paths
 
-### First-time setup
+### Local setup
 
-```bash
-git clone https://github.com/rkenbperez/Schedule-System.git
-cd Schedule-System/backend
+See [Backend README: First-time setup](../backend/README.md#first-time-setup)
+for local installation and account creation. The API is available at
+`http://127.0.0.1:8000/api/`; Swagger UI and ReDoc are under
+`/api/schema/swagger-ui/` and `/api/schema/redoc/`.
 
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-
-python manage.py migrate
-python manage.py createsuperuser
-python manage.py runserver
-```
-
-The API is available at `http://127.0.0.1:8000/api/`. Interactive documentation:
-
-- Swagger UI: `http://127.0.0.1:8000/api/schema/swagger-ui/`
-- ReDoc: `http://127.0.0.1:8000/api/schema/redoc/`
-
-### Demo dataset
-
-Run the API server in one terminal and the demo command in another:
-
-```bash
-# terminal 1
-python manage.py runserver
-
-# terminal 2
-cd backend
-source .venv/bin/activate
-python manage.py demo_schedule --reset
-```
-
-The demo creates a registrar, professors, catalog data, assignments, and three
-schedule runs. It is development-only by default. See
-[Operations](operations.md#demo-data) for the full workflow.
-
-### Tests and checks
-
-```bash
-cd backend
-python manage.py check
-python manage.py makemigrations --check --dry-run
-python manage.py test
-```
-
-Some legacy test modules currently contain pre-existing failures unrelated to
-documentation changes. See [Testing](testing.md) for the current known failures
-and targeted test commands.
+For demo data, see [Operations: Demo environment](operations.md#demo-environment).
+For tests and checks, see [Testing](testing.md).
 
 ### Schema generation
 
@@ -116,6 +75,19 @@ Recommended components:
 | Backups | Encrypted database backups with restore testing |
 | Access | Restrict `/admin/` by network or identity-aware proxy where possible |
 
+### Database and backups (planned)
+
+- Use PostgreSQL with a least-privilege application role; keep owner and backup
+  roles separate.
+- Take nightly logical backups with `pg_dump` (custom format), compress and
+  encrypt them, and copy them offsite.
+- Retain 7 daily, 4 weekly, and 3 monthly backups; verify each dump with
+  `pg_restore --list`.
+- Record a checksum and row-count manifest for each backup.
+- Run a restore drill at least monthly. Target RPO ≤ 24 hours and RTO ≤ 1 hour
+  until continuous WAL archiving or managed PITR is added.
+- Do not use the SQLite development file as a production backup.
+
 ## Production settings checklist
 
 Before deployment:
@@ -126,12 +98,16 @@ Before deployment:
 - [ ] Configure TLS and redirect HTTP to HTTPS.
 - [ ] Enable HSTS, secure cookies, and CSRF trusted origins as applicable.
 - [ ] Attach the login throttle class or enforce login rate limits at the proxy.
-- [ ] Replace SQLite with PostgreSQL.
+- [ ] Move to PostgreSQL with a least-privilege application role.
 - [ ] Configure a shared cache for import previews.
 - [ ] Configure `STATIC_ROOT` and run `collectstatic`.
 - [ ] Add CORS rules for the frontend origin.
 - [ ] Add upload-size and decompression limits.
-- [ ] Configure backups and test a restore.
+- [ ] Add application-level audit writes for sensitive operations.
+- [ ] Configure encrypted, offsite backups and test a restore.
+- [ ] Restrict `/admin/` by network or identity-aware proxy and use strong staff passwords.
+- [ ] Configure centralized logging, metrics, and alerting.
+- [ ] Run dependency and container vulnerability scans.
 - [ ] Verify `/api/schema/swagger-ui/` exposure is acceptable for the environment.
 - [ ] Run `python manage.py check --deploy` and resolve the findings.
 
@@ -177,6 +153,6 @@ These are documented as gaps rather than implied capabilities.
 ## Related documentation
 
 - [Configuration](configuration.md) — settings and environment variables
-- [Security](security.md) — production checklist and threat model
-- [Testing](testing.md) — test commands and known failures
+- [Security](security.md) — threat model and code-level gaps
+- [Testing](testing.md) — test commands and current status
 - [Operations](operations.md) — demo, imports, exports, and troubleshooting

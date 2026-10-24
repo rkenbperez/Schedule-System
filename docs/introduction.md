@@ -69,7 +69,8 @@ result is complete and balanced.
 ## Operating context
 
 - One Django process serves the API at `/api/`.
-- SQLite is the default database in development.
+- SQLite is the default database in development; PostgreSQL is planned for
+  production.
 - JWTs are issued by the API; browser clients are expected to send
   `Authorization: Bearer <access-token>`.
 - The scheduling engine is pure Python and does not import Django. The

@@ -6,11 +6,10 @@ model, and the operational workflows used by registrars and professors.
 
 ## Version and status
 
-The latest release tag is **v1.2.0**. The current `staging` branch contains
-changes made after that tag, including registrar analytics and configurable
-meeting-duration defaults. The `backend/VERSION` file still contains the older
-value `0.1.0.0`; treat the Git tag and this documentation as the current
-reference until the version metadata is reconciled.
+The latest release tag is **v1.2.0**. The current development version is
+**1.3.0**, recorded in [`backend/VERSION`](../backend/VERSION). The `staging`
+branch contains the post-tag work: registrar analytics, configurable
+meeting-duration defaults, the health endpoint, and this documentation refresh.
 
 Status labels used throughout the docs:
 
@@ -51,30 +50,6 @@ Status labels used throughout the docs:
 | Trace requirements to implementation | [Traceability](traceability.md) |
 | Look up a term | [Glossary](glossary.md) |
 
-## Full document map
-
-```text
-docs/
-├── README.md                  this index
-├── introduction.md            purpose, scope, actors, context
-├── requirements.md            functional, non-functional, business rules
-├── use-cases.md               actors, use-case diagram, scenarios
-├── architecture.md            C4 views, app responsibilities, runtime
-├── data-model.md              ERD, data dictionary, constraints
-├── data-flow.md               CFD, DFD Level 1, DFD Level 2
-├── scheduling-engine.md       algorithms, constraints, scoring
-├── api-reference.md           conventions and endpoint catalog
-├── security.md                authorization, threats, controls, gaps
-├── configuration.md           settings, JWT, database, GlobalSettings
-├── deployment.md              local and production guidance
-├── testing.md                 test inventory and known failures
-├── operations.md              demo, import/export, analytics, runbook
-├── traceability.md            requirement-to-code-to-test matrix
-├── glossary.md                domain and technical terms
-└── api/
-    └── openapi.yaml           generated OpenAPI 3 schema
-```
-
 ## Documentation conventions
 
 - Diagrams use **Mermaid** inside fenced `mermaid` blocks and render on GitHub.
@@ -96,4 +71,4 @@ docs/
 - [Root README](../README.md) — project landing page and quickstart
 - [Backend README](../backend/README.md) — backend setup and local runbook
 - [Contributing guide](../CONTRIBUTING.md) — branch, PR, and release workflow
-- [Changelog](../CHANGELOG.md) — released and unreleased changes
+- [Changelog](../CHANGELOG.md) — release history
