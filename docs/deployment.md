@@ -167,7 +167,6 @@ Recommended release flow:
 
 - No Dockerfile, container image, or infrastructure-as-code configuration.
 - No CI/CD workflow.
-- No health-check endpoint.
 - No production database, cache, or static-file configuration.
 - No frontend build or hosting configuration.
 - No centralized logging, metrics, or alerting.

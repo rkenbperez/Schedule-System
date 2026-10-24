@@ -23,6 +23,7 @@ Health and documentation endpoints:
 | URL | Purpose |
 | --- | --- |
 | `GET /api/` | API root |
+| `GET /api/health/` | Database health check |
 | `GET /api/schema/` | OpenAPI schema |
 | `/api/schema/swagger-ui/` | Interactive Swagger UI |
 | `/api/schema/redoc/` | ReDoc |
