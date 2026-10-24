@@ -1181,6 +1181,19 @@ paths:
       responses:
         '200':
           description: XLSX file containing the schedule for the given run.
+  /api/health/:
+    get:
+      operationId: health_retrieve
+      summary: Service health check
+      tags:
+      - health
+      security:
+      - {}
+      responses:
+        '200':
+          description: Service and database are available
+        '503':
+          description: Database is unavailable
   /api/imports/commit/:
     post:
       operationId: imports_commit_create

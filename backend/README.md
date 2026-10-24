@@ -26,6 +26,7 @@ The API is served at `http://127.0.0.1:8000/api/`.
 
 | Resource | URL |
 | --- | --- |
+| Health check | `http://127.0.0.1:8000/api/health/` |
 | Swagger UI | `http://127.0.0.1:8000/api/schema/swagger-ui/` |
 | ReDoc | `http://127.0.0.1:8000/api/schema/redoc/` |
 | OpenAPI schema | `http://127.0.0.1:8000/api/schema/` |

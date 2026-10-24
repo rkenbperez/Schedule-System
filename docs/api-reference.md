@@ -9,11 +9,21 @@ request and response schemas are published in the generated
 | --- | --- |
 | Base URL (development) | `http://127.0.0.1:8000/api/` |
 | Schema | `GET /api/schema/` |
+| Health check | `GET /api/health/` (public) |
 | Swagger UI | `GET /api/schema/swagger-ui/` |
 | ReDoc | `GET /api/schema/redoc/` |
 | Content type | `application/json` unless noted |
 | API versioning | None in the URL; the OpenAPI document is versioned separately |
 | Authentication | JWT bearer tokens (legacy DRF token authentication is also enabled) |
+
+## Health
+
+`GET /api/health/` is public and does not require authentication. It executes
+`SELECT 1` against the configured database.
+
+- Healthy: `200 OK` with `{"status": "ok", "database": "ok"}`
+- Database unavailable: `503 Service Unavailable` with
+  `{"status": "error", "database": "error"}`
 
 ## Authentication
 

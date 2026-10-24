@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 
 from catalog.views import DepartmentViewSet, RoomViewSet, SectionViewSet, SubjectViewSet
+from core.views import HealthView
 from timetable.views import AssignmentViewSet, AvailabilityWindowViewSet, BusyBlockViewSet
 from users.views import ProfessorsViewSet
 
@@ -22,6 +23,7 @@ router.register("busy-blocks", BusyBlockViewSet, basename="busy-block")
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path("api/health/", HealthView.as_view(), name="health"),
     path("api/", include("users.urls")),
     path("api/", include("catalog.urls")),
     path("api/", include("timetable.urls")),
