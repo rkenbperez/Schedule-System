@@ -17,14 +17,15 @@ quality so the algorithms can be evaluated on the same input.
 | --- | --- |
 | Backend API and scheduling engines | Implemented |
 | Registrar analytics | Implemented |
-| Spreadsheet import/export | Implemented; export tests have known failures |
+| Spreadsheet import/export | Implemented |
 | Frontend | Planned; not scaffolded |
 | Student, enrollment, and program features | Not implemented |
-| Production hardening | Not implemented |
+| Production hardening | Planned; see [Deployment](docs/deployment.md) |
 
-The latest release tag is `v1.2.0`. The `staging` branch contains post-tag work,
-including analytics and configurable meeting-duration defaults. See the
-[changelog](CHANGELOG.md) for details.
+The latest release tag is `v1.2.0`. The current development version is `1.3.0`
+(see [`backend/VERSION`](backend/VERSION)); `staging` contains the post-tag work,
+including analytics, configurable meeting durations, and the health endpoint.
+See the [changelog](CHANGELOG.md).
 
 ## Key features
 
@@ -80,6 +81,7 @@ The API runs at `http://127.0.0.1:8000/api/`.
 
 | Resource | URL |
 | --- | --- |
+| Health check | `http://127.0.0.1:8000/api/health/` |
 | Swagger UI | `http://127.0.0.1:8000/api/schema/swagger-ui/` |
 | ReDoc | `http://127.0.0.1:8000/api/schema/redoc/` |
 | OpenAPI schema | `http://127.0.0.1:8000/api/schema/` |
@@ -91,22 +93,9 @@ terms and professor profiles are managed through Django admin. See the
 
 ## Documentation
 
-The complete documentation set is in [`docs/`](docs/README.md):
-
-| If you want to... | Read |
-| --- | --- |
-| Understand the system | [Introduction](docs/introduction.md) |
-| Review requirements | [Requirements](docs/requirements.md) |
-| See actors and workflows | [Use cases](docs/use-cases.md) |
-| Understand the architecture | [Architecture](docs/architecture.md) |
-| See the database | [Data model](docs/data-model.md) |
-| See CFD and DFD diagrams | [Data flow](docs/data-flow.md) |
-| Understand the solver | [Scheduling engine](docs/scheduling-engine.md) |
-| Call the API | [API reference](docs/api-reference.md) |
-| Review security | [Security](docs/security.md) |
-| Configure or deploy | [Configuration](docs/configuration.md), [Deployment](docs/deployment.md) |
-| Run and troubleshoot | [Testing](docs/testing.md), [Operations](docs/operations.md) |
-| Trace requirements to tests | [Traceability](docs/traceability.md) |
+The [documentation index](docs/README.md) is the entry point for requirements,
+use cases, architecture, data model, data flow, scheduling engine, API,
+security, configuration, deployment, operations, testing, and traceability.
 
 ## Testing
 
@@ -115,11 +104,9 @@ cd backend
 python manage.py test
 ```
 
-Django currently discovers 291 tests. The full suite is **not green**: at the
-time of writing it reports 15 failures and 13 errors, concentrated in legacy API,
-demo-command, scalability, and export tests. Targeted analytics, RBAC, JWT,
-edge-case, stress, and engine suites pass. See [Testing](docs/testing.md) for the
-current breakdown and the manual smoke-test checklist.
+The full suite currently has known failures. See [Testing](docs/testing.md) for
+the current result, affected areas, and the manual smoke-test checklist. Run the
+targeted suites for the area you change.
 
 Before a pull request:
 

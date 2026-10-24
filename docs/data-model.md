@@ -415,5 +415,5 @@ is currently an external/future responsibility.
 - No `Student`, `Enrollment`, or `Program` model exists.
 - No automatic retention policy or purge command for audit, run, or conflict
   history.
-- `backend/db.sqlite3` is a development database artifact and should not be
-  treated as a production backup strategy.
+- `backend/db.sqlite3` is a development database artifact and must not be used
+  as a production backup strategy; PostgreSQL is planned for production.

@@ -76,8 +76,8 @@ Status labels follow the [documentation conventions](README.md): **Implemented**
 | NFR-06 | `ScheduleGenerateView` persistence | Implemented |
 | NFR-07 | `transaction.atomic()` generation | Implemented |
 | NFR-08 | `engines/` has no Django imports | Implemented |
-| NFR-09 | Test suite | 291 discovered; 15 failures and 13 errors at time of writing |
-| NFR-10 | Requirements and setup docs | Python 3.14 + SQLite development |
+| NFR-09 | Test suite | See [Testing](testing.md) for the current result and known failures |
+| NFR-10 | Requirements and setup docs | Python 3.14 + SQLite development; PostgreSQL planned for production |
 | NFR-11 | drf-spectacular routes, `docs/api/openapi.yaml` | Implemented |
 | NFR-12 | `AuditLog` model and read API | Partial: no automatic writes |
 | NFR-13 | DRF error/pagination behavior | Implemented, with custom analytics envelope |
@@ -112,8 +112,8 @@ Status labels follow the [documentation conventions](README.md): **Implemented**
 - Export tests currently fail; the requirement remains implemented but
   unverified by a green suite.
 - NFR-03 is documented as a known gap rather than an implemented control.
-- The full suite has cross-test failures that do not appear in isolated modules;
-  coverage evidence should be re-checked after test-isolation work.
+- Full-suite failures include API route/login drift, export routing, demo-command
+  drift, and scalability/stress limits; see [Testing](testing.md).
 
 ## Related documentation
 

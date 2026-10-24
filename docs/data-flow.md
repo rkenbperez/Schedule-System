@@ -237,6 +237,7 @@ violations. It does not create `ConflictResolution` rows.
 - Imported spreadsheets are untrusted input and are validated before commit.
 - The scheduler receives validated in-memory data and is isolated from HTTP
   concerns.
-- The SQLite file and Django secret key are deployment-sensitive assets.
+- The configured database (SQLite in development; PostgreSQL planned for
+  production) and Django secret key are deployment-sensitive assets.
 
 See [Security](security.md) for controls and gaps.

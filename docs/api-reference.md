@@ -42,14 +42,11 @@ Authorization: Bearer <access-token>
 | `GET` | `/api/auth/jwt/me/` | Authenticated | Return the current user and role |
 | `POST` | `/api/auth/jwt/logout/` | Authenticated | Blacklist a refresh token |
 
-Token settings:
-
-- Access tokens expire after **1 hour**.
-- Refresh tokens expire after **7 days**.
-- Refresh-token rotation and blacklist-after-rotation are enabled.
-- Signing algorithm is HS256.
-- The logout request body is `{"refresh": "<refresh-token>"}` and a successful
-  logout returns **205 Reset Content**.
+Token lifetimes, rotation, signing, and the role model are documented in
+[Configuration: JWT settings](configuration.md#jwt-settings) and
+[Security: Authorization](security.md#authorization). The logout request body is
+`{"refresh": "<refresh-token>"}` and a successful logout returns **205 Reset
+Content**.
 
 Legacy simplejwt endpoints remain available at `/api/token/`,
 `/api/token/refresh/`, and `/api/token/verify/`. New clients should use the
@@ -88,16 +85,8 @@ object when the account has a professor profile.
 
 ## Authorization roles
 
-| Role | Definition | Typical access |
-| --- | --- | --- |
-| Registrar | Authenticated Django user with `is_staff=True` | Full catalog, assignments, generation, analytics, settings, imports/exports, audit, publishing |
-| Professor | Authenticated non-staff user linked to a `Professors` profile | Own availability, busy blocks, profile, schedule, and conflicts |
-| Public | Anonymous visitor | Published schedules and read-only safety methods |
-| Authenticated user | Any valid token holder | Read-only catalog and assignment data; own schedule classes where applicable |
-
-Catalog and assignment endpoints are authenticated read-only for professors and
-public-readable only where explicitly noted. The full matrix is in
-[Security](security.md).
+Role definitions and the full capability matrix are in
+[Security: Authorization](security.md#authorization).
 
 ## Shared conventions
 
@@ -189,19 +178,6 @@ mode. At least one `sync` or `lab` meeting is required.
 
 > **Known gap:** there is no `/api/admin/terms/` endpoint. Academic terms are
 > currently managed through Django admin at `/admin/`.
-
-### Authentication and user profile
-
-| Method | Path | Auth | Purpose |
-| --- | --- | --- | --- |
-| `POST` | `/api/auth/jwt/login/` | Public | Obtain tokens |
-| `POST` | `/api/auth/jwt/refresh/` | Public | Refresh access token |
-| `POST` | `/api/auth/jwt/verify/` | Public | Verify token |
-| `GET` | `/api/auth/jwt/me/` | Authenticated | Current user and role |
-| `POST` | `/api/auth/jwt/logout/` | Authenticated | Blacklist refresh token |
-| `POST` | `/api/token/` | Public | Legacy token pair |
-| `POST` | `/api/token/refresh/` | Public | Legacy refresh |
-| `POST` | `/api/token/verify/` | Public | Legacy verify |
 
 ### Schedule generation and runs
 

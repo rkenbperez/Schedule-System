@@ -45,9 +45,6 @@ timetable
 data_transfer
 ```
 
-The top-level `exports/` directory is not an installed app; export code lives in
-`backend/data_transfer/export_utils.py`.
-
 ### Database
 
 ```python
@@ -59,9 +56,10 @@ DATABASES = {
 }
 ```
 
-SQLite is suitable for local development and the demo. Production should use a
-server database with backups, connection pooling, and restricted network access.
-`backend/db.sqlite3` is ignored by Git.
+SQLite is suitable for local development and the demo. PostgreSQL is planned for
+production, with automated backups, connection pooling, and restricted network
+access. There is no `DATABASE_URL` loader yet. `backend/db.sqlite3` is ignored by
+Git.
 
 ### Static files and templates
 
@@ -163,21 +161,13 @@ Consequences:
 
 ## Demo configuration
 
-The demo command is development-only by default:
-
-```bash
-cd backend
-python manage.py demo_schedule --reset
-```
-
-It uses a fixed demo registrar (`demoreg` / `demo12345`) and generates three
-schedule runs. The `--allow-non-debug` flag bypasses the development guard and
-can create fixed-password accounts on a deployed server. Do not use it in
-production.
+The demo command is development-only. See [Operations: Demo
+environment](operations.md#demo-environment) for commands, options, and the
+fixed demo credentials.
 
 ## Recommended environment variables
 
-The current code does not read these variables, but a production deployment
+These variables are **not read by the current code**. A production deployment
 should introduce them and load them in `settings.py`:
 
 ```text
@@ -203,7 +193,7 @@ required remediation list, not as documentation errors.
 
 ## Related documentation
 
-- [Security](security.md) — production security gaps and checklist
-- [Deployment](deployment.md) — local and recommended production topology
+- [Security](security.md) — code-level security gaps and threat model
+- [Deployment](deployment.md) — production topology, checklist, and backups
 - [API reference](api-reference.md) — settings and authentication endpoints
 - [Operations](operations.md) — demo and settings workflows

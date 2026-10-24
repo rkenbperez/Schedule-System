@@ -19,7 +19,7 @@ flowchart LR
         API["Django REST API"]
         DjangoAdmin["Django admin"]
         Engine["Pure-Python scheduling engine"]
-        DB[("SQLite database")]
+        DB[("Database<br/>SQLite dev / PostgreSQL planned")]
         Schema["OpenAPI / Swagger / ReDoc"]
     end
 
@@ -65,7 +65,7 @@ flowchart TB
     AdminUI["Django admin"]
     API["Django REST API\n(core, users, catalog, timetable, data_transfer)"]
     Scheduler["Scheduling engine\n(pure Python)"]
-    DB[("SQLite\nbackend/db.sqlite3")]
+    DB[("Database\nSQLite dev / PostgreSQL planned")]
 
     Browser -->|"HTTPS/HTTP JSON + JWT"| API
     Swagger -->|"reads schema"| API
@@ -176,7 +176,7 @@ on demand.
 | Web framework | Django 5.2 and Django REST Framework 3.15 |
 | Authentication | simplejwt (JWT access/refresh, rotation, blacklist) |
 | API schema | drf-spectacular with Swagger UI and ReDoc |
-| Database | SQLite for development |
+| Database | SQLite for development; PostgreSQL planned for production |
 | Scheduling | Pure Python, synchronous request |
 | Frontend | Planned React + Vite, not scaffolded |
 | Async processing | None; generation blocks the request |
@@ -187,8 +187,8 @@ on demand.
   explicit adapter layer.
 - **Synchronous generation:** simple to deploy and debug, but unsuitable for
   very large datasets or multi-minute runs without a background worker.
-- **SQLite development database:** zero setup, but not a production concurrency
-  or backup strategy.
+- **SQLite development database:** zero setup; PostgreSQL is the planned
+  production database for concurrency, backups, and access control.
 - **Dynamic conflict calculation:** analytics always reflect current data and do
   not depend on a conflict-resolution table that current operations do not
   populate. The cost is repeated computation.
@@ -197,12 +197,11 @@ on demand.
 
 ## Known architectural gaps
 
-- No production settings split or environment-variable configuration.
-- No background job queue for long generation runs.
-- No automatic audit-log or conflict-resolution writes.
-- No frontend container.
-- No CORS configuration for a separate frontend origin.
-- No observability stack (structured logs, metrics, tracing).
+The main architectural constraints are synchronous generation (no background
+worker), the absence of a production settings split, and the missing
+audit/conflict-resolution writes. See [Deployment: Current deployment
+limitations](deployment.md#current-deployment-limitations) and [Security: Known
+gaps](security.md#known-gaps) for the authoritative lists.
 
 See [Data flow](data-flow.md) for process-level views and
 [Deployment](deployment.md) for operational guidance.

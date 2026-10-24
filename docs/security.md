@@ -27,7 +27,7 @@ model or penetration test.
 | Global settings | Medium | `timetable_globalsettings` |
 | Import files and preview tokens | Medium | Uploaded files; Django cache |
 | Audit records | High (integrity) | `timetable_auditlog` |
-| Secret key and database | Critical | Django settings and the SQLite file |
+| Secret key and database | Critical | Django settings and the configured database (SQLite in development; PostgreSQL planned for production) |
 
 Trust boundaries:
 
@@ -119,9 +119,9 @@ busy blocks.
   reverse proxy and enable the corresponding Django security settings.
 - JWT tokens and passwords are never written to application logs by the
   current code.
-- The development database is SQLite (`backend/db.sqlite3`). It contains
-  personal data and should be excluded from backups that are not access
-  controlled.
+- The development database is SQLite (`backend/db.sqlite3`); PostgreSQL is
+  planned for production. The database contains personal data and any backup
+  must be access controlled and encrypted.
 - Import previews are stored in the default Django cache for 900 seconds. The
   default local-memory cache is process-local; multi-process deployments need a
   shared, access-controlled cache.
@@ -172,21 +172,11 @@ The following are confirmed limitations in the current codebase:
 10. **No upload quotas.** Add request-size limits and decompression limits at
     the reverse proxy or application layer.
 
-## Production checklist
+## Production hardening
 
-- [ ] Move `SECRET_KEY`, database credentials, and allowed hosts to environment
-      variables.
-- [ ] Set `DEBUG=False`.
-- [ ] Enable TLS and HSTS at the reverse proxy.
-- [ ] Set secure and HTTP-only cookie flags where cookies are used.
-- [ ] Configure `ALLOWED_HOSTS`, trusted origins, and CORS for the frontend.
-- [ ] Attach and test login throttling.
-- [ ] Add application-level audit writes for sensitive operations.
-- [ ] Replace SQLite with a production database and configure backups.
-- [ ] Add upload size and decompression limits.
-- [ ] Restrict access to `/admin/` and use strong staff passwords.
-- [ ] Configure centralized logging and monitoring.
-- [ ] Run dependency and container vulnerability scans.
+Use the [deployment production checklist](deployment.md#production-settings-checklist)
+as the implementation checklist. The known gaps above remain the authoritative
+list of code-level security controls that are still missing.
 
 ## Reporting a vulnerability
 
@@ -199,5 +189,5 @@ the affected endpoint, reproduction steps, and impact.
 
 - [API reference](api-reference.md) — authentication endpoints and errors
 - [Configuration](configuration.md) — settings and deployment values
-- [Deployment](deployment.md) — production topology and hardening
+- [Deployment](deployment.md) — production topology, checklist, and backups
 - [Requirements](requirements.md) — security-related non-functional requirements
