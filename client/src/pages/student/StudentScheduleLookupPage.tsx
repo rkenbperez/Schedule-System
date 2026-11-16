@@ -4,13 +4,15 @@ import { useStudentSchedule } from '../../hooks/Schedule.hooks';
 
 type StudentScheduleItem = {
   id: number;
-  day_of_week: number;
+  day: number;
+  day_display: string;
   start_time: string;
   end_time: string | null;
-  course_assignment?: { course?: { code: string } };
-  course_component?: { label: string };
-  room?: { code: string };
-  section?: { code: string };
+  subject_label: string;
+  section_name: string;
+  room_name: string | null;
+  prof_name: string;
+  mode_display: string | null;
 };
 
 const DAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -26,7 +28,7 @@ export default function StudentScheduleLookupPage() {
     refetch,
   } = useStudentSchedule(section, term || undefined, { enabled: false });
 
-  const items = (schedules ?? []) as StudentScheduleItem[];
+  const items = (schedules ?? []) as unknown as StudentScheduleItem[];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,23 +116,23 @@ export default function StudentScheduleLookupPage() {
                 {items.map((s) => (
                   <tr key={s.id} className='border-b border-border-light'>
                     <td className='px-4 py-3 text-text-primary'>
-                      {s.course_assignment?.course?.code}
+                      {s.subject_label}
                     </td>
                     <td className='px-4 py-3 text-text-secondary'>
-                      {s.course_component?.label}
+                      {s.mode_display}
                     </td>
                     <td className='px-4 py-3 text-text-secondary'>
-                      {DAY_LABELS[s.day_of_week] ?? s.day_of_week}
+                      {DAY_LABELS[s.day] ?? s.day}
                     </td>
                     <td className='px-4 py-3 text-text-secondary'>
                       {s.start_time}
                       {s.end_time ? ` - ${s.end_time}` : ''}
                     </td>
                     <td className='px-4 py-3 text-text-secondary'>
-                      {s.room?.code}
+                      {s.room_name}
                     </td>
                     <td className='px-4 py-3 text-text-secondary'>
-                      {s.section?.code}
+                      {s.section_name}
                     </td>
                   </tr>
                 ))}

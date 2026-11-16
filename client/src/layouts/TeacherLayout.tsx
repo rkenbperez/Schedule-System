@@ -1,6 +1,7 @@
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
 import {
   Bell,
+  Building2,
   CalendarCheck,
   ChevronDown,
   LayoutDashboard,
@@ -12,32 +13,41 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 
-const navItems = [
-  {
-    id: 1,
-    icon: LayoutDashboard,
-    label: 'Dashboard',
-    to: '/teacher/juan',
-    end: true,
-  },
-  {
-    id: 2,
-    icon: BookOpen,
-    label: 'My courses',
-    to: '/teacher/juan/courses',
-  },
-  {
-    id: 4,
-    icon: Calendar,
-    label: 'My schedules',
-    to: '/teacher/juan/schedules',
-  },
-];
-
 export default function TeacherLayout() {
   const [collapsed, setCollapsed] = useState(false);
 
   const { pathname } = useLocation();
+  const { name: teacherName } = useParams<{ name: string }>();
+
+  const teacher = teacherName ?? 'juan';
+
+  const navItems = [
+    {
+      id: 1,
+      icon: LayoutDashboard,
+      label: 'Dashboard',
+      to: `/teacher/${teacher}`,
+      end: true,
+    },
+    {
+      id: 2,
+      icon: BookOpen,
+      label: 'My assignments',
+      to: `/teacher/${teacher}/assignments`,
+    },
+    {
+      id: 4,
+      icon: Calendar,
+      label: 'My schedules',
+      to: `/teacher/${teacher}/schedules`,
+    },
+    {
+      id: 5,
+      icon: Building2,
+      label: 'Rooms',
+      to: `/teacher/${teacher}/rooms`,
+    },
+  ];
 
   return (
     <div className='mx-auto flex min-h-screen w-full max-w-300 border-x border-border bg-surface-secondary'>
@@ -49,7 +59,7 @@ export default function TeacherLayout() {
       >
         {/* Logo */}
         <div className='flex h-14 shrink-0 items-center gap-2.5 border-b border-border px-4'>
-          <span className='grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-apple-green-600 text-white'>
+          <span className='grid h-7 w-7 shrink-0 place-items-center rounded-full bg-apple-green-600 text-white'>
             <CalendarCheck size={16} />
           </span>
 
@@ -59,8 +69,6 @@ export default function TeacherLayout() {
             </span>
           )}
         </div>
-
-        {/* Collapse Button */}
 
         {/* Navigation */}
         <nav className='mt-2 flex flex-1 flex-col gap-1 px-3'>

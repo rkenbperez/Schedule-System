@@ -1,21 +1,15 @@
 import {
   CalendarDays,
   Clock,
-  GraduationCap,
-  Layers,
   MapPin,
-  Users,
 } from 'lucide-react';
 import type { Schedule } from '../../../types/Types';
-
-const DAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
 export default function DashboardCourseCard({
   schedule,
 }: {
   schedule: Schedule;
 }) {
-  const isLab = schedule.course_component.label === 'laboratory';
 
   return (
     <div
@@ -32,26 +26,26 @@ export default function DashboardCourseCard({
         <div className='flex min-w-0 flex-col gap-0.5'>
           <div className='flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1'>
             <span className='text-base font-semibold tracking-tight text-text-primary'>
-              {schedule.course_assignment.course.code}
+              {schedule.subject_label}
             </span>
             <span className='text-xs text-text-tertiary sm:text-sm'>
-              section {schedule.section.code}
+              section {schedule.section_name}
             </span>
           </div>
           <span className='truncate text-sm text-text-secondary'>
-            {schedule.course_assignment.course.title}
+            {schedule.assignment_label}
           </span>
         </div>
 
         {/* Type badge */}
         <span
           className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-medium capitalize tracking-wide ${
-            isLab
+            schedule.mode_display?.toLowerCase() === 'laboratory'
               ? 'bg-apple-green-100 text-apple-green-700'
               : 'bg-apple-green-50 text-apple-green-700'
           }`}
         >
-          {schedule.course_component.label}
+          {schedule.mode_display}
         </span>
       </div>
 
@@ -70,7 +64,7 @@ export default function DashboardCourseCard({
             </div>
 
             <span className='text-text-primary'>
-              {DAY_LABELS[schedule.day_of_week]}
+              {schedule.day_display}
             </span>
           </div>
         </div>
@@ -100,52 +94,7 @@ export default function DashboardCourseCard({
               </span>
             </div>
 
-            <span className='text-text-primary'>{schedule.room.code}</span>
-          </div>
-        </div>
-
-        <div className='flex items-center gap-2'>
-          <div className='flex flex-col leading-tight'>
-            <div className='flex gap-2'>
-              <Users size={14} className='shrink-0 text-apple-green-600' />
-              <span className='text-[10px] uppercase tracking-wide text-text-tertiary'>
-                Students
-              </span>
-            </div>
-
-            <span className='text-text-primary'>
-              {schedule.section.student_count}
-            </span>
-          </div>
-        </div>
-
-        <div className='flex items-center gap-2'>
-          <div className='flex flex-col leading-tight'>
-            <div className='flex gap-2'>
-              <GraduationCap size={14} className='shrink-0 text-apple-green-600' />
-              <span className='text-[10px] uppercase tracking-wide text-text-tertiary'>
-                Year level
-              </span>
-            </div>
-
-            <span className='text-text-primary'>
-              {schedule.section.year_level}
-            </span>
-          </div>
-        </div>
-
-        <div className='flex items-center gap-2'>
-          <div className='flex flex-col leading-tight'>
-            <div className='flex gap-2'>
-              <Layers size={14} className='shrink-0 text-apple-green-600' />
-              <span className='text-[10px] uppercase tracking-wide text-text-tertiary'>
-                Term
-              </span>
-            </div>
-
-            <span className='text-text-primary'>
-              {schedule.academic_term.name}
-            </span>
+            <span className='text-text-primary'>{schedule.room_name}</span>
           </div>
         </div>
       </div>

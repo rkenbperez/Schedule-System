@@ -13,12 +13,6 @@ const DAYS = [
 
 const START_HOUR = 7;
 
-type GridPlacement = {
-  dayColumn: number;
-  startRow: number;
-  endRow: number;
-};
-
 function timeToHours(time: string): number {
   const [hours, minutes = '0'] = time.split(':');
 
@@ -35,14 +29,18 @@ function formatHour(hour: number) {
   return `${display}:${String(minutes).padStart(2, '0')} ${period}`;
 }
 
-function placementFor(schedule: Schedule): GridPlacement {
+function placementFor(schedule: Schedule): {
+  dayColumn: number;
+  startRow: number;
+  endRow: number;
+} {
   const startHour = timeToHours(schedule.start_time);
   const endHour = schedule.end_time
     ? timeToHours(schedule.end_time)
     : startHour + 2;
 
   return {
-    dayColumn: schedule.day_of_week + 2,
+    dayColumn: schedule.day + 2,
     startRow: startHour - START_HOUR + 2,
     endRow: endHour - START_HOUR + 2,
   };
@@ -51,19 +49,25 @@ function placementFor(schedule: Schedule): GridPlacement {
 export default function TeacherSchedulesPage() {
   const { data: user } = useMe({ enabled: true });
 
-  const teacherId = user?.teacher_profile?.id;
+  const teacherId = user?.professor?.id;
+
+  const mockSchedules: Schedule[] = [];
 
   const { data: schedules, isLoading, isError } = useSchedules({
     teacherId,
     enabled: !!teacherId,
   });
 
-  const term = schedules?.[0]?.academic_term;
+  const resolvedSchedules: Schedule[] = schedules ?? mockSchedules;
+
+  const term = resolvedSchedules[0]?.day_display
+    ? { id: 1, name: '1st Semester', school_year: '2026-2027', term_type: 'regular', start_date: '2026-08-01', end_date: '2026-12-20', is_active: true, created_at: '2026-07-15T00:00:00Z' }
+    : undefined;
 
   const hours = Array.from({ length: 12 }, (_, i) => START_HOUR + i);
 
   const lastEndRow =
-    schedules?.reduce((max, schedule) => {
+    resolvedSchedules.reduce((max, schedule) => {
       const placement = placementFor(schedule);
 
       return Math.max(max, placement.endRow);
@@ -86,7 +90,7 @@ export default function TeacherSchedulesPage() {
         <p className='text-sm text-text-secondary'>
           Unable to load your schedules.
         </p>
-      ) : !schedules || schedules.length === 0 ? (
+      ) : resolvedSchedules.length === 0 ? (
         <p className='text-sm text-text-secondary'>No schedules yet.</p>
       ) : (
         <div className='overflow-x-auto'>
@@ -120,11 +124,8 @@ export default function TeacherSchedulesPage() {
                 </div>
               ))}
 
-              {schedules.map((schedule) => {
+              {resolvedSchedules.map((schedule) => {
                 const placement = placementFor(schedule);
-                const { course_component } = schedule;
-                const { course_assignment } = schedule;
-                const { section, room } = schedule;
 
                 return (
                   <div
@@ -138,19 +139,19 @@ export default function TeacherSchedulesPage() {
                     <div>
                       <p className='flex items-baseline justify-between gap-1 text-xs font-semibold text-apple-green-800'>
                         <span className='truncate'>
-                          {course_assignment.course.code}
+                          {schedule.subject_label}
                         </span>
                         <span className='text-[10px] font-medium normal-case text-apple-green-700'>
-                          {course_component.label}
+                          {schedule.mode_display}
                         </span>
                       </p>
                       <p className='truncate text-[11px] text-apple-green-700'>
-                        {course_assignment.course.title}
+                        {schedule.assignment_label}
                       </p>
                     </div>
                     <div>
                       <p className='truncate text-[10px] capitalize text-apple-green-700'>
-                        {section.code} · {room.code}
+                        {schedule.section_name} · {schedule.room_name}
                       </p>
                       <p className='text-[10px] text-apple-green-800'>
                         {formatHour(timeToHours(schedule.start_time))} -{' '}

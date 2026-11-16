@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 
 export interface CourseCardProps {
   id: number;
@@ -19,6 +19,8 @@ export default function CourseCard({
   label,
   scheduled,
 }: CourseCardProps) {
+  const { name: teacherName } = useParams<{ name: string }>();
+  const teacher = teacherName ?? 'juan';
   return (
     <div
       className='
@@ -71,7 +73,7 @@ export default function CourseCard({
 
       {/* View details */}
       <Link
-        to={`/teacher/courses/${id}`}
+        to={`/teacher/${teacher}/assignments/${id}`}
         className='mt-auto flex w-full items-center justify-center rounded-md border border-apple-green-200 px-4 py-1.5 text-xs font-medium text-apple-green-700 transition hover:border-apple-green-500 hover:bg-apple-green-50 sm:text-sm'
       >
         View details →

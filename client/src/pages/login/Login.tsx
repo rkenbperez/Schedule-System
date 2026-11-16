@@ -16,7 +16,7 @@ export default function Login() {
     setError(null);
     try {
       await signIn.mutateAsync({ email, password });
-      navigate('/teacher/juan');
+      navigate('/teacher/juan/assignments');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to sign in');
     }

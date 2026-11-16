@@ -26,14 +26,11 @@ export function useCourseAssignments(opts?: {
 }
 
 export function useCourseComponents(opts?: {
-  courseId?: number;
   enabled?: boolean;
 }) {
-  const courseId = opts?.courseId;
-
   return useQuery({
-    queryKey: ['course-components', courseId],
-    queryFn: () => scheduleService.getCourseComponents(courseId),
+    queryKey: ['course-components'],
+    queryFn: () => scheduleService.getCourseComponents(),
     enabled: opts?.enabled ?? true,
   });
 }
@@ -76,15 +73,23 @@ export function useRoomTypes(opts?: { enabled?: boolean }) {
 }
 
 export function useRooms(opts?: {
-  typeId?: number;
   enabled?: boolean;
 }) {
-  const typeId = opts?.typeId;
-
   return useQuery({
-    queryKey: ['rooms', typeId],
-    queryFn: () => scheduleService.getRooms(typeId),
+    queryKey: ['rooms'],
+    queryFn: () => scheduleService.getRooms(),
     enabled: opts?.enabled ?? true,
+  });
+}
+
+export function useRoomSchedule(opts?: {
+  roomId?: number;
+  enabled?: boolean;
+}) {
+  return useQuery({
+    queryKey: ['room-schedule', opts?.roomId],
+    queryFn: () => scheduleService.getRoomSchedule(opts!.roomId!),
+    enabled: opts?.enabled ?? false,
   });
 }
 
@@ -97,6 +102,70 @@ export function useStudentSchedule(
     queryKey: ['student-schedule', section, term],
     queryFn: () => scheduleService.getStudentSchedule({ section, term }),
     enabled: opts?.enabled ?? !!section.trim(),
+  });
+}
+
+export function useTeachers(opts?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['teachers'],
+    queryFn: () => scheduleService.getTeachers(),
+    enabled: opts?.enabled ?? true,
+  });
+}
+
+export function useAllAssignments(opts?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['all-assignments'],
+    queryFn: () => scheduleService.getAllAssignments(),
+    enabled: opts?.enabled ?? true,
+  });
+}
+
+export function useAllSchedules(opts?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['all-schedules'],
+    queryFn: () => scheduleService.getAllSchedules(),
+    enabled: opts?.enabled ?? true,
+  });
+}
+
+export function useProfessorProfile(opts?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['professor-profile'],
+    queryFn: () => scheduleService.getProfessorProfile(),
+    enabled: opts?.enabled ?? true,
+  });
+}
+
+export function useProfessorSchedule(opts?: {
+  runId?: number;
+  enabled?: boolean;
+}) {
+  return useQuery({
+    queryKey: ['professor-schedule', opts?.runId],
+    queryFn: () => scheduleService.getProfessorSchedule(opts?.runId),
+    enabled: opts?.enabled ?? true,
+  });
+}
+
+export function useImportCommit() {
+  return useMutation({
+    mutationFn: (previewToken: string) =>
+      scheduleService.importCommit(previewToken),
+  });
+}
+
+export function useCreateRegistrarSchedule() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: ScheduleCreatePayload) =>
+      scheduleService.createSchedule(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['all-schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['course-assignments'] });
+    },
   });
 }
 
