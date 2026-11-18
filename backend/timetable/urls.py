@@ -55,6 +55,12 @@ urlpatterns = [
         ScheduleRunClassesView.as_view(),
         name="schedule-run-classes",
     ),
+    # Accept the slash-less form as well (legacy clients and tests).
+    path(
+        "schedules/runs/<int:pk>/classes",
+        ScheduleRunClassesView.as_view(),
+        name="schedule-run-classes-no-slash",
+    ),
     path(
         "schedules/runs/<int:run_pk>/classes/<int:class_pk>/update/",
         ScheduleRunClassUpdateView.as_view(),
