@@ -11,7 +11,13 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from catalog.models import Department, Room, Section, Subject
-from timetable.models import Assignment, MeetingSlot, AvailabilityWindow, BusyBlock
+from timetable.models import (
+    Assignment,
+    AvailabilityWindow,
+    BusyBlock,
+    GlobalSettings,
+    MeetingSlot,
+)
 from users.models import Professors
 
 from data_transfer.import_utils import processor, parse_time, parse_day, parse_mode
@@ -347,6 +353,39 @@ class ImportCommitTests(ImportTestCase):
         self.room.refresh_from_db()
         self.assertEqual(self.room.name, "R101 Updated")
         self.assertEqual(self.room.capacity, 50)
+
+    def test_commit_uses_configured_default_duration(self):
+        GlobalSettings.set("sync_duration_default", 4, user=self.registrar)
+        self.auth(self.reg_token)
+        sheets = {
+            "Departments": [["id", "name"], [self.dept.id, "CS"]],
+            "Rooms": [["id", "name", "capacity"], [self.room.id, "R101", 40]],
+            "Subjects": [["id", "code", "title"], [self.subject.id, "CS101", "Intro"]],
+            "Sections": [["id", "name", "headcount"], [self.section.id, "BSIT-3A", 30]],
+            "Professors": [["id", "user_id"], [self.prof.id, self.prof_user.id]],
+            "Assignments": [
+                ["id", "professor_id", "subject_id", "section_id"],
+                [self.assignment.id, self.prof.id, self.subject.id, self.section.id],
+            ],
+            "Meetings": [
+                ["id", "assignment_id", "order", "mode"],
+                [None, self.assignment.id, 1, "sync"],
+            ],
+            "Availability": [["id", "professor_id", "day", "start_time", "end_time"]],
+            "BusyBlocks": [["id", "professor_id", "day", "start_time", "end_time"]],
+        }
+        xlsx = self._make_xlsx(sheets)
+        preview_resp = self.client.post(self.url_preview, {"file": xlsx}, format="multipart")
+        self.assertTrue(preview_resp.data["valid"])
+        token = preview_resp.data["preview_token"]
+
+        commit_resp = self.client.post(
+            self.url_commit, {"preview_token": token}, format="json"
+        )
+        self.assertEqual(commit_resp.status_code, 200)
+        self.assertTrue(commit_resp.data["committed"])
+        meeting = MeetingSlot.objects.get(assignment=self.assignment)
+        self.assertEqual(meeting.duration_slots, 4)
 
     def test_commit_expired_token_rejected(self):
         self.auth(self.reg_token)

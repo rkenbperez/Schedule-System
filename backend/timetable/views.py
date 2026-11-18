@@ -16,15 +16,16 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import viewsets
 
-from catalog.models import Room, Section, Subject
+from catalog.models import Section
 from core.permissions import IsOwnerOrRegistrar, IsRegistrar, IsRegistrarOrReadOnly, IsProfessor, IsPublicReadOnly
-from users.models import Professors
 from rest_framework.permissions import IsAuthenticated
 
+from .analytics.conflicts import audit_conflicts
 from .engines import ALGORITHMS, run
 from .models import (
     AcademicTerm, Assignment, AuditLog, AvailabilityWindow, BusyBlock,
-    ConflictResolution, GlobalSettings, MeetingSlot, ScheduledClass, ScheduleRun
+    ConflictResolution, GlobalSettings, MeetingSlot, ScheduledClass, ScheduleRun,
+    get_mode_durations, validate_setting_value,
 )
 from .scenario_builder import build_scenario
 from .serializers import (
@@ -49,18 +50,9 @@ from .serializers import (
     destroy=extend_schema(tags=["timetable"]),
 )
 class AssignmentViewSet(viewsets.ModelViewSet):
+    queryset = Assignment.objects.select_related("prof", "subject", "section").all()
     serializer_class = AssignmentSerializer
     permission_classes = [IsRegistrarOrReadOnly]
-
-    def get_queryset(self):
-        qs = Assignment.objects.select_related("prof", "subject", "section").all()
-        prof_id = self.request.query_params.get("prof_id")
-        if prof_id:
-            try:
-                qs = qs.filter(prof_id=int(prof_id))
-            except (TypeError, ValueError):
-                pass
-        return qs
 
 
 @extend_schema_view(
@@ -336,52 +328,6 @@ class ScheduleMyView(APIView):
         return Response(ScheduledClassSerializer(qs, many=True).data)
 
 
-@extend_schema(tags=["schedules"])
-class StudentScheduleView(APIView):
-    """Public read-only schedule lookup by section (no login required)."""
-
-    permission_classes = [IsPublicReadOnly]
-
-    def get(self, request):
-        section = request.query_params.get("section", "").strip()
-        term = request.query_params.get("term", "").strip()
-
-        if not section:
-            return Response([])
-
-        # Pick the run to read from: latest published run for the term,
-        # falling back to the latest run overall (so demo/unpublished data
-        # is still visible during development).
-        runs_qs = ScheduleRun.objects.all()
-        if term:
-            try:
-                runs_qs = runs_qs.filter(term_id=int(term))
-            except (TypeError, ValueError):
-                pass
-
-        run_obj = (
-            runs_qs.filter(published=True).order_by("-created_at").first()
-        )
-        if not run_obj:
-            run_obj = runs_qs.order_by("-created_at").first()
-
-        if not run_obj:
-            return Response([])
-
-        qs = (
-            run_obj.classes.select_related(
-                "assignment__prof__user",
-                "assignment__subject",
-                "assignment__section",
-                "room",
-            )
-            .filter(assignment__section__name__iexact=section)
-            .order_by("day", "start_time")
-        )
-
-        return Response(ScheduledClassSerializer(qs, many=True).data)
-
-
 # ==================== ADMIN PANEL APIs ====================
 
 @extend_schema(tags=["admin"])
@@ -467,37 +413,12 @@ class AdminDashboardView(APIView):
     def _count_conflicts(self, run_obj):
         """Count constraint violations in a schedule run."""
         classes = run_obj.classes.select_related(
-            "assignment__prof", "assignment__subject", "assignment__section", "room"
+            "assignment__prof__user",
+            "assignment__subject",
+            "assignment__section",
+            "room",
         )
-        conflicts = 0
-
-        # Room double-booking
-        room_bookings = {}
-        for c in classes:
-            key = (c.room_id, c.day, c.start_time, c.duration_slots)
-            room_bookings[key] = room_bookings.get(key, 0) + 1
-        conflicts += sum(1 for count in room_bookings.values() if count > 1)
-
-        # Professor double-booking
-        prof_bookings = {}
-        for c in classes:
-            key = (c.assignment.prof_id, c.day, c.start_time, c.duration_slots)
-            prof_bookings[key] = prof_bookings.get(key, 0) + 1
-        conflicts += sum(1 for count in prof_bookings.values() if count > 1)
-
-        # Section double-booking
-        section_bookings = {}
-        for c in classes:
-            key = (c.assignment.section_id, c.day, c.start_time, c.duration_slots)
-            section_bookings[key] = section_bookings.get(key, 0) + 1
-        conflicts += sum(1 for count in section_bookings.values() if count > 1)
-
-        # Room capacity violations
-        for c in classes:
-            if c.room and c.assignment.section.headcount > c.room.capacity:
-                conflicts += 1
-
-        return conflicts
+        return audit_conflicts(classes)["summary"]["total"]
 
 
 @extend_schema(tags=["admin"])
@@ -559,198 +480,12 @@ class ScheduleRunConflictsView(APIView):
     def get(self, request, pk):
         run_obj = get_object_or_404(ScheduleRun, pk=pk)
         classes = run_obj.classes.select_related(
-            "assignment__prof__user", "assignment__subject", "assignment__section", "room"
+            "assignment__prof__user",
+            "assignment__subject",
+            "assignment__section",
+            "room",
         ).order_by("day", "start_time")
-
-        conflicts = {
-            "room_conflicts": [],
-            "professor_conflicts": [],
-            "section_conflicts": [],
-            "capacity_violations": [],
-            "availability_violations": [],
-            "consecutive_violations": [],
-            "daily_hours_violations": [],
-        }
-
-        # Room double-booking
-        room_bookings = {}
-        for c in classes:
-            key = (c.room_id, c.day, c.start_time, c.duration_slots)
-            if key not in room_bookings:
-                room_bookings[key] = []
-            room_bookings[key].append(c)
-        for key, bookings in room_bookings.items():
-            if len(bookings) > 1:
-                conflicts["room_conflicts"].append({
-                    "room": bookings[0].room.name if bookings[0].room else "N/A",
-                    "day": bookings[0].get_day_display(),
-                    "start_time": bookings[0].start_time.strftime("%H:%M"),
-                    "duration_slots": bookings[0].duration_slots,
-                    "classes": [
-                        {
-                            "id": b.id,
-                            "subject": b.assignment.subject.code,
-                            "section": b.assignment.section.name,
-                            "professor": b.assignment.prof.user.get_full_name() or b.assignment.prof.user.username,
-                        }
-                        for b in bookings
-                    ]
-                })
-
-        # Professor double-booking
-        prof_bookings = {}
-        for c in classes:
-            key = (c.assignment.prof_id, c.day, c.start_time, c.duration_slots)
-            if key not in prof_bookings:
-                prof_bookings[key] = []
-            prof_bookings[key].append(c)
-        for key, bookings in prof_bookings.items():
-            if len(bookings) > 1:
-                conflicts["professor_conflicts"].append({
-                    "professor": bookings[0].assignment.prof.user.get_full_name() or bookings[0].assignment.prof.user.username,
-                    "day": bookings[0].get_day_display(),
-                    "start_time": bookings[0].start_time.strftime("%H:%M"),
-                    "duration_slots": bookings[0].duration_slots,
-                    "classes": [
-                        {
-                            "id": b.id,
-                            "subject": b.assignment.subject.code,
-                            "section": b.assignment.section.name,
-                        }
-                        for b in bookings
-                    ]
-                })
-
-        # Section double-booking
-        section_bookings = {}
-        for c in classes:
-            key = (c.assignment.section_id, c.day, c.start_time, c.duration_slots)
-            if key not in section_bookings:
-                section_bookings[key] = []
-            section_bookings[key].append(c)
-        for key, bookings in section_bookings.items():
-            if len(bookings) > 1:
-                conflicts["section_conflicts"].append({
-                    "section": bookings[0].assignment.section.name,
-                    "day": bookings[0].get_day_display(),
-                    "start_time": bookings[0].start_time.strftime("%H:%M"),
-                    "duration_slots": bookings[0].duration_slots,
-                    "classes": [
-                        {
-                            "id": b.id,
-                            "subject": b.assignment.subject.code,
-                            "professor": b.assignment.prof.user.get_full_name() or b.assignment.prof.user.username,
-                        }
-                        for b in bookings
-                    ]
-                })
-
-        # Room capacity violations
-        for c in classes:
-            if c.room and c.assignment.section.headcount > c.room.capacity:
-                conflicts["capacity_violations"].append({
-                    "class_id": c.id,
-                    "room": c.room.name,
-                    "capacity": c.room.capacity,
-                    "headcount": c.assignment.section.headcount,
-                    "subject": c.assignment.subject.code,
-                    "section": c.assignment.section.name,
-                })
-
-        # Professor availability violations
-        from timetable.models import AvailabilityWindow
-        availability_map = {}
-        for aw in AvailabilityWindow.objects.all():
-            key = (aw.prof_id, aw.day)
-            if key not in availability_map:
-                availability_map[key] = []
-            availability_map[key].append((aw.start_time, aw.end_time))
-
-        for c in classes:
-            prof_id = c.assignment.prof_id
-            day = c.day
-            class_start = c.start_time
-            class_end = c.end_time
-            key = (prof_id, day)
-            if key in availability_map:
-                available = False
-                for start, end in availability_map[key]:
-                    if start <= class_start and class_end <= end:
-                        available = True
-                        break
-                if not available:
-                    conflicts["availability_violations"].append({
-                        "class_id": c.id,
-                        "professor": c.assignment.prof.user.get_full_name() or c.assignment.prof.user.username,
-                        "day": c.get_day_display(),
-                        "class_time": f"{class_start.strftime('%H:%M')}-{class_end.strftime('%H:%M')}",
-                        "available_windows": [
-                            f"{s.strftime('%H:%M')}-{e.strftime('%H:%M')}" for s, e in availability_map[key]
-                        ],
-                    })
-
-        # Consecutive hours violations (per professor per day)
-        from collections import defaultdict
-        prof_day_classes = defaultdict(list)
-        for c in classes:
-            prof_day_classes[(c.assignment.prof_id, c.day)].append(c)
-
-        for (prof_id, day), day_classes in prof_day_classes.items():
-            day_classes.sort(key=lambda x: x.start_time)
-            prof = day_classes[0].assignment.prof
-            max_consecutive = prof.max_consecutive
-            for i in range(len(day_classes)):
-                current = day_classes[i]
-                current_end = current.end_time
-                consecutive_slots = current.duration_slots
-                for j in range(i + 1, len(day_classes)):
-                    next_class = day_classes[j]
-                    if next_class.start_time == current_end:
-                        consecutive_slots += next_class.duration_slots
-                        current_end = next_class.end_time
-                    else:
-                        break
-                if consecutive_slots > max_consecutive:
-                    conflicts["consecutive_violations"].append({
-                        "professor": prof.user.get_full_name() or prof.user.username,
-                        "day": day_classes[0].get_day_display(),
-                        "max_consecutive": max_consecutive,
-                        "actual_consecutive": consecutive_slots,
-                        "classes": [
-                            {
-                                "id": c.id,
-                                "subject": c.assignment.subject.code,
-                                "start": c.start_time.strftime("%H:%M"),
-                                "end": c.end_time.strftime("%H:%M"),
-                            }
-                            for c in day_classes[i:i+3]
-                        ]
-                    })
-                    break  # Report first violation per professor per day
-
-        # Daily hours violations
-        for (prof_id, day), day_classes in prof_day_classes.items():
-            prof = day_classes[0].assignment.prof
-            max_daily = prof.max_daily_hours
-            total_slots = sum(c.duration_slots for c in day_classes)
-            if total_slots > max_daily:
-                conflicts["daily_hours_violations"].append({
-                    "professor": prof.user.get_full_name() or prof.user.username,
-                    "day": day_classes[0].get_day_display(),
-                    "max_daily_hours": max_daily,
-                    "actual_hours": total_slots,
-                    "classes": [
-                        {
-                            "id": c.id,
-                            "subject": c.assignment.subject.code,
-                            "start": c.start_time.strftime("%H:%M"),
-                            "end": c.end_time.strftime("%H:%M"),
-                        }
-                        for c in day_classes
-                    ]
-                })
-
-        return Response(conflicts)
+        return Response(audit_conflicts(classes)["details"])
 
 
 @extend_schema(
@@ -907,6 +642,7 @@ class BulkCreateAssignmentsView(APIView):
             )
 
         active_term = AcademicTerm.objects.filter(is_active=True).first()
+        mode_durations = get_mode_durations()
         created = []
         errors = []
 
@@ -927,14 +663,18 @@ class BulkCreateAssignmentsView(APIView):
 
                 meetings_data = data.get("meetings", [])
                 if not meetings_data:
-                    meetings_data = [{"mode": "sync", "duration_slots": 2}]
+                    meetings_data = [{"mode": "sync"}]
 
                 for order, m_data in enumerate(meetings_data, start=1):
+                    mode = m_data.get("mode", "sync")
                     MeetingSlot.objects.create(
                         assignment=assignment,
                         order=order,
-                        mode=m_data.get("mode", "sync"),
-                        duration_slots=m_data.get("duration_slots", {"sync": 2, "async": 1, "lab": 3}.get(m_data.get("mode", "sync"), 1)),
+                        mode=mode,
+                        duration_slots=m_data.get(
+                            "duration_slots",
+                            mode_durations.get(mode, 1),
+                        ),
                     )
 
                 created.append({
@@ -1112,198 +852,13 @@ class ProfessorScheduleConflictsView(APIView):
             })
 
         classes = run_obj.classes.select_related(
-            "assignment__prof__user", "assignment__subject", "assignment__section", "room"
-        ).filter(assignment__prof=prof).order_by("day", "start_time")
-
-        conflicts = {
-            "room_conflicts": [],
-            "professor_conflicts": [],
-            "section_conflicts": [],
-            "capacity_violations": [],
-            "availability_violations": [],
-            "consecutive_violations": [],
-            "daily_hours_violations": [],
-        }
-
-        # Room double-booking (affecting this professor)
-        room_bookings = {}
-        for c in classes:
-            key = (c.room_id, c.day, c.start_time, c.duration_slots)
-            if key not in room_bookings:
-                room_bookings[key] = []
-            room_bookings[key].append(c)
-        for key, bookings in room_bookings.items():
-            if len(bookings) > 1:
-                conflicts["room_conflicts"].append({
-                    "room": bookings[0].room.name if bookings[0].room else "N/A",
-                    "day": bookings[0].get_day_display(),
-                    "start_time": bookings[0].start_time.strftime("%H:%M"),
-                    "duration_slots": bookings[0].duration_slots,
-                    "classes": [
-                        {
-                            "id": b.id,
-                            "subject": b.assignment.subject.code,
-                            "section": b.assignment.section.name,
-                            "professor": b.assignment.prof.user.get_full_name() or b.assignment.prof.user.username,
-                        }
-                        for b in bookings
-                    ]
-                })
-
-        # Professor double-booking (this professor)
-        prof_bookings = {}
-        for c in classes:
-            key = (c.assignment.prof_id, c.day, c.start_time, c.duration_slots)
-            if key not in prof_bookings:
-                prof_bookings[key] = []
-            prof_bookings[key].append(c)
-        for key, bookings in prof_bookings.items():
-            if len(bookings) > 1:
-                conflicts["professor_conflicts"].append({
-                    "professor": bookings[0].assignment.prof.user.get_full_name() or bookings[0].assignment.prof.user.username,
-                    "day": bookings[0].get_day_display(),
-                    "start_time": bookings[0].start_time.strftime("%H:%M"),
-                    "duration_slots": bookings[0].duration_slots,
-                    "classes": [
-                        {
-                            "id": b.id,
-                            "subject": b.assignment.subject.code,
-                            "section": b.assignment.section.name,
-                        }
-                        for b in bookings
-                    ]
-                })
-
-        # Section double-booking
-        section_bookings = {}
-        for c in classes:
-            key = (c.assignment.section_id, c.day, c.start_time, c.duration_slots)
-            if key not in section_bookings:
-                section_bookings[key] = []
-            section_bookings[key].append(c)
-        for key, bookings in section_bookings.items():
-            if len(bookings) > 1:
-                conflicts["section_conflicts"].append({
-                    "section": bookings[0].assignment.section.name,
-                    "day": bookings[0].get_day_display(),
-                    "start_time": bookings[0].start_time.strftime("%H:%M"),
-                    "duration_slots": bookings[0].duration_slots,
-                    "classes": [
-                        {
-                            "id": b.id,
-                            "subject": b.assignment.subject.code,
-                            "professor": b.assignment.prof.user.get_full_name() or b.assignment.prof.user.username,
-                        }
-                        for b in bookings
-                    ]
-                })
-
-        # Room capacity violations
-        for c in classes:
-            if c.room and c.assignment.section.headcount > c.room.capacity:
-                conflicts["capacity_violations"].append({
-                    "class_id": c.id,
-                    "room": c.room.name,
-                    "capacity": c.room.capacity,
-                    "headcount": c.assignment.section.headcount,
-                    "subject": c.assignment.subject.code,
-                    "section": c.assignment.section.name,
-                })
-
-        # Professor availability violations
-        from timetable.models import AvailabilityWindow
-        availability_map = {}
-        for aw in AvailabilityWindow.objects.filter(prof=prof):
-            key = (aw.prof_id, aw.day)
-            if key not in availability_map:
-                availability_map[key] = []
-            availability_map[key].append((aw.start_time, aw.end_time))
-
-        for c in classes:
-            prof_id = c.assignment.prof_id
-            day = c.day
-            class_start = c.start_time
-            class_end = c.end_time
-            key = (prof_id, day)
-            if key in availability_map:
-                available = False
-                for start, end in availability_map[key]:
-                    if start <= class_start and class_end <= end:
-                        available = True
-                        break
-                if not available:
-                    conflicts["availability_violations"].append({
-                        "class_id": c.id,
-                        "professor": c.assignment.prof.user.get_full_name() or c.assignment.prof.user.username,
-                        "day": c.get_day_display(),
-                        "class_time": f"{class_start.strftime('%H:%M')}-{class_end.strftime('%H:%M')}",
-                        "available_windows": [
-                            f"{s.strftime('%H:%M')}-{e.strftime('%H:%M')}" for s, e in availability_map[key]
-                        ],
-                    })
-
-        # Consecutive hours violations (per professor per day)
-        from collections import defaultdict
-        prof_day_classes = defaultdict(list)
-        for c in classes:
-            prof_day_classes[(c.assignment.prof_id, c.day)].append(c)
-
-        for (prof_id, day), day_classes in prof_day_classes.items():
-            day_classes.sort(key=lambda x: x.start_time)
-            prof_obj = day_classes[0].assignment.prof
-            max_consecutive = prof_obj.max_consecutive
-            for i in range(len(day_classes)):
-                current = day_classes[i]
-                current_end = current.end_time
-                consecutive_slots = current.duration_slots
-                for j in range(i + 1, len(day_classes)):
-                    next_class = day_classes[j]
-                    if next_class.start_time == current_end:
-                        consecutive_slots += next_class.duration_slots
-                        current_end = next_class.end_time
-                    else:
-                        break
-                if consecutive_slots > max_consecutive:
-                    conflicts["consecutive_violations"].append({
-                        "professor": prof_obj.user.get_full_name() or prof_obj.user.username,
-                        "day": day_classes[0].get_day_display(),
-                        "max_consecutive": max_consecutive,
-                        "actual_consecutive": consecutive_slots,
-                        "classes": [
-                            {
-                                "id": c.id,
-                                "subject": c.assignment.subject.code,
-                                "start": c.start_time.strftime("%H:%M"),
-                                "end": c.end_time.strftime("%H:%M"),
-                            }
-                            for c in day_classes[i:i+3]
-                        ]
-                    })
-                    break
-
-        # Daily hours violations
-        for (prof_id, day), day_classes in prof_day_classes.items():
-            prof_obj = day_classes[0].assignment.prof
-            max_daily = prof_obj.max_daily_hours
-            total_slots = sum(c.duration_slots for c in day_classes)
-            if total_slots > max_daily:
-                conflicts["daily_hours_violations"].append({
-                    "professor": prof_obj.user.get_full_name() or prof_obj.user.username,
-                    "day": day_classes[0].get_day_display(),
-                    "max_daily_hours": max_daily,
-                    "actual_hours": total_slots,
-                    "classes": [
-                        {
-                            "id": c.id,
-                            "subject": c.assignment.subject.code,
-                            "start": c.start_time.strftime("%H:%M"),
-                            "end": c.end_time.strftime("%H:%M"),
-                        }
-                        for c in day_classes
-                    ]
-                })
-
-        return Response(conflicts)
+            "assignment__prof__user",
+            "assignment__subject",
+            "assignment__section",
+            "room",
+        ).order_by("day", "start_time")
+        result = audit_conflicts(classes, focus_prof_id=prof.id)
+        return Response(result["details"])
 
 
 @extend_schema_view(
@@ -1671,11 +1226,12 @@ class GlobalSettingsView(APIView):
         for item in updates:
             key = item.get("key")
             value = item.get("value")
-            description = item.get("description", "")
+            description = item.get("description")
             if not key:
                 errors.append({"key": key, "error": "key is required"})
                 continue
             try:
+                validate_setting_value(key, value)
                 obj = GlobalSettings.set(key, value, description, request.user)
                 updated.append(GlobalSettingsSerializer(obj).data)
             except Exception as e:
@@ -1703,6 +1259,13 @@ class GlobalSettingDetailView(APIView):
         if value is None:
             return Response(
                 {"error": "value is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            validate_setting_value(key, value)
+        except ValueError as exc:
+            return Response(
+                {"error": str(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         setting.value = value
@@ -1768,150 +1331,3 @@ class ConflictResolutionIgnoreView(APIView):
         conflict.resolved_at = timezone.now()
         conflict.save()
         return Response(ConflictResolutionSerializer(conflict).data)
-
-
-# ==================== SCHEDULE CLASS MODIFICATION ====================
-
-@extend_schema(
-    tags=["schedules"],
-    description="Update a scheduled class (room, day, start_time). Registrar only.",
-    request=inline_serializer(
-        name="ScheduledClassUpdateRequest",
-        fields={
-            "room": serializers.IntegerField(required=False),
-            "day": serializers.IntegerField(required=False),
-            "start_time": serializers.TimeField(required=False),
-        },
-    ),
-    responses={
-        200: ScheduledClassSerializer,
-        400: OpenApiResponse(description="Invalid data"),
-        403: OpenApiResponse(description="Registrar only"),
-        404: OpenApiResponse(description="Class not found"),
-    },
-)
-class ScheduleRunClassUpdateView(APIView):
-    """Update a scheduled class: room, day, start_time, duration, mode, plus
-    the related assignment's professor / subject / section. Registrar only."""
-
-    permission_classes = [IsRegistrar]
-
-    def patch(self, request, run_pk, class_pk):
-        scheduled_class = get_object_or_404(
-            ScheduledClass, pk=class_pk, run_id=run_pk
-        )
-
-        # ---- ScheduledClass fields ----
-        if "room" in request.data:
-            room_id = request.data["room"]
-            if room_id in (None, ""):
-                scheduled_class.room = None
-            else:
-                try:
-                    scheduled_class.room = Room.objects.get(pk=room_id)
-                except Room.DoesNotExist:
-                    return Response(
-                        {"error": "Room not found."},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-
-        if "day" in request.data:
-            scheduled_class.day = request.data["day"]
-
-        if "start_time" in request.data:
-            scheduled_class.start_time = request.data["start_time"]
-
-        if "duration_slots" in request.data:
-            scheduled_class.duration_slots = request.data["duration_slots"]
-
-        if "mode" in request.data:
-            scheduled_class.mode = request.data["mode"]
-
-        scheduled_class.save()
-
-        # ---- Assignment fields (professor, subject, section) ----
-        assignment = scheduled_class.assignment
-        assignment_dirty = False
-
-        if "prof_id" in request.data:
-            try:
-                assignment.prof = Professors.objects.get(
-                    pk=request.data["prof_id"]
-                )
-                assignment_dirty = True
-            except Professors.DoesNotExist:
-                return Response(
-                    {"error": "Professor not found."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-        if "subject_id" in request.data:
-            try:
-                assignment.subject = Subject.objects.get(
-                    pk=request.data["subject_id"]
-                )
-                assignment_dirty = True
-            except Subject.DoesNotExist:
-                return Response(
-                    {"error": "Subject not found."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-        if "section_id" in request.data:
-            try:
-                assignment.section = Section.objects.get(
-                    pk=request.data["section_id"]
-                )
-                assignment_dirty = True
-            except Section.DoesNotExist:
-                return Response(
-                    {"error": "Section not found."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-        if assignment_dirty:
-            assignment.save()
-
-        return Response(ScheduledClassSerializer(scheduled_class).data)
-
-
-@extend_schema(
-    tags=["schedules"],
-    description="Delete a specific scheduled class. Registrar only.",
-    responses={
-        204: OpenApiResponse(description="Class deleted"),
-        403: OpenApiResponse(description="Registrar only"),
-        404: OpenApiResponse(description="Class not found"),
-    },
-)
-class ScheduleRunClassDeleteView(APIView):
-    """Delete a specific scheduled class. Registrar only."""
-
-    permission_classes = [IsRegistrar]
-
-    def delete(self, request, run_pk, class_pk):
-        scheduled_class = get_object_or_404(
-            ScheduledClass, pk=class_pk, run_id=run_pk
-        )
-        scheduled_class.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-@extend_schema(
-    tags=["schedules"],
-    description="Clear all scheduled classes in a run. Registrar only.",
-    responses={
-        204: OpenApiResponse(description="All classes cleared"),
-        403: OpenApiResponse(description="Registrar only"),
-        404: OpenApiResponse(description="Run not found"),
-    },
-)
-class ScheduleRunClearView(APIView):
-    """Clear all scheduled classes in a run. Registrar only."""
-
-    permission_classes = [IsRegistrar]
-
-    def delete(self, request, pk):
-        run_obj = get_object_or_404(ScheduleRun, pk=pk)
-        run_obj.classes.all().delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)

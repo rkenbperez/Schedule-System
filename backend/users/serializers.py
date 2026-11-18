@@ -1,11 +1,7 @@
 from django.contrib.auth import authenticate
-from django.contrib.auth import get_user_model
-from django.utils import timezone
 from rest_framework import serializers
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import PasswordResetToken, Professors
+from .models import Professors
 
 
 class ProfessorsSerializer(serializers.ModelSerializer):
@@ -29,80 +25,19 @@ class ProfessorsSerializer(serializers.ModelSerializer):
         ]
 
 
-class LoginSerializer(TokenObtainPairSerializer):
-    """Authenticate with email instead of username.
-
-    The frontend posts { email, password }; this serializer validates
-    credentials against the email field and returns JWT tokens plus the
-    user payload so the client can store the current user.
-    """
-
-    username_field = "email"
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Replace the default 'username' field with 'email'
-        self.fields["email"] = serializers.EmailField()
-        self.fields.pop("username", None)
-
-    def validate(self, attrs):
-        data = super().validate(attrs)
-        data["user"] = {
-            "id": self.user.id,
-            "username": self.user.username,
-            "email": self.user.email,
-            "first_name": self.user.first_name,
-            "last_name": self.user.last_name,
-            "is_staff": self.user.is_staff,
-        }
-        return data
-
-
-class PasswordResetRequestSerializer(serializers.Serializer):
-    """Request a password reset link for the given email."""
-
-    email = serializers.EmailField()
-
-    def validate_email(self, value):
-        User = get_user_model()
-        if not User.objects.filter(email=value, is_active=True).exists():
-            # Don't reveal whether the email exists.
-            raise serializers.ValidationError("Invalid email or password.")
-        return value
-
-
-class PasswordResetConfirmSerializer(serializers.Serializer):
-    """Confirm a password reset using a one-time token."""
-
-    token = serializers.CharField()
-    new_password = serializers.CharField(
-        min_length=8, style={"input_type": "password"}, write_only=True
+class LoginSerializer(serializers.Serializer):
+    username = serializers.CharField()
+    password = serializers.CharField(
+        style={"input_type": "password"},
+        trim_whitespace=False,
     )
 
-    def validate_token(self, value):
-        try:
-            token_obj = PasswordResetToken.objects.select_related("user").get(
-                token=value
-            )
-        except PasswordResetToken.DoesNotExist:
-            raise serializers.ValidationError("Invalid or expired reset token.")
-        if not token_obj.is_valid():
-            raise serializers.ValidationError("Invalid or expired reset token.")
-        return token_obj
-
-    def validate_new_password(self, value):
-        User = get_user_model()
-        # Reuse Django's password validators.
-        from django.contrib.auth.password_validation import validate_password
-
-        validate_password(value)
-        return value
-
-    def save(self):
-        token_obj = self.validated_data["token"]
-        user = token_obj.user
-        user.set_password(self.validated_data["new_password"])
-        user.save(update_fields=["password"])
-        token_obj.used = True
-        token_obj.save(update_fields=["used"])
-        return user
+    def validate(self, attrs):
+        user = authenticate(
+            username=attrs.get("username"),
+            password=attrs.get("password"),
+        )
+        if user is None:
+            raise serializers.ValidationError("Invalid username or password.")
+        attrs["user"] = user
+        return attrs

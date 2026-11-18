@@ -42,7 +42,7 @@ OPTIONAL_COLUMNS = {
     "Subjects": ["units"],
     "Sections": [],
     "Professors": ["department_id", "max_daily_hours", "max_consecutive"],
-    "Assignments": ["term_id"],
+    "Assignments": [],
     "Meetings": ["duration_slots"],
     "Availability": ["is_preferred"],
     "BusyBlocks": [],
@@ -422,7 +422,13 @@ class ImportProcessor:
             from django.db import transaction
             from catalog.models import Department, Room, Subject, Section
             from users.models import Professors
-            from timetable.models import Assignment, MeetingSlot, AvailabilityWindow, BusyBlock
+            from timetable.models import (
+                Assignment,
+                AvailabilityWindow,
+                BusyBlock,
+                MeetingSlot,
+                get_mode_duration,
+            )
             from django.contrib.auth import get_user_model
 
             User = get_user_model()
@@ -484,7 +490,6 @@ class ImportProcessor:
                     defaults = {
                         "name": row["name"],
                         "headcount": parse_int(row["headcount"]),
-                        "term_id": parse_int(row.get("term_id")) or None,
                     }
                     if pk:
                         obj, created = Section.objects.update_or_create(id=pk, defaults=defaults)
@@ -522,10 +527,9 @@ class ImportProcessor:
                 for row in parsed_data.get("Assignments", []):
                     pk = row.get("id")
                     defaults = {
-                        "prof_id": parse_int(row["professor_id"]),
+                        "professor_id": parse_int(row["professor_id"]),
                         "subject_id": parse_int(row["subject_id"]),
                         "section_id": parse_int(row["section_id"]),
-                        "term_id": parse_int(row.get("term_id")) or None,
                     }
                     if pk:
                         obj, created = Assignment.objects.update_or_create(id=pk, defaults=defaults)
@@ -540,11 +544,15 @@ class ImportProcessor:
                 # Meetings
                 for row in parsed_data.get("Meetings", []):
                     pk = row.get("id")
+                    mode = parse_mode(row["mode"])
                     defaults = {
                         "assignment_id": parse_int(row["assignment_id"]),
                         "order": parse_int(row["order"]),
-                        "mode": parse_mode(row["mode"]),
-                        "duration_slots": parse_int(row.get("duration_slots")) or 1,
+                        "mode": mode,
+                        "duration_slots": (
+                            parse_int(row.get("duration_slots"))
+                            or get_mode_duration(mode)
+                        ),
                     }
                     if pk:
                         obj, created = MeetingSlot.objects.update_or_create(id=pk, defaults=defaults)
@@ -560,7 +568,7 @@ class ImportProcessor:
                 for row in parsed_data.get("Availability", []):
                     pk = row.get("id")
                     defaults = {
-                        "prof_id": parse_int(row["professor_id"]),
+                        "professor_id": parse_int(row["professor_id"]),
                         "day": parse_day(row["day"]),
                         "start_time": parse_time(row["start_time"]),
                         "end_time": parse_time(row["end_time"]),
@@ -580,7 +588,7 @@ class ImportProcessor:
                 for row in parsed_data.get("BusyBlocks", []):
                     pk = row.get("id")
                     defaults = {
-                        "prof_id": parse_int(row["professor_id"]),
+                        "professor_id": parse_int(row["professor_id"]),
                         "day": parse_day(row["day"]),
                         "start_time": parse_time(row["start_time"]),
                         "end_time": parse_time(row["end_time"]),

@@ -1,6 +1,5 @@
-from io import BytesIO, StringIO
+from io import BytesIO
 from copy import copy
-import csv
 from openpyxl import Workbook
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
@@ -147,41 +146,3 @@ def generate_schedule_pdf(run_obj):
 
     buf.seek(0)
     return buf
-
-
-def generate_schedule_csv(run_obj):
-    """Generates a CSV file for the given schedule run."""
-    classes = get_schedule_queryset(run_obj)
-
-    buf = StringIO()
-    writer = csv.writer(buf)
-
-    writer.writerow([
-        "Day",
-        "Start",
-        "End",
-        "Subject Code",
-        "Title",
-        "Section",
-        "Professor",
-        "Room",
-        "Mode",
-    ])
-
-    for c in classes:
-        prof_user = c.assignment.prof.user
-        professor_name = prof_user.get_full_name() or prof_user.username
-        writer.writerow([
-            c.get_day_display(),
-            c.start_time.strftime("%H:%M"),
-            c.end_time.strftime("%H:%M"),
-            c.assignment.subject.code,
-            c.assignment.subject.title,
-            c.assignment.section.name,
-            professor_name,
-            c.room.name if c.room else "",
-            c.get_mode_display() if c.mode else "",
-        ])
-
-    buf.seek(0)
-    return buf.getvalue().encode("utf-8")
