@@ -225,6 +225,7 @@ class ScheduledClassSerializer(serializers.ModelSerializer):
     assignment_label = serializers.SerializerMethodField()
     prof_id = serializers.IntegerField(source="assignment.prof_id", read_only=True)
     prof_name = serializers.SerializerMethodField()
+    subject_id = serializers.IntegerField(source="assignment.subject_id", read_only=True)
     section_id = serializers.IntegerField(source="assignment.section_id", read_only=True)
     section_name = serializers.SerializerMethodField()
     subject_label = serializers.SerializerMethodField()
@@ -241,6 +242,7 @@ class ScheduledClassSerializer(serializers.ModelSerializer):
             "assignment_label",
             "prof_id",
             "prof_name",
+            "subject_id",
             "section_id",
             "section_name",
             "subject_label",

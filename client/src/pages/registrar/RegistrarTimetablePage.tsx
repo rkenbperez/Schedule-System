@@ -119,8 +119,8 @@ export default function RegistrarTimetablePage() {
   const handleOpenEdit = (cls: Schedule) => {
     setEditingClassId(cls.id);
     setEditProfId(cls.prof_id ?? null);
-    setEditSubjectId(null); // resolved from assignment below if needed
-    setEditSectionId(null);
+    setEditSubjectId(cls.subject_id ?? null);
+    setEditSectionId(cls.section_id ?? null);
     setEditRoom(cls.room ?? null);
     setEditDay(cls.day);
     setEditStartTime(cls.start_time);
@@ -163,10 +163,10 @@ export default function RegistrarTimetablePage() {
     if (editProfId !== null && editProfId !== current.prof_id) {
       updateData.prof_id = editProfId;
     }
-    if (editSubjectId !== null) {
+    if (editSubjectId !== null && editSubjectId !== current.subject_id) {
       updateData.subject_id = editSubjectId;
     }
-    if (editSectionId !== null) {
+    if (editSectionId !== null && editSectionId !== current.section_id) {
       updateData.section_id = editSectionId;
     }
 
