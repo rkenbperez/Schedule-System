@@ -22,6 +22,12 @@ MODE_DURATIONS = {
     "lab": 3,
 }
 
+MODE_DURATION_SETTING_KEYS = {
+    "async": "async_duration_default",
+    "sync": "sync_duration_default",
+    "lab": "lab_duration_default",
+}
+
 
 class AcademicTerm(models.Model):
     SEMESTER_CHOICES = [
@@ -339,13 +345,50 @@ class GlobalSettings(models.Model):
             return default
 
     @classmethod
-    def set(cls, key, value, description="", user=None):
-        """Set a setting value."""
-        obj, created = cls.objects.update_or_create(
-            key=key,
-            defaults={"value": value, "description": description, "updated_by": user},
-        )
+    def set(cls, key, value, description=None, user=None):
+        """Set a setting value, preserving its description when omitted."""
+        defaults = {"value": value, "updated_by": user}
+        if description is not None:
+            defaults["description"] = description
+        obj, _created = cls.objects.update_or_create(key=key, defaults=defaults)
         return obj
+
+
+def is_valid_duration_setting(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 1
+
+
+def get_mode_duration(mode):
+    """Return the configured default duration for a meeting mode."""
+    fallback = MODE_DURATIONS.get(mode, 1)
+    key = MODE_DURATION_SETTING_KEYS.get(mode)
+    if not key:
+        return fallback
+    value = GlobalSettings.get(key, fallback)
+    return value if is_valid_duration_setting(value) else fallback
+
+
+def get_mode_durations():
+    """Return configured default durations for all meeting modes."""
+    configured = dict(
+        GlobalSettings.objects.filter(
+            key__in=MODE_DURATION_SETTING_KEYS.values()
+        ).values_list("key", "value")
+    )
+    durations = {}
+    for mode, fallback in MODE_DURATIONS.items():
+        value = configured.get(MODE_DURATION_SETTING_KEYS[mode], fallback)
+        durations[mode] = value if is_valid_duration_setting(value) else fallback
+    return durations
+
+
+def validate_setting_value(key, value):
+    """Validate a global setting value, raising ValueError when invalid."""
+    if (
+        key in MODE_DURATION_SETTING_KEYS.values()
+        and not is_valid_duration_setting(value)
+    ):
+        raise ValueError(f"{key} must be a positive integer")
 
 
 class ConflictResolution(models.Model):

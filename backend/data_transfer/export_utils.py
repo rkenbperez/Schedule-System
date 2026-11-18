@@ -110,7 +110,6 @@ def generate_schedule_pdf(run_obj):
     # 2. Populate Data
     for c in classes:
         professor_name = _professor_name(c.assignment.prof.user)
-
         row = [
             Paragraph(c.get_day_display(), cell_style),
             Paragraph(c.start_time.strftime("%H:%M"), cell_style),

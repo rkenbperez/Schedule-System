@@ -53,7 +53,6 @@ DEFAULT_FROM_EMAIL = 'Scheduler <noreply@school.edu>'
 PASSWORD_RESET_TIMEOUT = 60 * 60  # 1 hour in seconds
 FRONTEND_URL = 'http://localhost:5173'
 
-
 # Application definition
 
 INSTALLED_APPS = [
