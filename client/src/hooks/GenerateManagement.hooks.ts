@@ -78,6 +78,13 @@ export function useImportPreview() {
   });
 }
 
+export function useImportCommit() {
+  return useMutation({
+    mutationFn: (previewToken: string) =>
+      scheduleService.importCommit(previewToken),
+  });
+}
+
 export function useGenerateSchedule() {
   const queryClient = useQueryClient();
 
@@ -102,5 +109,75 @@ export function usePublishRun() {
   return useMutation({
     mutationFn: (runId: number) =>
       generateManagementService.publishRun(runId),
+  });
+}
+
+export function useUpdateScheduledClass() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      runId,
+      classId,
+      data,
+    }: {
+      runId: number;
+      classId: number;
+      data: {
+        room?: number | null;
+        day?: number;
+        start_time?: string;
+        duration_slots?: number;
+        mode?: string | null;
+        prof_id?: number;
+        subject_id?: number;
+        section_id?: number;
+      };
+    }) =>
+      scheduleService.updateScheduledClass(runId, classId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['registrar-all-schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['schedules'] });
+    },
+  });
+}
+
+export function useDeleteScheduledClass() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      runId,
+      classId,
+    }: {
+      runId: number;
+      classId: number;
+    }) => scheduleService.deleteScheduledClass(runId, classId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['registrar-all-schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['schedules'] });
+    },
+  });
+}
+
+export function useClearScheduledClasses() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (runId: number) =>
+      scheduleService.clearScheduledClasses(runId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['registrar-all-schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['schedules'] });
+    },
+  });
+}
+
+export function useExportSchedule() {
+  return useMutation({
+    mutationFn: (params: {
+      runId: number;
+      format: string;
+    }) => scheduleService.exportSchedule(params),
   });
 }

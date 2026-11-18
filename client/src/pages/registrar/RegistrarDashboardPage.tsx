@@ -1,30 +1,22 @@
 // pages/registrar/RegistrarDashboardPage.tsx
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   Activity,
   BookOpen,
   Clock,
-  FileSpreadsheet,
-  FileText,
+  Download,
   Users,
+  X,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-// import {
-//   useAllSchedules,
-//   useAllAssignments,
-//   useTeachers,
-// } from '../../hooks/Registrar.hooks';
+import { useTeachers, useAllAssignments, useAllSchedules } from '../../hooks/Registrar.hooks';
+import { useExportSchedule } from '../../hooks/GenerateManagement.hooks';
 import type {
   CourseAssignmentDetail,
   Schedule,
   TeacherListItem,
 } from '../../types/Types';
-import {
-  registrarTeacherProfiles,
-  registrarCourseAssignments,
-  registrarSchedules,
-} from './registrarData';
-// import StatCard from '../teacher/components/StatCard';
 
 /* ---------- small local pieces ---------- */
 
@@ -66,97 +58,106 @@ function initialsOf(name: string) {
 /* ---------- page ---------- */
 
 export default function RegistrarDashboardPage() {
-  // const {
-  //   data: teachers,
-  //   isLoading: teachersLoading,
-  // } = useTeachers({ enabled: true });
+  const {
+    data: teachers,
+    isLoading: teachersLoading,
+    error: teachersError,
+    refetch: refetchTeachers,
+  } = useTeachers({ enabled: true });
 
-  // const {
-  //   data: assignments,
-  //   isLoading: assignmentsLoading,
-  // } = useAllAssignments({ enabled: true });
+  const {
+    data: assignments,
+    isLoading: assignmentsLoading,
+    error: assignmentsError,
+    refetch: refetchAssignments,
+  } = useAllAssignments({ enabled: true });
 
-  // const {
-  //   data: schedules,
-  //   isLoading: schedulesLoading,
-  // } = useAllSchedules({ enabled: true });
+  const {
+    data: schedules,
+    isLoading: schedulesLoading,
+    error: schedulesError,
+    refetch: refetchSchedules,
+  } = useAllSchedules({ enabled: true });
 
-  // const loading = teachersLoading || assignmentsLoading || schedulesLoading;
+  const exportScheduleMutation = useExportSchedule();
+  const [exportPanelOpen, setExportPanelOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
-  // if (loading) {
-  //   return (
-  //     <section className='w-full'>
-  //       <p className='text-sm text-text-secondary'>Loading registrar data...</p>
-  //     </section>
-  //   );
-  // }
+  const loading = teachersLoading || assignmentsLoading || schedulesLoading;
+  const error = teachersError || assignmentsError || schedulesError;
 
-  const teachers: TeacherListItem[] = registrarTeacherProfiles;
-  const allAssignments: CourseAssignmentDetail[] = registrarCourseAssignments;
-  const allSchedules: Schedule[] = registrarSchedules;
+  if (error) {
+    return (
+      <section className='w-full p-6'>
+        <div className='rounded-lg border border-red-200 bg-red-50 p-4 mb-4'>
+          <p className='text-sm font-medium text-red-700 mb-2'>
+            Failed to load registrar data.
+          </p>
+          <p className='text-xs text-red-600 mb-3'>
+            {error.message ?? 'Unable to load data from the API.'}
+          </p>
+          <button
+            type='button'
+            onClick={() => {
+              refetchTeachers();
+              refetchAssignments();
+              refetchSchedules();
+            }}
+            className='h-10 rounded-lg border border-border bg-surface px-3 text-sm text-text-primary transition hover:bg-surface-secondary'
+          >
+            Retry
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (loading) {
+    return (
+      <section className='w-full'>
+        <p className='text-sm text-text-secondary'>Loading registrar data...</p>
+      </section>
+    );
+  }
+
+  const teachersList: TeacherListItem[] = teachers ?? [];
+  const allAssignments: CourseAssignmentDetail[] = assignments ?? [];
+  const allSchedules: Schedule[] = schedules ?? [];
 
   const assignmentCount = allAssignments.length;
+
+  // Build a Set of scheduled assignment ids for O(1) lookups.
+  const scheduledAssignmentIds = new Set(
+    allSchedules.map((s: Schedule) => s.assignment)
+  );
   const unscheduledCount = allAssignments.filter(
-    (a: CourseAssignmentDetail) =>
-      !allSchedules.some((s: Schedule) => s.assignment === a.id)
+    (a: CourseAssignmentDetail) => !scheduledAssignmentIds.has(a.id)
   ).length;
 
-  const handleExportCsv = () => {
-    const rows: string[][] = [
-      [
-        'Teacher',
-        'Email',
-        'Course',
-        'Title',
-        'Section',
-        'Meeting',
-        'Status',
-        'Day',
-        'Time',
-        'Room',
-      ],
-    ];
+  const runId = allSchedules.length > 0 ? allSchedules[0].run : null;
 
-    teachers.forEach((teacher: TeacherListItem) => {
-      const teacherAssignments = allAssignments.filter(
-        (a: CourseAssignmentDetail) => a.prof === teacher.id
-      );
-      teacherAssignments.forEach((assignment: CourseAssignmentDetail) => {
-        const schedule = allSchedules.find(
-          (s: Schedule) => s.assignment === assignment.id
-        );
-        const startTime = schedule?.start_time ?? '';
-        rows.push([
-          teacher.full_name,
-          teacher.username,
-          assignment.subject_label,
-          assignment.subject_label,
-          assignment.section_name,
-          schedule ? schedule.mode_display ?? '' : '—',
-          schedule ? 'Scheduled' : 'Pending',
-          schedule ? schedule.day_display : '',
-          startTime,
-          schedule ? (schedule.room_name ?? '') : '',
-        ]);
-      });
-    });
-
-    const csv = rows
-      .map((row) =>
-        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')
-      )
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'teacher-assignments.csv';
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleExportPdf = () => {
-    window.print();
+  const handleExport = async (format: string) => {
+    if (!runId) {
+      alert('No schedule data available to export.');
+      return;
+    }
+    setExportPanelOpen(false);
+    setExporting(true);
+    try {
+      const blob = await exportScheduleMutation.mutateAsync({ runId, format });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `timetable.${format === 'xlsx' ? 'xlsx' : format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Failed to export timetable.');
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -170,21 +171,65 @@ export default function RegistrarDashboardPage() {
         <div className='flex flex-wrap items-center gap-2'>
           <button
             type='button'
-            onClick={handleExportPdf}
+            onClick={() => setExportPanelOpen(true)}
             className='inline-flex items-center gap-2 rounded-md border border-border bg-surface px-4 py-2 text-[13px] font-medium text-text-primary transition hover:bg-surface-secondary'
           >
-            <FileText size={14} />
-            Export PDF
+            <Download size={14} />
+            Export
           </button>
 
-          <button
-            type='button'
-            onClick={handleExportCsv}
-            className='inline-flex items-center gap-2 rounded-md border border-border bg-surface px-4 py-2 text-[13px] font-medium text-text-primary transition hover:bg-surface-secondary'
-          >
-            <FileSpreadsheet size={14} />
-            Export CSV
-          </button>
+          {/* Export format panel */}
+          {exportPanelOpen && (
+            <div className='fixed inset-0 z-50 flex items-center justify-center'>
+              <div
+                className='absolute inset-0 bg-black/40 backdrop-blur-sm'
+                onClick={() => setExportPanelOpen(false)}
+              />
+              <div className='relative bg-surface p-6 rounded-xl border border-border shadow-xl w-full max-w-xs z-10'>
+                <div className='flex items-center justify-between mb-4'>
+                  <h3 className='text-sm font-medium text-text-primary'>
+                    Export Timetable
+                  </h3>
+                  <button
+                    type='button'
+                    onClick={() => setExportPanelOpen(false)}
+                    className='text-text-secondary hover:text-text-primary'
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <p className='text-xs text-text-secondary mb-6'>
+                  Choose a format to download the current timetable.
+                </p>
+                <div className='grid grid-cols-1 gap-2'>
+                  <button
+                    type='button'
+                    onClick={() => handleExport('csv')}
+                    disabled={exporting}
+                    className='flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-primary transition hover:bg-surface-secondary disabled:opacity-60'
+                  >
+                    {exporting ? 'Exporting…' : 'CSV'}
+                  </button>
+                  <button
+                    type='button'
+                    onClick={() => handleExport('xlsx')}
+                    disabled={exporting}
+                    className='flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-primary transition hover:bg-surface-secondary disabled:opacity-60'
+                  >
+                    {exporting ? 'Exporting…' : 'Excel (XLSX)'}
+                  </button>
+                  <button
+                    type='button'
+                    onClick={() => handleExport('pdf')}
+                    disabled={exporting}
+                    className='flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-primary transition hover:bg-surface-secondary disabled:opacity-60'
+                  >
+                    {exporting ? 'Exporting…' : 'PDF'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -193,7 +238,7 @@ export default function RegistrarDashboardPage() {
         <StatTile
           icon={<Users size={16} />}
           label='Teachers'
-          value={teachers.length}
+          value={teachersList.length}
         />
         <StatTile
           icon={<BookOpen size={16} />}
@@ -220,7 +265,7 @@ export default function RegistrarDashboardPage() {
         </h2>
 
         <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3'>
-          {teachers.map((teacher: TeacherListItem) => {
+          {teachersList.map((teacher: TeacherListItem) => {
             const teacherAssignments = allAssignments.filter(
               (a: CourseAssignmentDetail) => a.prof === teacher.id
             );
@@ -236,7 +281,7 @@ export default function RegistrarDashboardPage() {
               >
                 {/* Teacher header */}
                 <Link
-                  to={`/registrar/teacher/${teacher.id}`}
+                  to={`/registrar/teachers/${teacher.id}`}
                   className='flex shrink-0 cursor-pointer items-center justify-between gap-3 border-b border-border px-4 py-3 transition hover:bg-surface-secondary'
                 >
                   <div className='flex min-w-0 items-center gap-3'>

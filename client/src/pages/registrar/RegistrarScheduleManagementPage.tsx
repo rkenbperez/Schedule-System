@@ -1,7 +1,11 @@
 // pages/registrar/RegistrarScheduleManagementPage.tsx
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Download, RefreshCw } from 'lucide-react';
+import {
+  ArrowLeft,
+  Download,
+  RefreshCw,
+} from 'lucide-react';
 import {
   useImportPreview,
   useImportCommit,
@@ -10,6 +14,7 @@ import {
   usePublishRun,
 } from '../../hooks/GenerateManagement.hooks';
 import { useQueryClient } from '@tanstack/react-query';
+import { useMe } from '../../hooks/useAuth';
 import type {
   GenerateSchedulePayload,
   GenerateScheduleResponse,
@@ -17,7 +22,6 @@ import type {
   ImportRecord,
   ScheduledClass,
 } from '../../types/Types';
-import { DAY_LABELS } from '../../pages/registrar/registrarData';
 
 export default function RegistrarScheduleManagementPage() {
   const importPreview = useImportPreview();
@@ -47,7 +51,10 @@ export default function RegistrarScheduleManagementPage() {
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [runClasses, setRunClasses] = useState<ScheduledClass[]>([]);
-  const [showTimetable, setShowTimetable] = useState(false);
+
+  const { data: me } = useMe();
+
+  const isRegistrar = !!me?.is_staff;
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -103,13 +110,27 @@ export default function RegistrarScheduleManagementPage() {
 
   const handlePreview = () => {
     if (!file) return;
+
+    // Ensure the user is authenticated as a registrar before calling the API.
+    // The backend ImportPreviewView requires IsRegistrar permission.
+    if (!isRegistrar) {
+      setPreviewError(
+        'Please sign in with a registrar account to preview imports.'
+      );
+      return;
+    }
+
     setPreviewError(null);
     importPreview.mutate(file, {
       onSuccess: (data: ImportPreviewResponse) => {
         setPreviewResult(data);
       },
       onError: (err: Error) => {
-        setPreviewError(err.message);
+        setPreviewError(
+          err.message.includes('403') || err.message.includes('Forbidden')
+            ? 'Access denied: please sign in with a registrar account to preview imports.'
+            : err.message
+        );
       },
     });
   };
@@ -123,7 +144,6 @@ export default function RegistrarScheduleManagementPage() {
   const handleGenerate = () => {
     setGenerateError(null);
     setGenerateResult(null);
-    setShowTimetable(false);
     setRunClasses([]);
     setElapsedSeconds(0);
     setIsGenerating(true);
@@ -139,11 +159,10 @@ export default function RegistrarScheduleManagementPage() {
       onSuccess: (data) => {
         setGenerateResult(data);
         setIsGenerating(false);
-        if (data.feasible && data.run_id) {
+        if (data.run_id) {
           runClassesMutation.mutate(data.run_id, {
             onSuccess: (classesData) => {
               setRunClasses(classesData);
-              setShowTimetable(true);
             },
             onError: () => {
               setGenerateError('Unable to fetch generated classes');
@@ -198,6 +217,7 @@ export default function RegistrarScheduleManagementPage() {
       },
     });
   };
+
 
   if (isGenerating) {
     return (
@@ -352,19 +372,19 @@ export default function RegistrarScheduleManagementPage() {
             </h3>
             <div className='flex gap-4 text-xs mb-3'>
               <span className='text-apple-green-600'>
-                {previewResult.created_count} new
+                {previewResult.created_count ?? 0} new
               </span>
               <span className='text-amber-600'>
-                {previewResult.updated_count} updated
+                {previewResult.updated_count ?? 0} updated
               </span>
               <span className='text-red-600'>
-                {previewResult.errors.length} errors
+                {(previewResult.errors ?? []).length} errors
               </span>
               <span className='text-amber-500'>
-                {previewResult.warnings.length} warnings
+                {(previewResult.warnings ?? []).length} warnings
               </span>
             </div>
-            {previewResult.errors.length > 0 && (
+            {(previewResult.errors ?? []).length > 0 && (
               <div className='mb-3 rounded-lg border border-red-200 bg-red-50 p-3'>
                 <p className='text-xs font-medium text-red-700 mb-2'>
                   Errors:
@@ -376,7 +396,7 @@ export default function RegistrarScheduleManagementPage() {
                 </ul>
               </div>
             )}
-            {previewResult.records.length > 0 && (
+            {(previewResult.records ?? []).length > 0 && (
               <div className='overflow-x-auto mb-3'>
                 <table className='w-full text-xs'>
                   <thead>
@@ -390,7 +410,7 @@ export default function RegistrarScheduleManagementPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {previewResult.records.map((r: ImportRecord) => (
+                    {(previewResult.records ?? []).map((r: ImportRecord) => (
                       <tr key={r.id} className='border-b border-border-light'>
                         <td className='px-3 py-1 text-[10px] text-text-primary'>
                           {r.course_code}
@@ -423,7 +443,7 @@ export default function RegistrarScheduleManagementPage() {
             <div className='flex gap-2'>
               <button
                 type='button'
-                onClick={() =>
+                onClick={() => {
                   importCommit.mutate(previewResult?.preview_token ?? '', {
                     onSuccess: () => {
                       setImportResult({
@@ -438,7 +458,8 @@ export default function RegistrarScheduleManagementPage() {
                         message: err.message || 'Import commit failed.',
                       });
                     },
-                  )}
+                  });
+                }}
                 disabled={
                   !previewResult?.preview_token ||
                   importCommit.isPending
@@ -598,52 +619,6 @@ export default function RegistrarScheduleManagementPage() {
         )}
       </div>
 
-      {/* Timetable View */}
-      {showTimetable && runClasses.length > 0 && (
-        <div className='rounded-card border border-border bg-surface p-6 mt-8'>
-          <h2 className='text-sm font-medium text-text-primary mb-4'>
-            Generated Timetable
-          </h2>
-          <div className='overflow-x-auto'>
-            <table className='w-full text-xs'>
-              <thead>
-                <tr className='border-b border-border text-left text-[10px] text-text-secondary'>
-                  <th className='px-3 py-1'>Course</th>
-                  <th className='px-3 py-1'>Section</th>
-                  <th className='px-3 py-1'>Teacher</th>
-                  <th className='px-3 py-1'>Room</th>
-                  <th className='px-3 py-1'>Day</th>
-                  <th className='px-3 py-1'>Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {runClasses.map((c: ScheduledClass) => (
-                  <tr key={c.id} className='border-b border-border-light'>
-                    <td className='px-3 py-1 text-[10px] text-text-primary'>
-                      {c.course_code}
-                    </td>
-                    <td className='px-3 py-1 text-[10px] text-text-secondary'>
-                      {c.section_code}
-                    </td>
-                    <td className='px-3 py-1 text-[10px] text-text-secondary'>
-                      {c.teacher_name}
-                    </td>
-                    <td className='px-3 py-1 text-[10px] text-text-secondary'>
-                      {c.room_code}
-                    </td>
-                    <td className='px-3 py-1 text-[10px] text-text-secondary'>
-                      {DAY_LABELS[c.day_of_week]}
-                    </td>
-                    <td className='px-3 py-1 text-[10px] text-text-secondary'>
-                      {c.start_time}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </section>
+      </section>
   );
 }

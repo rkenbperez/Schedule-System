@@ -1,5 +1,5 @@
 // layouts/RegistrarLayout.tsx
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
@@ -9,6 +9,8 @@ import {
   PanelLeftOpen,
 } from 'lucide-react';
 import { useState } from 'react';
+import { useSignOut } from '../hooks/useAuth';
+import TimetableSidepanel from '../components/registrar/TimetableSidepanel';
 
 const navItems = [
   {
@@ -30,10 +32,19 @@ const navItems = [
     label: 'Schedule Management',
     to: '/registrar/schedule-management',
   },
+  {
+    id: 4,
+    icon: Calendar,
+    label: 'Timetable',
+    to: '/registrar/timetable',
+  },
 ];
 
 export default function RegistrarLayout() {
   const [collapsed, setCollapsed] = useState(false);
+  const [isTimetableOpen, setIsTimetableOpen] = useState(false);
+  const signOut = useSignOut();
+  const navigate = useNavigate();
 
   const { pathname } = useLocation();
 
@@ -86,6 +97,14 @@ export default function RegistrarLayout() {
         <div className='border-t border-border p-3'>
           <button
             type='button'
+            onClick={async () => {
+              try {
+                await signOut.mutateAsync();
+              } catch {
+                // ignore errors on logout
+              }
+              navigate('/');
+            }}
             className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-apple-green-700 transition hover:bg-apple-green-100 hover:text-apple-green-800 ${
               collapsed ? 'justify-center px-0' : ''
             }`}
@@ -126,9 +145,10 @@ export default function RegistrarLayout() {
 
           {/* User */}
           <div className='flex items-center gap-2 sm:gap-3'>
-            {/* Notification */}
+            {/* Notification / Timetable */}
             <button
               type='button'
+              onClick={() => setIsTimetableOpen(true)}
               className='relative grid h-8 w-8 place-items-center rounded-full bg-surface-secondary text-text-secondary transition hover:bg-border'
             >
               <Calendar size={15} />
@@ -157,6 +177,9 @@ export default function RegistrarLayout() {
         <div className='flex-1 px-4 py-5 overflow-y-auto'>
           <Outlet />
         </div>
+
+        {/* Timetable Sidepanel */}
+        <TimetableSidepanel isOpen={isTimetableOpen} onClose={() => setIsTimetableOpen(false)} />
       </main>
     </div>
   );

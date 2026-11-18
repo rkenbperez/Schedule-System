@@ -1,3 +1,4 @@
+// client/src/services/Schedule.service.ts
 import type {
   AcademicTerm,
   Course,
@@ -15,6 +16,8 @@ import type {
   Section,
   TeacherListItem,
 } from '../types/Types';
+import { apiAllPages, apiBlob, apiFetch, apiJson } from './http';
+import { authStorage } from './authStorage';
 
 export type StudentScheduleParams = {
   section: string;
@@ -27,19 +30,9 @@ class ScheduleService {
   async getSchedules(teacherId?: number) {
     const query = teacherId ? `?prof=${teacherId}` : '';
 
-    const response = await fetch(`${BASE_URL}/api/schedules/my${query}`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('Unable to load schedules');
-    }
-
-    const data: Schedule[] = await response.json();
+    const data: Schedule[] = await apiJson(
+      `${BASE_URL}/api/schedules/my${query}`
+    );
 
     return data;
   }
@@ -47,19 +40,10 @@ class ScheduleService {
   async getCourseAssignments(teacherId?: number) {
     const query = teacherId ? `?prof_id=${teacherId}` : '';
 
-    const response = await fetch(`${BASE_URL}/api/assignments/${query}`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('Unable to load course assignments');
-    }
-
-    const data: CourseAssignmentDetail[] = await response.json();
+    // /api/assignments/ is paginated ({count, next, results}); fetch all pages.
+    const data: CourseAssignmentDetail[] = await apiAllPages(
+      `${BASE_URL}/api/assignments/${query}`
+    );
 
     return data;
   }
@@ -71,37 +55,16 @@ class ScheduleService {
   }
 
   async getTerms() {
-    const response = await fetch(`${BASE_URL}/api/academics/terms/`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('Unable to load terms');
-    }
-
-    const data: AcademicTerm[] = await response.json();
+    const data: AcademicTerm[] = await apiJson(
+      `${BASE_URL}/api/academics/terms/`
+    );
 
     return data;
   }
 
   async getCourses() {
-    const response = await fetch(`${BASE_URL}/api/subjects/`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('Unable to load courses');
-    }
-
-    const data: Course[] = await response.json();
+    // /api/subjects/ is paginated; fetch all pages.
+    const data: Course[] = await apiAllPages(`${BASE_URL}/api/subjects/`);
 
     return data;
   }
@@ -109,77 +72,32 @@ class ScheduleService {
   async getSections(termId?: number) {
     const query = termId ? `?term=${termId}` : '';
 
-    const response = await fetch(`${BASE_URL}/api/sections/${query}`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('Unable to load sections');
-    }
-
-    const data: Section[] = await response.json();
+    // /api/sections/ is paginated; fetch all pages.
+    const data: Section[] = await apiAllPages(
+      `${BASE_URL}/api/sections/${query}`
+    );
 
     return data;
   }
 
   async getRoomTypes() {
-    const response = await fetch(`${BASE_URL}/api/rooms/`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('Unable to load room types');
-    }
-
-    const data: RoomType[] = await response.json();
+    // /api/rooms/ is paginated; fetch all pages.
+    const data: RoomType[] = await apiAllPages(`${BASE_URL}/api/rooms/`);
 
     return data;
   }
 
   async getRooms(): Promise<Room[]> {
-    const response = await fetch(`${BASE_URL}/api/rooms/`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('Unable to load rooms');
-    }
-
-    const data: Room[] = await response.json();
+    // /api/rooms/ is paginated; fetch all pages.
+    const data: Room[] = await apiAllPages(`${BASE_URL}/api/rooms/`);
 
     return data;
   }
 
   async getRoomSchedule(roomId: number): Promise<Schedule[]> {
-    // /api/schedules/runs/<run_id>/classes/ requires a run_id and the runs list
-    // endpoint is registrar-only. Use /api/schedules/my instead, which returns
-    // the teacher's scheduled classes from the latest active run, then filter
-    // by room on the frontend.
-    const response = await fetch(`${BASE_URL}/api/schedules/my`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('Unable to load room schedule');
-    }
-
-    const data: Schedule[] = await response.json();
+    // /api/schedules/my returns the scheduled classes of the active run
+    // (registrar sees all classes). Filter by room on the frontend.
+    const data: Schedule[] = await apiJson(`${BASE_URL}/api/schedules/my`);
 
     return data.filter((s) => s.room === roomId);
   }
@@ -189,151 +107,79 @@ class ScheduleService {
     if (params.section.trim()) queryParams.set('section', params.section.trim());
     if (params.term?.trim()) queryParams.set('term', params.term.trim());
 
-    const response = await fetch(
-      `${BASE_URL}/api/students/schedule/?${queryParams.toString()}`,
-      {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      },
+    const data: Schedule[] = await apiJson(
+      `${BASE_URL}/api/students/schedule/?${queryParams.toString()}`
     );
-
-    if (!response.ok) {
-      throw new Error('Unable to load student schedule');
-    }
-
-    const data: Schedule[] = await response.json();
 
     return data;
   }
 
   async getTeachers() {
-    const response = await fetch(`${BASE_URL}/api/profs/`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('Unable to load teachers');
-    }
-
-    const data: TeacherListItem[] = await response.json();
+    // /api/profs/ is paginated; fetch all pages.
+    const data: TeacherListItem[] = await apiAllPages(`${BASE_URL}/api/profs/`);
 
     return data;
   }
 
   async getAllAssignments() {
-    const response = await fetch(`${BASE_URL}/api/assignments/`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('Unable to load assignments');
-    }
-
-    const data: CourseAssignmentDetail[] = await response.json();
+    // /api/assignments/ is paginated; fetch all pages.
+    const data: CourseAssignmentDetail[] = await apiAllPages(
+      `${BASE_URL}/api/assignments/`
+    );
 
     return data;
   }
 
   async getAllSchedules() {
-    const response = await fetch(`${BASE_URL}/api/schedules/runs`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('Unable to load schedules');
-    }
-
-    const data: Schedule[] = await response.json();
+    // Return the scheduled classes of the active-term run (registrar sees all
+    // classes). This is what the dashboard needs: each item has an `assignment`
+    // id so scheduled-vs-pending can be computed correctly.
+    // /api/schedules/my is not paginated and returns ScheduledClass[].
+    const data: Schedule[] = await apiJson(`${BASE_URL}/api/schedules/my`);
 
     return data;
   }
 
   async getProfessorProfile(): Promise<ProfessorProfile> {
-    const response = await fetch(`${BASE_URL}/api/professor/me/`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('Unable to load professor profile');
-    }
-
-    const data: ProfessorProfile = await response.json();
+    const data: ProfessorProfile = await apiJson(
+      `${BASE_URL}/api/professor/me/`
+    );
     return data;
   }
 
   async getProfessorSchedule(runId?: number): Promise<Schedule[]> {
     const query = runId ? `?run_id=${runId}` : '';
 
-    const response = await fetch(`${BASE_URL}/api/professor/me/schedule/${query}`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('Unable to load professor schedule');
-    }
-
-    const data: Schedule[] = await response.json();
+    const data: Schedule[] = await apiJson(
+      `${BASE_URL}/api/professor/me/schedule/${query}`
+    );
 
     return data;
   }
 
   async createSchedule(payload: ScheduleCreatePayload) {
-    const response = await fetch(`${BASE_URL}/api/schedules/generate`, {
+    const data: Schedule = await apiJson(`${BASE_URL}/api/schedules/generate`, {
       method: 'POST',
-      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
     });
-
-    if (!response.ok) {
-      throw new Error('Unable to create schedule');
-    }
-
-    const data: Schedule = await response.json();
 
     return data;
   }
 
   async createAssignment(payload: CreateAssignmentPayload) {
-    const response = await fetch(`${BASE_URL}/api/assignments/`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      throw new Error('Unable to create course assignment');
-    }
-
-    const data: CourseAssignmentDetail = await response.json();
+    const data: CourseAssignmentDetail = await apiJson(
+      `${BASE_URL}/api/assignments/`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      }
+    );
 
     return data;
   }
@@ -342,10 +188,10 @@ class ScheduleService {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await fetch(`${BASE_URL}/api/imports/preview/`, {
+    const response = await apiFetch(`${BASE_URL}/api/imports/preview/`, {
       method: 'POST',
-      credentials: 'include',
       body: formData,
+      // Do NOT set Content-Type for FormData; the browser sets the boundary.
     });
 
     if (!response.ok) {
@@ -362,41 +208,91 @@ class ScheduleService {
     summary: { creates: number; updates: number };
     errors?: Array<{ sheet: string; row: number; field: string; message: string }>;
   }> {
-    const response = await fetch(`${BASE_URL}/api/imports/commit/`, {
+    const data = await apiJson(`${BASE_URL}/api/imports/commit/`, {
       method: 'POST',
-      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ preview_token: previewToken }),
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || 'Unable to commit import');
-    }
-
-    const data = await response.json();
     return data;
   }
 
   async generateSchedule(payload: GenerateSchedulePayload): Promise<GenerateScheduleResponse> {
-    const response = await fetch(`${BASE_URL}/api/schedules/generate`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      throw new Error('Unable to generate schedule');
-    }
-
-    const data: GenerateScheduleResponse = await response.json();
+    const data: GenerateScheduleResponse = await apiJson(
+      `${BASE_URL}/api/schedules/generate`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      }
+    );
 
     return data;
+  }
+
+  async updateScheduledClass(
+    runId: number,
+    classId: number,
+    data: {
+      room?: number | null;
+      day?: number;
+      start_time?: string;
+      duration_slots?: number;
+      mode?: string | null;
+      prof_id?: number;
+      subject_id?: number;
+      section_id?: number;
+    }
+  ) {
+    const result = await apiJson(
+      `${BASE_URL}/api/schedules/runs/${runId}/classes/${classId}/update/`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      }
+    );
+
+    return result;
+  }
+
+  async deleteScheduledClass(runId: number, classId: number) {
+    await apiFetch(
+      `${BASE_URL}/api/schedules/runs/${runId}/classes/${classId}/delete/`,
+      {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+  }
+
+  async clearScheduledClasses(runId: number) {
+    await apiFetch(
+      `${BASE_URL}/api/schedules/runs/${runId}/classes/clear/`,
+      {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+  }
+
+  async exportSchedule(params: {
+    runId: number;
+    format: string;
+  }): Promise<Blob> {
+    return apiBlob(
+      `${BASE_URL}/api/exports/schedules/${params.runId}.${params.format}`
+    );
   }
 }
 

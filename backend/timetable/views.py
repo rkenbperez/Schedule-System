@@ -16,8 +16,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import viewsets
 
-from catalog.models import Section
+from catalog.models import Room, Section, Subject
 from core.permissions import IsOwnerOrRegistrar, IsRegistrar, IsRegistrarOrReadOnly, IsProfessor, IsPublicReadOnly
+from users.models import Professors
 from rest_framework.permissions import IsAuthenticated
 
 from .engines import ALGORITHMS, run
@@ -331,6 +332,52 @@ class ScheduleMyView(APIView):
                 {"error": "No professor profile linked to this account."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        return Response(ScheduledClassSerializer(qs, many=True).data)
+
+
+@extend_schema(tags=["schedules"])
+class StudentScheduleView(APIView):
+    """Public read-only schedule lookup by section (no login required)."""
+
+    permission_classes = [IsPublicReadOnly]
+
+    def get(self, request):
+        section = request.query_params.get("section", "").strip()
+        term = request.query_params.get("term", "").strip()
+
+        if not section:
+            return Response([])
+
+        # Pick the run to read from: latest published run for the term,
+        # falling back to the latest run overall (so demo/unpublished data
+        # is still visible during development).
+        runs_qs = ScheduleRun.objects.all()
+        if term:
+            try:
+                runs_qs = runs_qs.filter(term_id=int(term))
+            except (TypeError, ValueError):
+                pass
+
+        run_obj = (
+            runs_qs.filter(published=True).order_by("-created_at").first()
+        )
+        if not run_obj:
+            run_obj = runs_qs.order_by("-created_at").first()
+
+        if not run_obj:
+            return Response([])
+
+        qs = (
+            run_obj.classes.select_related(
+                "assignment__prof__user",
+                "assignment__subject",
+                "assignment__section",
+                "room",
+            )
+            .filter(assignment__section__name__iexact=section)
+            .order_by("day", "start_time")
+        )
 
         return Response(ScheduledClassSerializer(qs, many=True).data)
 
@@ -1721,3 +1768,150 @@ class ConflictResolutionIgnoreView(APIView):
         conflict.resolved_at = timezone.now()
         conflict.save()
         return Response(ConflictResolutionSerializer(conflict).data)
+
+
+# ==================== SCHEDULE CLASS MODIFICATION ====================
+
+@extend_schema(
+    tags=["schedules"],
+    description="Update a scheduled class (room, day, start_time). Registrar only.",
+    request=inline_serializer(
+        name="ScheduledClassUpdateRequest",
+        fields={
+            "room": serializers.IntegerField(required=False),
+            "day": serializers.IntegerField(required=False),
+            "start_time": serializers.TimeField(required=False),
+        },
+    ),
+    responses={
+        200: ScheduledClassSerializer,
+        400: OpenApiResponse(description="Invalid data"),
+        403: OpenApiResponse(description="Registrar only"),
+        404: OpenApiResponse(description="Class not found"),
+    },
+)
+class ScheduleRunClassUpdateView(APIView):
+    """Update a scheduled class: room, day, start_time, duration, mode, plus
+    the related assignment's professor / subject / section. Registrar only."""
+
+    permission_classes = [IsRegistrar]
+
+    def patch(self, request, run_pk, class_pk):
+        scheduled_class = get_object_or_404(
+            ScheduledClass, pk=class_pk, run_id=run_pk
+        )
+
+        # ---- ScheduledClass fields ----
+        if "room" in request.data:
+            room_id = request.data["room"]
+            if room_id in (None, ""):
+                scheduled_class.room = None
+            else:
+                try:
+                    scheduled_class.room = Room.objects.get(pk=room_id)
+                except Room.DoesNotExist:
+                    return Response(
+                        {"error": "Room not found."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+        if "day" in request.data:
+            scheduled_class.day = request.data["day"]
+
+        if "start_time" in request.data:
+            scheduled_class.start_time = request.data["start_time"]
+
+        if "duration_slots" in request.data:
+            scheduled_class.duration_slots = request.data["duration_slots"]
+
+        if "mode" in request.data:
+            scheduled_class.mode = request.data["mode"]
+
+        scheduled_class.save()
+
+        # ---- Assignment fields (professor, subject, section) ----
+        assignment = scheduled_class.assignment
+        assignment_dirty = False
+
+        if "prof_id" in request.data:
+            try:
+                assignment.prof = Professors.objects.get(
+                    pk=request.data["prof_id"]
+                )
+                assignment_dirty = True
+            except Professors.DoesNotExist:
+                return Response(
+                    {"error": "Professor not found."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        if "subject_id" in request.data:
+            try:
+                assignment.subject = Subject.objects.get(
+                    pk=request.data["subject_id"]
+                )
+                assignment_dirty = True
+            except Subject.DoesNotExist:
+                return Response(
+                    {"error": "Subject not found."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        if "section_id" in request.data:
+            try:
+                assignment.section = Section.objects.get(
+                    pk=request.data["section_id"]
+                )
+                assignment_dirty = True
+            except Section.DoesNotExist:
+                return Response(
+                    {"error": "Section not found."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        if assignment_dirty:
+            assignment.save()
+
+        return Response(ScheduledClassSerializer(scheduled_class).data)
+
+
+@extend_schema(
+    tags=["schedules"],
+    description="Delete a specific scheduled class. Registrar only.",
+    responses={
+        204: OpenApiResponse(description="Class deleted"),
+        403: OpenApiResponse(description="Registrar only"),
+        404: OpenApiResponse(description="Class not found"),
+    },
+)
+class ScheduleRunClassDeleteView(APIView):
+    """Delete a specific scheduled class. Registrar only."""
+
+    permission_classes = [IsRegistrar]
+
+    def delete(self, request, run_pk, class_pk):
+        scheduled_class = get_object_or_404(
+            ScheduledClass, pk=class_pk, run_id=run_pk
+        )
+        scheduled_class.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@extend_schema(
+    tags=["schedules"],
+    description="Clear all scheduled classes in a run. Registrar only.",
+    responses={
+        204: OpenApiResponse(description="All classes cleared"),
+        403: OpenApiResponse(description="Registrar only"),
+        404: OpenApiResponse(description="Run not found"),
+    },
+)
+class ScheduleRunClearView(APIView):
+    """Clear all scheduled classes in a run. Registrar only."""
+
+    permission_classes = [IsRegistrar]
+
+    def delete(self, request, pk):
+        run_obj = get_object_or_404(ScheduleRun, pk=pk)
+        run_obj.classes.all().delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

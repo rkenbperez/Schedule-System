@@ -5,16 +5,14 @@ import type {
   Schedule,
   ScheduledClass,
 } from '../types/Types';
-
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+import { apiFetch, apiJson } from './http';
 
 class GenerateManagementService {
   async generateSchedule(
     payload: GenerateSchedulePayload
   ): Promise<GenerateScheduleResponse> {
-    const response = await fetch(`${BASE_URL}/api/schedules/generate`, {
+    const response = await apiFetch(`${BASE_URL()}/api/schedules/generate`, {
       method: 'POST',
-      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
       },
@@ -31,32 +29,18 @@ class GenerateManagementService {
   }
 
   async getRunClasses(runId: number): Promise<ScheduledClass[]> {
-    const response = await fetch(
-      `${BASE_URL}/api/schedules/runs/${runId}/classes/`,
-      {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      }
+    const data: ScheduledClass[] = await apiJson(
+      `${BASE_URL()}/api/schedules/runs/${runId}/classes/`
     );
-
-    if (!response.ok) {
-      throw new Error('Unable to fetch generated classes');
-    }
-
-    const data: ScheduledClass[] = await response.json();
 
     return data;
   }
 
   async publishRun(runId: number): Promise<Schedule> {
-    const response = await fetch(
-      `${BASE_URL}/api/admin/schedules/runs/${runId}/publish/`,
+    const response = await apiFetch(
+      `${BASE_URL()}/api/admin/schedules/runs/${runId}/publish/`,
       {
         method: 'PATCH',
-        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -70,6 +54,10 @@ class GenerateManagementService {
 
     return await response.json();
   }
+}
+
+function BASE_URL() {
+  return import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 }
 
 export const generateManagementService = new GenerateManagementService();

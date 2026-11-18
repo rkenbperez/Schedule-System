@@ -16,6 +16,7 @@ export interface User {
   username: string;
   email: string;
   role: UserRole;
+  is_staff: boolean;
   professor?: {
     id: number;
     department: string | null;
@@ -27,13 +28,6 @@ export interface User {
 export interface AuthCredentials {
   email: string;
   password: string;
-}
-
-export interface RegisterCredentials extends AuthCredentials {
-  username: string;
-  role: UserRole;
-  employee_no?: string;
-  full_name?: string;
 }
 
 export interface TimeSlot {
@@ -248,11 +242,11 @@ export interface ImportRecord {
 
 export interface ImportPreviewResponse {
   preview_token: string;
-  records: ImportRecord[];
+  records?: ImportRecord[];
   errors: string[];
-  warnings: string[];
-  created_count: number;
-  updated_count: number;
+  warnings?: string[];
+  created_count?: number;
+  updated_count?: number;
 }
 
 export interface ImportCommitResponse {
@@ -284,10 +278,14 @@ export interface ScheduledClass {
   course_title: string;
   teacher_name: string;
   section_code: string;
+  room: number;
   room_code: string;
+  room_name: string;
+  day: number;
   day_of_week: number;
   start_time: string;
   end_time: string;
+  duration_slots: number;
 }
 
 export interface CreateAssignmentPayload {

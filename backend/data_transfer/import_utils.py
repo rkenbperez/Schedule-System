@@ -42,7 +42,7 @@ OPTIONAL_COLUMNS = {
     "Subjects": ["units"],
     "Sections": [],
     "Professors": ["department_id", "max_daily_hours", "max_consecutive"],
-    "Assignments": [],
+    "Assignments": ["term_id"],
     "Meetings": ["duration_slots"],
     "Availability": ["is_preferred"],
     "BusyBlocks": [],
@@ -484,6 +484,7 @@ class ImportProcessor:
                     defaults = {
                         "name": row["name"],
                         "headcount": parse_int(row["headcount"]),
+                        "term_id": parse_int(row.get("term_id")) or None,
                     }
                     if pk:
                         obj, created = Section.objects.update_or_create(id=pk, defaults=defaults)
@@ -521,9 +522,10 @@ class ImportProcessor:
                 for row in parsed_data.get("Assignments", []):
                     pk = row.get("id")
                     defaults = {
-                        "professor_id": parse_int(row["professor_id"]),
+                        "prof_id": parse_int(row["professor_id"]),
                         "subject_id": parse_int(row["subject_id"]),
                         "section_id": parse_int(row["section_id"]),
+                        "term_id": parse_int(row.get("term_id")) or None,
                     }
                     if pk:
                         obj, created = Assignment.objects.update_or_create(id=pk, defaults=defaults)
@@ -558,7 +560,7 @@ class ImportProcessor:
                 for row in parsed_data.get("Availability", []):
                     pk = row.get("id")
                     defaults = {
-                        "professor_id": parse_int(row["professor_id"]),
+                        "prof_id": parse_int(row["professor_id"]),
                         "day": parse_day(row["day"]),
                         "start_time": parse_time(row["start_time"]),
                         "end_time": parse_time(row["end_time"]),
@@ -578,7 +580,7 @@ class ImportProcessor:
                 for row in parsed_data.get("BusyBlocks", []):
                     pk = row.get("id")
                     defaults = {
-                        "professor_id": parse_int(row["professor_id"]),
+                        "prof_id": parse_int(row["professor_id"]),
                         "day": parse_day(row["day"]),
                         "start_time": parse_time(row["start_time"]),
                         "end_time": parse_time(row["end_time"]),

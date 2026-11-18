@@ -1,14 +1,19 @@
-import type { RegisterCredentials, User } from '../types/Types';
+// client/src/services/Account.service.ts
+import type { User } from '../types/Types';
+import { authStorage } from './authStorage';
+import { apiJson } from './http';
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
 type SignInResult = {
+  access: string;
+  refresh: string;
   user: User;
 };
 
 class AccountService {
   async signIn(email: string, password: string) {
-    const response = await fetch(`${BASE_URL}/api/auth/login/`, {
+    const response = await fetch(`${BASE_URL}/api/auth/jwt/login/`, {
       method: 'POST',
       credentials: 'include',
       headers: {
@@ -23,54 +28,73 @@ class AccountService {
 
     const data: SignInResult = await response.json();
 
-    return data;
-  }
-
-  async signUp(credentials: RegisterCredentials) {
-    const response = await fetch(`${BASE_URL}/api/auth/register/`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(credentials),
-    });
-
-    if (!response.ok) {
-      throw new Error('Unable to create account');
-    }
-
-    const data: SignInResult = await response.json();
+    // Persist tokens so subsequent API calls can authenticate.
+    authStorage.setTokens(data.access, data.refresh);
 
     return data;
   }
 
   async getCurrentUser() {
-    const response = await fetch(`${BASE_URL}/api/auth/me/`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('Not authenticated');
-    }
-
-    const data: User = await response.json();
-
-    return data;
+    return apiJson<User>(`${BASE_URL}/api/auth/jwt/me/`);
   }
 
   async signOut() {
-    await fetch(`${BASE_URL}/api/auth/logout/`, {
+    const refreshToken = authStorage.getRefreshToken();
+
+    if (refreshToken) {
+      // Blacklist the refresh token on the server.
+      await fetch(`${BASE_URL}/api/auth/jwt/logout/`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authStorage.getAccessToken() ?? ''}`,
+        },
+        body: JSON.stringify({ refresh: refreshToken }),
+      });
+    }
+
+    // Always clear client-side tokens.
+    authStorage.clearTokens();
+  }
+
+  async forgotPassword(email: string) {
+    const response = await fetch(`${BASE_URL}/api/auth/password-reset/request/`, {
       method: 'POST',
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
       },
+      body: JSON.stringify({ email }),
     });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || 'Failed to send reset link');
+    }
+
+    return response.json();
+  }
+
+  async resetPassword(token: string, newPassword: string) {
+    const response = await fetch(
+      `${BASE_URL}/api/auth/password-reset/confirm/${token}/`,
+      {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ new_password: newPassword }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || 'Failed to reset password');
+    }
+
+    return response.json();
   }
 }
 

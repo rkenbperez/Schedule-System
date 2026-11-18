@@ -1,5 +1,6 @@
 import { createBrowserRouter } from 'react-router-dom';
 import Login from './pages/login/Login';
+import ResetPasswordPage from './pages/login/ResetPasswordPage';
 import TeacherLayout from './layouts/TeacherLayout';
 import RegistrarLayout from './layouts/RegistrarLayout';
 import StudentLayout from './layouts/StudentLayout';
@@ -14,11 +15,17 @@ import RegistrarDashboardPage from './pages/registrar/RegistrarDashboardPage';
 import RegistrarScheduleManagementPage from './pages/registrar/RegistrarScheduleManagementPage';
 import RegistrarTeacherList from './pages/registrar/RegistrarCreateSchedule';
 import RegistrarTeacherAssignment from './pages/registrar/RegistrarTeacherAssignment';
+import RegistrarTimetablePage from './pages/registrar/RegistrarTimetablePage';
+import EngineTestPage from './pages/registrar/EngineTestPage';
 
 const Router = createBrowserRouter([
   {
     path: '/',
     element: <Login />,
+  },
+  {
+    path: '/reset-password',
+    element: <ResetPasswordPage />,
   },
   {
     path: '/teacher/:name',
@@ -59,6 +66,10 @@ const Router = createBrowserRouter([
         element: <RegistrarDashboardPage />,
       },
       {
+        path: 'dashboard',
+        element: <RegistrarDashboardPage />,
+      },
+      {
         path: 'schedule-management',
         element: <RegistrarScheduleManagementPage />,
       },
@@ -69,6 +80,14 @@ const Router = createBrowserRouter([
       {
         path: 'teachers/:teacherId',
         element: <RegistrarTeacherAssignment />,
+      },
+      {
+        path: 'engine-test',
+        element: <EngineTestPage />,
+      },
+      {
+        path: 'timetable',
+        element: <RegistrarTimetablePage />,
       },
     ],
   },

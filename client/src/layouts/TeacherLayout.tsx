@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useLocation, useParams } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useParams, useNavigate } from 'react-router-dom';
 import {
   Bell,
   Building2,
@@ -12,9 +12,12 @@ import {
   PanelLeftOpen,
 } from 'lucide-react';
 import { useState } from 'react';
+import { useSignOut } from '../hooks/useAuth';
 
 export default function TeacherLayout() {
   const [collapsed, setCollapsed] = useState(false);
+  const signOut = useSignOut();
+  const navigate = useNavigate();
 
   const { pathname } = useLocation();
   const { name: teacherName } = useParams<{ name: string }>();
@@ -98,6 +101,14 @@ export default function TeacherLayout() {
         <div className='border-t border-border p-3'>
           <button
             type='button'
+            onClick={async () => {
+              try {
+                await signOut.mutateAsync();
+              } catch {
+                // ignore errors on logout
+              }
+              navigate('/');
+            }}
             className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-apple-green-700 transition hover:bg-apple-green-100 hover:text-apple-green-800 ${
               collapsed ? 'justify-center px-0' : ''
             }`}

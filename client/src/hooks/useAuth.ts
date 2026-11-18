@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { AuthCredentials, RegisterCredentials, User } from '../types/Types';
+import type { AuthCredentials, User } from '../types/Types';
 import { accountService } from '../services/Account.service';
 
 export const authKeys = {
@@ -12,17 +12,6 @@ export function useSignIn() {
 
   return useMutation({
     mutationFn: ({ email, password }: AuthCredentials) => accountService.signIn(email, password),
-    onSuccess: (data) => {
-      queryClient.setQueryData(authKeys.me, data.user);
-    },
-  });
-}
-
-export function useSignUp() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (credentials: RegisterCredentials) => accountService.signUp(credentials),
     onSuccess: (data) => {
       queryClient.setQueryData(authKeys.me, data.user);
     },
