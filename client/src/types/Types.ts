@@ -184,7 +184,7 @@ export interface Schedule {
   assignment_label: string;
   prof_id: number;
   prof_name: string;
-  subject_id: number;
+  subject_id?: number;
   section_id: number;
   section_name: string;
   subject_label: string;
