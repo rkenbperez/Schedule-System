@@ -1,5 +1,6 @@
-from io import BytesIO
+from io import BytesIO, StringIO
 from copy import copy
+import csv
 from openpyxl import Workbook
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
@@ -8,6 +9,14 @@ from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
 
 from timetable.models import ScheduledClass
+
+
+def _professor_name(prof_user):
+    """Return the professor's display name without the demo_ seed prefix."""
+    name = prof_user.get_full_name() or prof_user.username
+    if name.startswith("demo_"):
+        name = name[len("demo_"):]
+    return name
 
 
 def get_schedule_queryset(run_obj):
@@ -46,8 +55,7 @@ def generate_schedule_excel(run_obj):
     ])
 
     for c in classes:
-        prof_user = c.assignment.prof.user
-        professor_name = prof_user.get_full_name() or prof_user.username
+        professor_name = _professor_name(c.assignment.prof.user)
         ws.append([
             c.get_day_display(),
             c.start_time.strftime("%H:%M"),
@@ -101,9 +109,7 @@ def generate_schedule_pdf(run_obj):
 
     # 2. Populate Data
     for c in classes:
-        prof_user = c.assignment.prof.user
-        professor_name = prof_user.get_full_name() or prof_user.username
-        
+        professor_name = _professor_name(c.assignment.prof.user)
         row = [
             Paragraph(c.get_day_display(), cell_style),
             Paragraph(c.start_time.strftime("%H:%M"), cell_style),
@@ -146,3 +152,40 @@ def generate_schedule_pdf(run_obj):
 
     buf.seek(0)
     return buf
+
+
+def generate_schedule_csv(run_obj):
+    """Generates a CSV file for the given schedule run."""
+    classes = get_schedule_queryset(run_obj)
+
+    buf = StringIO()
+    writer = csv.writer(buf)
+
+    writer.writerow([
+        "Day",
+        "Start",
+        "End",
+        "Subject Code",
+        "Title",
+        "Section",
+        "Professor",
+        "Room",
+        "Mode",
+    ])
+
+    for c in classes:
+        professor_name = _professor_name(c.assignment.prof.user)
+        writer.writerow([
+            c.get_day_display(),
+            c.start_time.strftime("%H:%M"),
+            c.end_time.strftime("%H:%M"),
+            c.assignment.subject.code,
+            c.assignment.subject.title,
+            c.assignment.section.name,
+            professor_name,
+            c.room.name if c.room else "",
+            c.get_mode_display() if c.mode else "",
+        ])
+
+    buf.seek(0)
+    return buf.getvalue().encode("utf-8")

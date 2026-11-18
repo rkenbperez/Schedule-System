@@ -18,7 +18,7 @@ quality so the algorithms can be evaluated on the same input.
 | Backend API and scheduling engines | Implemented |
 | Registrar analytics | Implemented |
 | Spreadsheet import/export | Implemented |
-| Frontend | Planned; not scaffolded |
+| Frontend | Implemented (React + Vite in `client/`) |
 | Student, enrollment, and program features | Not implemented |
 | Production hardening | Planned; see [Deployment](docs/deployment.md) |
 
@@ -50,7 +50,7 @@ See the [changelog](CHANGELOG.md).
 ## Architecture
 
 ```text
-frontend/ (planned)              backend/
+client/                          backend/
 React + Vite SPA  ───────────▶  Django REST API
                                  ├─ users/       authentication & professor profiles
                                  ├─ catalog/     departments, rooms, subjects, sections
@@ -78,6 +78,18 @@ python manage.py runserver
 ```
 
 The API runs at `http://127.0.0.1:8000/api/`.
+
+The React client lives in `client/`:
+
+```bash
+cd client
+npm install
+npm run dev
+```
+
+It runs at `http://localhost:5173/` and talks to the API at
+`http://localhost:8000` (override with `VITE_API_URL` in `client/.env`). From
+the repository root, `npm run dev` starts both the API and the client together.
 
 | Resource | URL |
 | --- | --- |
@@ -120,8 +132,9 @@ python manage.py makemigrations --check --dry-run
 
 ```text
 ├── backend/                    Django REST API and scheduling engine
+├── client/                     React + Vite single-page application
 ├── docs/                       requirements, diagrams, API, operations
-├── frontend/                   frontend placeholder (not implemented)
+├── scripts/                    dev and manage helper scripts
 ├── CHANGELOG.md                release and unreleased changes
 ├── CONTRIBUTING.md             branch, PR, and release workflow
 └── README.md                   this landing page

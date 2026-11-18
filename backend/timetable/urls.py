@@ -12,12 +12,16 @@ from .views import (
     ScheduleGenerateView,
     ScheduleMyView,
     ScheduleRunClassesView,
+    ScheduleRunClassUpdateView,
+    ScheduleRunClassDeleteView,
+    ScheduleRunClearView,
     ScheduleRunDetailView,
     ScheduleRunListView,
     ScheduleRunPublishedClassesView,
     AdminDashboardView,
     AdminStatsView,
     ScheduleRunConflictsView,
+    StudentScheduleView,
     ScheduleRunPublishView,
     BulkCreateSectionsView,
     BulkCreateAssignmentsView,
@@ -47,9 +51,30 @@ urlpatterns = [
     path("schedules/runs", ScheduleRunListView.as_view(), name="schedule-run-list"),
     path("schedules/runs/<int:pk>", ScheduleRunDetailView.as_view(), name="schedule-run-detail"),
     path(
-        "schedules/runs/<int:pk>/classes",
+        "schedules/runs/<int:pk>/classes/",
         ScheduleRunClassesView.as_view(),
         name="schedule-run-classes",
+    ),
+    # Accept the slash-less form as well (legacy clients and tests).
+    path(
+        "schedules/runs/<int:pk>/classes",
+        ScheduleRunClassesView.as_view(),
+        name="schedule-run-classes-no-slash",
+    ),
+    path(
+        "schedules/runs/<int:run_pk>/classes/<int:class_pk>/update/",
+        ScheduleRunClassUpdateView.as_view(),
+        name="schedule-run-class-update",
+    ),
+    path(
+        "schedules/runs/<int:run_pk>/classes/<int:class_pk>/delete/",
+        ScheduleRunClassDeleteView.as_view(),
+        name="schedule-run-class-delete",
+    ),
+    path(
+        "schedules/runs/<int:pk>/classes/clear/",
+        ScheduleRunClearView.as_view(),
+        name="schedule-run-clear",
     ),
     path(
         "schedules/runs/<int:pk>/classes/published",
@@ -80,6 +105,7 @@ urlpatterns = [
     path("public/schedules/<str:term_code>/sections/<int:section_id>/", PublicSectionScheduleView.as_view(), name="public-section-schedule"),
     # Advanced Features
     path("audit/", AuditLogListView.as_view(), name="audit-log"),
+    path("students/schedule/", StudentScheduleView.as_view(), name="student-schedule"),
     path("settings/", GlobalSettingsView.as_view(), name="global-settings"),
     path("settings/<str:key>/", GlobalSettingDetailView.as_view(), name="global-setting-detail"),
     path("admin/schedules/runs/<int:run_id>/conflict-resolutions/", ConflictResolutionListView.as_view(), name="conflict-resolutions"),

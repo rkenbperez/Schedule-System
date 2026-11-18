@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from .models import (
+    MODE_DURATIONS,
     AcademicTerm,
     Assignment,
     AuditLog,
@@ -11,7 +12,6 @@ from .models import (
     MeetingSlot,
     ScheduledClass,
     ScheduleRun,
-    get_mode_duration,
 )
 
 from django.db import transaction
@@ -34,7 +34,7 @@ class MeetingSlotSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if "duration_slots" not in attrs:
             mode = attrs.get("mode", MeetingSlot.Mode.SYNC)
-            attrs["duration_slots"] = get_mode_duration(mode)
+            attrs["duration_slots"] = MODE_DURATIONS.get(mode, 1)
         return attrs
 
 
@@ -71,14 +71,13 @@ class AssignmentSerializer(serializers.ModelSerializer):
     def _replace_meetings(self, assignment, meetings):
         assignment.meetings.all().delete()
         for order, data in enumerate(meetings, start=1):
-            mode = data.get("mode", MeetingSlot.Mode.SYNC)
             MeetingSlot.objects.create(
                 assignment=assignment,
                 order=order,
-                mode=mode,
+                mode=data.get("mode", MeetingSlot.Mode.SYNC),
                 duration_slots=data.get(
                     "duration_slots",
-                    get_mode_duration(mode),
+                    MODE_DURATIONS.get(data.get("mode"), 1),
                 ),
             )
 
@@ -226,6 +225,7 @@ class ScheduledClassSerializer(serializers.ModelSerializer):
     assignment_label = serializers.SerializerMethodField()
     prof_id = serializers.IntegerField(source="assignment.prof_id", read_only=True)
     prof_name = serializers.SerializerMethodField()
+    subject_id = serializers.IntegerField(source="assignment.subject_id", read_only=True)
     section_id = serializers.IntegerField(source="assignment.section_id", read_only=True)
     section_name = serializers.SerializerMethodField()
     subject_label = serializers.SerializerMethodField()
@@ -242,6 +242,7 @@ class ScheduledClassSerializer(serializers.ModelSerializer):
             "assignment_label",
             "prof_id",
             "prof_name",
+            "subject_id",
             "section_id",
             "section_name",
             "subject_label",

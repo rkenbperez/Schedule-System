@@ -28,6 +28,30 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['testserver', 'localhost', '127.0.0.1']
 
+# Authenticate by email instead of username.
+AUTHENTICATION_BACKENDS = [
+    'users.backends.EmailAuthBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
+
+# CORS configuration for frontend dev server. Allow any local dev port so a
+# second Vite instance (5174, 5175, ...) still reaches the API.
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^http://localhost:\d+$",
+    r"^http://127\.0\.0\.1:\d+$",
+]
+CORS_ALLOW_CREDENTIALS = True
+
+# Email configuration (password reset links)
+# Console backend prints emails to stdout during development — no SMTP server needed.
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+DEFAULT_FROM_EMAIL = 'Scheduler <noreply@school.edu>'
+PASSWORD_RESET_TIMEOUT = 60 * 60  # 1 hour in seconds
+FRONTEND_URL = 'http://localhost:5173'
 
 # Application definition
 
@@ -38,6 +62,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'corsheaders',
     'rest_framework',
     'rest_framework.authtoken',
     'rest_framework_simplejwt',
@@ -50,6 +75,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',

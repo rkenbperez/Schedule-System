@@ -1,6 +1,6 @@
 from io import BytesIO
 
-from django.http import FileResponse
+from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import status
@@ -12,11 +12,12 @@ from core.permissions import IsRegistrar
 from timetable.models import ScheduleRun
 
 from .import_utils import processor
-from .export_utils import generate_schedule_excel, generate_schedule_pdf
+from .export_utils import generate_schedule_csv, generate_schedule_excel, generate_schedule_pdf
 
 
 XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 PDF_CONTENT_TYPE = "application/pdf"
+CSV_CONTENT_TYPE = "text/csv"
 ZIP_CONTENT_TYPE = "application/zip"
 
 
@@ -67,6 +68,31 @@ class ScheduleExportPDFView(APIView):
             as_attachment=True,
             filename=f"schedule_run_{pk}.pdf",
             content_type=PDF_CONTENT_TYPE,
+        )
+
+
+class ScheduleExportCSVView(APIView):
+    permission_classes = [IsRegistrar]
+
+    @extend_schema(
+        tags=["exports"],
+        responses={
+            200: OpenApiResponse(
+                description="CSV file containing the schedule for the given run."
+            )
+        }
+    )
+    def get(self, request, pk):
+        run_obj = get_object_or_404(ScheduleRun, pk=pk)
+
+        csv_bytes = generate_schedule_csv(run_obj)
+
+        return HttpResponse(
+            csv_bytes,
+            content_type=f'{CSV_CONTENT_TYPE}; charset=utf-8',
+            headers={
+                'Content-Disposition': f'attachment; filename="schedule_run_{pk}.csv"',
+            },
         )
 
 
