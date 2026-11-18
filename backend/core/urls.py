@@ -24,6 +24,8 @@ router.register("busy-blocks", BusyBlockViewSet, basename="busy-block")
 urlpatterns = [
     path('admin/', admin.site.urls),
     path("api/health/", HealthView.as_view(), name="health"),
+    path("health", HealthView.as_view()),
+    path("health/", HealthView.as_view()),
     path("api/", include("users.urls")),
     path("api/", include("catalog.urls")),
     path("api/", include("timetable.urls")),

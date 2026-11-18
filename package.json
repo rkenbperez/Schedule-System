@@ -1,0 +1,15 @@
+{
+  "name": "schedule-system",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Schedule Maker - Django API backend and React/Vite client",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:client": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
+    "lint": "npm --prefix client run lint",
+    "install:client": "npm --prefix client install",
+    "migrate": "node scripts/manage.mjs migrate",
+    "seed": "node scripts/manage.mjs demo_schedule --reset"
+  }
+}

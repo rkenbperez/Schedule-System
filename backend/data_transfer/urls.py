@@ -1,8 +1,9 @@
 from django.urls import path
 
 from .views import (
-    ScheduleExportView,
+    ScheduleExportCSVView,
     ScheduleExportPDFView,
+    ScheduleExportView,
     ImportPreviewView,
     ImportCommitView,
     TemplateView,
@@ -14,6 +15,11 @@ urlpatterns = [
         "exports/schedules/<int:pk>.xlsx",
         ScheduleExportView.as_view(),
         name="schedule-export",
+    ),
+    path(
+        "exports/schedules/<int:pk>.csv",
+        ScheduleExportCSVView.as_view(),
+        name="schedule-export-csv",
     ),
     path(
         "exports/schedules/<int:pk>.pdf",
