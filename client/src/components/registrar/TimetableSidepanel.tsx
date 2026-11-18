@@ -6,7 +6,6 @@ import { X, Calendar } from 'lucide-react';
 import { useSchedules } from '../../hooks/Schedule.hooks';
 import type { Schedule } from '../../types/Types';
 
-const DAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 
 const TIME_SLOTS = [
@@ -94,7 +93,7 @@ export default function TimetableSidepanel({ isOpen, onClose }: TimetableSidepan
                     Time
                   </div>
                 </div>
-                {DAY_SHORT.map((day, di) => (
+                {DAY_SHORT.map((day) => (
                   <div key={day} className='border-b border-border bg-surface-secondary'>
                     <div className='px-3 py-2 text-[10px] font-semibold text-text-secondary uppercase tracking-wider'>
                       {day}

@@ -143,18 +143,21 @@ export async function apiBlob(input: RequestInfo | URL, init?: RequestInit): Pro
 // `next` is null, concatenating every `results` page into one flat array.
 // Non-paginated responses (plain arrays) are returned as-is.
 export async function apiAllPages<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T[]> {
-  const first = await apiJson<any>(input, init);
+  type PaginatedPage = { results: T[]; next: string | null };
+  const first = await apiJson<T[] | PaginatedPage>(input, init);
 
+  if (Array.isArray(first)) {
+    return first;
+  }
   if (!first || !Array.isArray(first.results) || typeof first.next !== 'string') {
-    // Not paginated — return as-is if it's already an array, else wrap.
-    return Array.isArray(first) ? (first as T[]) : [];
+    return [];
   }
 
   const all: T[] = [...first.results];
   let nextUrl: string | null = first.next;
 
   while (nextUrl) {
-    const page = await apiJson<any>(nextUrl, init);
+    const page: PaginatedPage = await apiJson<PaginatedPage>(nextUrl, init);
     if (!Array.isArray(page.results)) break;
     all.push(...page.results);
     nextUrl = typeof page.next === 'string' ? page.next : null;

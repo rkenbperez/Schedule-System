@@ -2,7 +2,7 @@
 import { ArrowLeft, Check, Clock } from 'lucide-react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useCourseComponents } from '../../hooks/Schedule.hooks';
-import type { CourseAssignmentDetail } from '../../types/Types';
+import type { CourseAssignmentDetail, CourseComponent } from '../../types/Types';
 
 // Mock example data for testing without backend.
 const exampleAssignments: CourseAssignmentDetail[] = [

@@ -17,7 +17,6 @@ import type {
   TeacherListItem,
 } from '../types/Types';
 import { apiAllPages, apiBlob, apiFetch, apiJson } from './http';
-import { authStorage } from './authStorage';
 
 export type StudentScheduleParams = {
   section: string;
@@ -208,7 +207,11 @@ class ScheduleService {
     summary: { creates: number; updates: number };
     errors?: Array<{ sheet: string; row: number; field: string; message: string }>;
   }> {
-    const data = await apiJson(`${BASE_URL}/api/imports/commit/`, {
+    const data = await apiJson<{
+      committed: boolean;
+      summary: { creates: number; updates: number };
+      errors?: Array<{ sheet: string; row: number; field: string; message: string }>;
+    }>(`${BASE_URL}/api/imports/commit/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

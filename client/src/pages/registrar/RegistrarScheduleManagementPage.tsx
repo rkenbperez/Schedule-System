@@ -10,7 +10,6 @@ import {
   useImportPreview,
   useImportCommit,
   useGenerateSchedule,
-  useRunClasses,
   usePublishRun,
 } from '../../hooks/GenerateManagement.hooks';
 import { useQueryClient } from '@tanstack/react-query';
@@ -20,14 +19,12 @@ import type {
   GenerateScheduleResponse,
   ImportPreviewResponse,
   ImportRecord,
-  ScheduledClass,
 } from '../../types/Types';
 
 export default function RegistrarScheduleManagementPage() {
   const importPreview = useImportPreview();
   const importCommit = useImportCommit();
   const generateSchedule = useGenerateSchedule();
-  const runClassesMutation = useRunClasses();
   const publishRun = usePublishRun();
   const queryClient = useQueryClient();
 
@@ -50,7 +47,6 @@ export default function RegistrarScheduleManagementPage() {
     useState<GenerateScheduleResponse | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [runClasses, setRunClasses] = useState<ScheduledClass[]>([]);
 
   const { data: me } = useMe();
 
@@ -144,7 +140,6 @@ export default function RegistrarScheduleManagementPage() {
   const handleGenerate = () => {
     setGenerateError(null);
     setGenerateResult(null);
-    setRunClasses([]);
     setElapsedSeconds(0);
     setIsGenerating(true);
 
@@ -159,16 +154,6 @@ export default function RegistrarScheduleManagementPage() {
       onSuccess: (data) => {
         setGenerateResult(data);
         setIsGenerating(false);
-        if (data.run_id) {
-          runClassesMutation.mutate(data.run_id, {
-            onSuccess: (classesData) => {
-              setRunClasses(classesData);
-            },
-            onError: () => {
-              setGenerateError('Unable to fetch generated classes');
-            },
-          });
-        }
       },
       onError: (err: Error) => {
         setGenerateError(err.message);
@@ -191,7 +176,7 @@ export default function RegistrarScheduleManagementPage() {
     });
   };
 
-  const handleGenerateSchedule = () => {
+  const handleCommitImport = () => {
     importCommit.mutate(previewResult?.preview_token ?? '', {
       onSuccess: () => {
         setImportResult({
@@ -443,23 +428,7 @@ export default function RegistrarScheduleManagementPage() {
             <div className='flex gap-2'>
               <button
                 type='button'
-                onClick={() => {
-                  importCommit.mutate(previewResult?.preview_token ?? '', {
-                    onSuccess: () => {
-                      setImportResult({
-                        type: 'success',
-                        message: 'Import committed successfully.',
-                      });
-                      setPreviewResult(null);
-                    },
-                    onError: (err: Error) => {
-                      setImportResult({
-                        type: 'error',
-                        message: err.message || 'Import commit failed.',
-                      });
-                    },
-                  });
-                }}
+                onClick={handleCommitImport}
                 disabled={
                   !previewResult?.preview_token ||
                   importCommit.isPending
@@ -469,6 +438,13 @@ export default function RegistrarScheduleManagementPage() {
                 {importCommit.isPending ? 'Committing…' : 'Save Import'}
               </button>
             </div>
+            {importResult && (
+              <p
+                className={`mt-3 text-xs ${importResult.type === 'success' ? 'text-apple-green-700' : 'text-red-700'}`}
+              >
+                {importResult.message}
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -614,6 +590,16 @@ export default function RegistrarScheduleManagementPage() {
                   ))}
                 </ul>
               </div>
+            )}
+            {generateResult.feasible && (
+              <button
+                type='button'
+                onClick={handlePublish}
+                disabled={publishRun.isPending}
+                className='flex h-8 items-center justify-center gap-2 rounded-md bg-apple-green-600 px-3 py-1 text-xs font-medium text-white transition hover:bg-apple-green-700 disabled:opacity-60'
+              >
+                {publishRun.isPending ? 'Publishing…' : 'Publish Schedule'}
+              </button>
             )}
           </div>
         )}
