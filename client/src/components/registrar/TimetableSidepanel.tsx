@@ -1,12 +1,13 @@
 // components/registrar/TimetableSidepanel.tsx
-// Slide-out timetable panel showing the current schedule as a day × time grid.
-// Opens from the registrar layout calendar button.
+// Slide-out master schedule panel showing the current schedule as a day × time grid.
+// Opens from the registrar layout calendar button. View-only quick view (no edit modal).
 
+import { useEffect } from 'react';
 import { X, Calendar } from 'lucide-react';
 import { useSchedules } from '../../hooks/Schedule.hooks';
 import type { Schedule } from '../../types/Types';
 
-const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const TIME_SLOTS = [
   { label: '07:00', hour: 7 },
@@ -19,6 +20,11 @@ const TIME_SLOTS = [
   { label: '14:00', hour: 14 },
   { label: '15:00', hour: 15 },
   { label: '16:00', hour: 16 },
+  { label: '17:00', hour: 17 },
+  { label: '18:00', hour: 18 },
+  { label: '19:00', hour: 19 },
+  { label: '20:00', hour: 20 },
+  { label: '21:00', hour: 21 },
 ];
 
 interface TimetableSidepanelProps {
@@ -28,6 +34,17 @@ interface TimetableSidepanelProps {
 
 export default function TimetableSidepanel({ isOpen, onClose }: TimetableSidepanelProps) {
   const { data: schedules, isLoading } = useSchedules({ enabled: isOpen });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -48,7 +65,7 @@ export default function TimetableSidepanel({ isOpen, onClose }: TimetableSidepan
   const totalClasses = (schedules ?? []).length;
 
   return (
-    <div className='fixed inset-0 z-50 flex justify-right'>
+    <div className='fixed inset-0 z-50 flex justify-end'>
       {/* Backdrop */}
       <div
         className='absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity'
@@ -56,7 +73,7 @@ export default function TimetableSidepanel({ isOpen, onClose }: TimetableSidepan
       />
 
       {/* Sidepanel */}
-      <div className='relative w-full max-w-[950px] h-full bg-surface border-l border-border shadow-2xl flex flex-col animate-in slide-in-from-right duration-300'>
+      <div className='relative w-full max-w-[950px] h-full bg-surface border-l border-border shadow-2xl flex flex-col'>
         {/* Header */}
         <div className='flex items-center justify-between border-b border-border px-6 py-4 bg-surface/90 backdrop-blur-md'>
           <div className='flex items-center gap-3'>
@@ -64,14 +81,16 @@ export default function TimetableSidepanel({ isOpen, onClose }: TimetableSidepan
               <Calendar size={18} className='text-apple-green-700' />
             </div>
             <div>
-              <h2 className='text-sm font-semibold text-text-primary'>Timetable</h2>
+              <h2 className='text-sm font-semibold text-text-primary'>Master Schedule</h2>
               <p className='text-xs text-text-secondary'>
                 {totalClasses} scheduled class{totalClasses !== 1 ? 'es' : ''}
               </p>
             </div>
           </div>
           <button
+            type='button'
             onClick={onClose}
+            aria-label='Close Master Schedule'
             className='w-8 h-8 rounded-full bg-surface-secondary hover:bg-border flex items-center justify-center transition'
           >
             <X size={16} className='text-text-secondary' />
@@ -79,47 +98,38 @@ export default function TimetableSidepanel({ isOpen, onClose }: TimetableSidepan
         </div>
 
         {/* Grid */}
-        <div className='flex-1 overflow-auto'>
+        <div className='flex-1 min-h-0 overflow-y-scroll visible-scrollbar'>
           {isLoading ? (
             <div className='flex-1 flex items-center justify-center text-text-secondary py-20'>
-              Loading timetable…
+              Loading master schedule…
             </div>
           ) : (
             <div className='p-6'>
-              <div className='grid grid-cols-6 border border-border'>
-                {/* Header row: time column + day columns */}
-                <div className='col-span-1 border-b border-border bg-surface-secondary'>
+              <div className='grid grid-cols-7 border border-border'>
+                <div className='sticky top-0 z-10 bg-surface-secondary col-span-1 border-b border-border'>
                   <div className='px-3 py-2 text-[10px] font-semibold text-text-secondary text-right uppercase tracking-wider'>
                     Time
                   </div>
                 </div>
                 {DAY_SHORT.map((day) => (
-                  <div key={day} className='border-b border-border bg-surface-secondary'>
-                    <div className='px-3 py-2 text-[10px] font-semibold text-text-secondary uppercase tracking-wider'>
+                  <div key={day} className='sticky top-0 z-10 bg-surface-secondary border-b border-border'>
+                    <div className='px-3 py-2 text-[10px] font-semibold text-text-secondary uppercase tracking-wider text-center'>
                       {day}
                     </div>
                   </div>
                 ))}
               </div>
-
-              {/* Time slot rows */}
               {TIME_SLOTS.map((slot) => (
-                <div key={slot.label} className='grid grid-cols-6 border-b border-border'>
-                  {/* Time label column */}
+                <div key={slot.label} className='grid grid-cols-7 border-b border-border'>
                   <div className='col-span-1 border-r border-border bg-surface/40'>
                     <div className='px-3 py-3 text-[10px] font-medium text-text-secondary text-right'>
                       {slot.label}
                     </div>
                   </div>
-
-                  {/* Day cells */}
                   {DAY_SHORT.map((_, di) => {
                     const classes = classIndex.get(`${di}-${slot.hour}`);
                     return (
-                      <div
-                        key={di}
-                        className='border-r border-border min-h-[52px] group'
-                      >
+                      <div key={di} className='border-r border-border min-h-[52px]'>
                         {classes?.map((cls, idx) => (
                           <div
                             key={idx}
@@ -134,7 +144,6 @@ export default function TimetableSidepanel({ isOpen, onClose }: TimetableSidepan
                   })}
                 </div>
               ))}
-
               {totalClasses === 0 && (
                 <div className='flex flex-col items-center justify-center py-20 text-text-secondary'>
                   <Calendar size={32} className='mb-3 opacity-50' />

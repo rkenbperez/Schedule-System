@@ -1,3 +1,4 @@
+// pages/teacher/TeacherRoomPage.tsx components/RoomCard.tsx
 import type { Room } from '../../../types/Types';
 
 export interface RoomCardProps {
@@ -15,14 +16,16 @@ export default function RoomCard({ room, onClick }: RoomCardProps) {
         <h3 className='text-sm font-semibold text-text-primary truncate'>
           {room.name}
         </h3>
-        <span className='text-xs font-medium bg-apple-green-50 text-apple-green-700 px-2 py-0.5 rounded'>
-          Capacity {room.capacity}
+        <span className='shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[9px] font-medium bg-apple-green-50 text-apple-green-700'>
+          Cap {room.capacity}
         </span>
       </div>
       <div className='flex items-center gap-2 text-xs text-text-tertiary mb-2'>
         <span>{room.building}</span>
         {room.department_name && (
-          <span className='text-[10px]'>· {room.department_name}</span>
+          <span className='text-[10px] text-text-tertiary'>
+            {room.department_name}
+          </span>
         )}
       </div>
     </div>

@@ -1,7 +1,6 @@
 from rest_framework import serializers
 
 from .models import (
-    MODE_DURATIONS,
     AcademicTerm,
     Assignment,
     AuditLog,
@@ -12,6 +11,7 @@ from .models import (
     MeetingSlot,
     ScheduledClass,
     ScheduleRun,
+    get_mode_duration,
 )
 
 from django.db import transaction
@@ -34,7 +34,7 @@ class MeetingSlotSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if "duration_slots" not in attrs:
             mode = attrs.get("mode", MeetingSlot.Mode.SYNC)
-            attrs["duration_slots"] = MODE_DURATIONS.get(mode, 1)
+            attrs["duration_slots"] = get_mode_duration(mode)
         return attrs
 
 
@@ -77,7 +77,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
                 mode=data.get("mode", MeetingSlot.Mode.SYNC),
                 duration_slots=data.get(
                     "duration_slots",
-                    MODE_DURATIONS.get(data.get("mode"), 1),
+                    get_mode_duration(data.get("mode")),
                 ),
             )
 
@@ -232,6 +232,9 @@ class ScheduledClassSerializer(serializers.ModelSerializer):
     room_name = serializers.SerializerMethodField()
     end_time = serializers.TimeField(read_only=True)
     mode_display = serializers.CharField(source="get_mode_display", read_only=True)
+    department_name = serializers.CharField(
+        source="assignment.prof.department.name", read_only=True, allow_null=True
+    )
 
     class Meta:
         model = ScheduledClass
@@ -255,6 +258,7 @@ class ScheduledClassSerializer(serializers.ModelSerializer):
             "duration_slots",
             "mode",
             "mode_display",
+            "department_name",
             "term",
         ]
 
