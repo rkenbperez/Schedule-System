@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'teacher';
+export type UserRole = 'registrar' | 'professor' | 'user';
 
 export interface TeacherProfile {
   id: number;
@@ -15,6 +15,8 @@ export interface User {
   id: number;
   username: string;
   email: string;
+  first_name?: string;
+  last_name?: string;
   role: UserRole;
   is_staff: boolean;
   professor?: {
@@ -218,10 +220,12 @@ export interface RegistrarSchedulePayload {
 
 export interface ScheduleCreatePayload {
   course_assignment: number;
-  course_component: number;
+  course_component?: number;
   room: number;
   start_time: string;
   day_of_week: number;
+  duration_slots?: number;
+  mode?: string;
 }
 
 export interface ImportRecord {
@@ -241,13 +245,25 @@ export interface ImportRecord {
   error_message: string | null;
 }
 
+export interface ImportPreviewItem {
+  row: number;
+  action: 'create' | 'update' | 'error';
+  errors: string[];
+  data: Record<string, unknown>;
+}
+
 export interface ImportPreviewResponse {
   preview_token: string;
-  records?: ImportRecord[];
-  errors: string[];
-  warnings?: string[];
-  created_count?: number;
-  updated_count?: number;
+  valid: boolean;
+  summary: {
+    creates: number;
+    updates: number;
+    skipped: number;
+    errors: number;
+  };
+  details: Array<{ model: string; action: string; count: number }>;
+  preview_items: Record<string, ImportPreviewItem[]>;
+  errors: Array<{ sheet: string; row: number; field: string; message: string }>;
 }
 
 export interface ImportCommitResponse {
@@ -259,6 +275,7 @@ export interface ImportCommitResponse {
 export interface GenerateSchedulePayload {
   algorithm: 'greedy' | 'min_conflicts' | 'backtracking';
   time_limit_s?: number;
+  term_id?: number;
 }
 
 export interface GenerateScheduleResponse {
@@ -290,11 +307,11 @@ export interface ScheduledClass {
 }
 
 export interface CreateAssignmentPayload {
-  academic_term: number;
+  academic_term?: number;
   teacher: number;
   course: number;
   section: number;
-  type: 'lecture' | 'laboratory';
+  type: 'sync' | 'lab' | 'async';
 }
 
 export interface ProfessorAssignment {
@@ -319,4 +336,20 @@ export interface ProfessorProfile {
   max_consecutive: number;
   active_term: { id: number; code: string; name: string } | null;
   assignments: ProfessorAssignment[];
+}
+
+export interface PublicClass {
+  id: number;
+  day: number;
+  day_name: string;
+  start_time: string;
+  end_time: string;
+  duration_slots: number;
+  subject: { code: string; title: string };
+  section: { id: number; name: string; program: string | null; year_level: number | null };
+  room: { id: number; name: string; building: string } | null;
+  professor: { id: number; name: string; department: string | null };
+  mode: string | null;
+  mode_display: string | null;
+  department_name?: string | null;
 }

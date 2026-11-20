@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
 from datetime import timedelta
 
@@ -171,6 +172,18 @@ DATABASES = {
         'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
+
+# PostgreSQL support (matches client/.env DB_* variables). Falls back to
+# sqlite3 when no Postgres host is configured.
+if os.environ.get("DB_HOST"):
+    DATABASES["default"] = {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.environ.get("DB_NAME", "scheduler"),
+        "USER": os.environ.get("DB_USER", "postgre"),
+        "PASSWORD": os.environ.get("DB_PASSWORD", "12345"),
+        "HOST": os.environ.get("DB_HOST", "localhost"),
+        "PORT": os.environ.get("DB_PORT", "5432"),
+    }
 
 
 # Password validation

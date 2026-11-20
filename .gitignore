@@ -25,6 +25,7 @@ env/
 # Environment Variables & Secrets
 # ==========================================
 .env
+.envrc
 .secret
 *.env.local
 
@@ -56,8 +57,10 @@ coverage.xml
 # ==========================================
 .vscode/
 .idea/
+.obsidian/
 *.swp
 *.swo
 .DS_Store
 node_modules/
 dist/
+package-lock.json

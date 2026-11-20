@@ -10,7 +10,7 @@ from .models import PasswordResetToken, Professors
 
 class ProfessorsSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
-    full_name = serializers.CharField(source="user.get_full_name", read_only=True)
+    full_name = serializers.SerializerMethodField(read_only=True)
     department_name = serializers.CharField(
         source="department.name", read_only=True, default=""
     )
@@ -27,6 +27,10 @@ class ProfessorsSerializer(serializers.ModelSerializer):
             "max_daily_hours",
             "max_consecutive",
         ]
+
+    def get_full_name(self, obj):
+        full_name = obj.user.get_full_name().strip()
+        return full_name or obj.user.username
 
 
 class LoginSerializer(TokenObtainPairSerializer):
@@ -47,6 +51,16 @@ class LoginSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         data = super().validate(attrs)
+        role = "registrar" if self.user.is_staff else ("professor" if hasattr(self.user, "prof") else "user")
+        prof_data = None
+        if hasattr(self.user, "prof"):
+            prof = self.user.prof
+            prof_data = {
+                "id": prof.id,
+                "department": prof.department.name if prof.department else "",
+                "max_daily_hours": prof.max_daily_hours,
+                "max_consecutive": prof.max_consecutive,
+            }
         data["user"] = {
             "id": self.user.id,
             "username": self.user.username,
@@ -54,6 +68,8 @@ class LoginSerializer(TokenObtainPairSerializer):
             "first_name": self.user.first_name,
             "last_name": self.user.last_name,
             "is_staff": self.user.is_staff,
+            "role": role,
+            "professor": prof_data,
         }
         return data
 

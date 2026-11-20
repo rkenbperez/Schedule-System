@@ -60,6 +60,16 @@ class AssignmentViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(prof_id=int(prof_id))
             except (TypeError, ValueError):
                 pass
+        term_id = self.request.query_params.get("term")
+        if term_id:
+            try:
+                qs = qs.filter(term_id=int(term_id))
+            except (TypeError, ValueError):
+                pass
+        else:
+            active_term = AcademicTerm.objects.filter(is_active=True).first()
+            if active_term is not None:
+                qs = qs.filter(term=active_term)
         return qs
 
 
@@ -185,7 +195,17 @@ class ScheduleGenerateView(APIView):
             )
 
         term = AcademicTerm.objects.filter(is_active=True).first()
-        if term is None:
+
+        term_id = request.data.get("term_id")
+        if term_id:
+            try:
+                term = AcademicTerm.objects.get(pk=int(term_id))
+            except (AcademicTerm.DoesNotExist, ValueError, TypeError):
+                return Response(
+                    {"error": f"Academic term {term_id} not found."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        elif term is None:
             return Response(
                 {"error": "No active academic term found. Please set a term as active."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -287,6 +307,80 @@ class ScheduleRunClassesView(APIView):
 
         return Response(ScheduledClassSerializer(qs, many=True).data)
 
+    def post(self, request, pk):
+        """Create a single scheduled class in a run (registrar only)."""
+        if not request.user.is_staff:
+            return Response(
+                {"error": "Registrar only."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        run_obj = get_object_or_404(ScheduleRun, pk=pk)
+
+        assignment_id = request.data.get("course_assignment") or request.data.get(
+            "assignment"
+        )
+        room_id = request.data.get("room")
+        day = request.data.get("day_of_week")
+        if day is None:
+            day = request.data.get("day")
+        start_time = request.data.get("start_time")
+        duration_slots = request.data.get("duration_slots", 1)
+        mode = request.data.get("mode", None)
+
+        if not assignment_id or room_id is None or day is None or not start_time:
+            return Response(
+                {
+                    "error": "course_assignment, room, day_of_week, and start_time are required."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            assignment = Assignment.objects.get(pk=assignment_id)
+        except Assignment.DoesNotExist:
+            return Response(
+                {"error": "Assignment not found."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        room = None
+        if room_id not in (None, ""):
+            try:
+                room = Room.objects.get(pk=room_id)
+            except Room.DoesNotExist:
+                return Response(
+                    {"error": "Room not found."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        try:
+            day = int(day)
+            duration_slots = int(duration_slots)
+            start_time = dtime.fromisoformat(str(start_time))
+        except (TypeError, ValueError):
+            return Response(
+                {
+                    "error": "day_of_week and duration_slots must be integers, and start_time must be HH:MM."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        scheduled_class = ScheduledClass.objects.create(
+            run=run_obj,
+            assignment=assignment,
+            room=room,
+            day=day,
+            start_time=start_time,
+            duration_slots=duration_slots,
+            mode=mode,
+            term=run_obj.term,
+        )
+        return Response(
+            ScheduledClassSerializer(scheduled_class).data,
+            status=status.HTTP_201_CREATED,
+        )
+
     def _int_param(self, name, raw):
         try:
             return int(raw)
@@ -312,15 +406,36 @@ class ScheduleMyView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        run_obj = ScheduleRun.objects.filter(term__is_active=True).order_by("-created_at").first()
+        # Resolve the selected term (?term=<id>) or fall back to the active term.
+        term_id = request.query_params.get("term")
+        term = None
+        if term_id:
+            try:
+                term = AcademicTerm.objects.get(pk=int(term_id))
+            except (AcademicTerm.DoesNotExist, ValueError, TypeError):
+                pass
+        if term is None:
+            term = AcademicTerm.objects.filter(is_active=True).first()
+
+        run_obj = (
+            ScheduleRun.objects.filter(term=term).order_by("-created_at").first()
+            if term
+            else None
+        )
         if run_obj is None:
             return Response([])
 
         if request.user.is_staff:
-            # Registrar sees all classes in the active term run
+            # Registrar sees all classes in the selected term run
             qs = run_obj.classes.select_related(
                 "assignment__prof", "assignment__subject", "assignment__section", "room"
             )
+            prof_id = request.query_params.get("prof")
+            if prof_id:
+                try:
+                    qs = qs.filter(assignment__prof_id=int(prof_id))
+                except (TypeError, ValueError):
+                    pass
         elif hasattr(request.user, "prof"):
             # Professor sees only their classes
             prof = request.user.prof
@@ -396,16 +511,36 @@ class AdminDashboardView(APIView):
         from django.utils import timezone
         from datetime import timedelta
 
-        active_term = AcademicTerm.objects.filter(is_active=True).first()
+        # Resolve the selected term (?term=<id>) or fall back to the active term.
+        term_id = request.query_params.get("term")
+        active_term = None
+        if term_id:
+            try:
+                active_term = AcademicTerm.objects.get(pk=int(term_id))
+            except (AcademicTerm.DoesNotExist, ValueError, TypeError):
+                active_term = None
+        if active_term is None:
+            active_term = AcademicTerm.objects.filter(is_active=True).first()
 
-        # Basic counts
-        total_departments = Department.objects.count()
-        total_rooms = Room.objects.count()
-        total_sections = Section.objects.count()
-        total_subjects = Subject.objects.count()
-        total_professors = Professors.objects.count()
-        total_assignments = Assignment.objects.count()
-        total_runs = ScheduleRun.objects.count()
+        # Basic counts (filtered by the selected/active term when available).
+        if active_term is not None:
+            total_departments = Department.objects.count()
+            total_rooms = Room.objects.count()
+            total_sections = Section.objects.filter(term=active_term).count()
+            total_subjects = Subject.objects.count()
+            total_professors = Professors.objects.filter(
+                assignments__term=active_term
+            ).distinct().count()
+            total_assignments = Assignment.objects.filter(term=active_term).count()
+            total_runs = ScheduleRun.objects.filter(term=active_term).count()
+        else:
+            total_departments = Department.objects.count()
+            total_rooms = Room.objects.count()
+            total_sections = Section.objects.count()
+            total_subjects = Subject.objects.count()
+            total_professors = Professors.objects.count()
+            total_assignments = Assignment.objects.count()
+            total_runs = ScheduleRun.objects.count()
 
         # Active term specific counts
         if active_term:
@@ -1036,15 +1171,38 @@ class ProfessorProfileView(APIView):
 
 
 @extend_schema(tags=["professor"])
+class ProfessorMyAssignmentsView(APIView):
+    """Assignments for the current professor in the active term."""
+    permission_classes = [IsProfessor]
+
+    def get(self, request):
+        prof = request.user.prof
+        active_term = AcademicTerm.objects.filter(is_active=True).first()
+        assignments = Assignment.objects.filter(prof=prof).select_related(
+            "prof", "subject", "section", "term"
+        ).prefetch_related("meetings")
+
+        if active_term:
+            assignments = assignments.filter(term=active_term)
+
+        serializer = AssignmentSerializer(assignments, many=True)
+        return Response(serializer.data)
+
+
+@extend_schema(tags=["professor"])
 class ProfessorScheduleView(APIView):
     """Professor's weekly grid schedule for active term."""
     permission_classes = [IsProfessor]
 
     def get(self, request):
         prof = request.user.prof
-        run_obj = ScheduleRun.objects.filter(
-            term__is_active=True
-        ).order_by("-created_at").first()
+        run_id = request.query_params.get("run_id")
+        if run_id:
+            run_obj = get_object_or_404(ScheduleRun, pk=run_id)
+        else:
+            run_obj = ScheduleRun.objects.filter(
+                term__is_active=True
+            ).order_by("-created_at").first()
 
         if run_obj is None:
             return Response({
@@ -1382,6 +1540,20 @@ class PublicTermsView(APIView):
         return Response(terms)
 
 
+def _program_from_section_name(name):
+    """Derive a section's program (e.g. 'BSCS', 'BSIT') from its name.
+
+    Section names embed the program as a leading alphabetic prefix:
+    'BSCS 3-A' -> 'BSCS', 'BSIT-3A' -> 'BSIT', 'TEST-1A' -> 'TEST'.
+    The Section.program database column is not reliably populated, so we
+    parse it from the name here.
+    """
+    import re
+
+    m = re.match(r'^([A-Za-z]+)', name or '')
+    return m.group(1) if m else None
+
+
 @extend_schema(tags=["public"])
 class PublicTermScheduleView(APIView):
     """Weekly grid schedule for a published term."""
@@ -1412,7 +1584,11 @@ class PublicTermScheduleView(APIView):
             })
 
         classes = run_obj.classes.select_related(
-            "assignment__prof__user", "assignment__subject", "assignment__section", "room"
+            "assignment__prof__user",
+            "assignment__prof__department",
+            "assignment__subject",
+            "assignment__section",
+            "room",
         ).order_by("day", "start_time")
 
         schedule_data = []
@@ -1442,8 +1618,14 @@ class PublicTermScheduleView(APIView):
                 "professor": {
                     "id": c.assignment.prof.id,
                     "name": c.assignment.prof.user.get_full_name() or c.assignment.prof.user.username,
+                    "department": (
+                        c.assignment.prof.department.name
+                        if c.assignment.prof.department
+                        else None
+                    ),
                 },
                 "mode": c.mode,
+                "department_name": _program_from_section_name(c.assignment.section.name),
                 "mode_display": c.get_mode_display() if c.mode else None,
             })
 
@@ -1496,7 +1678,7 @@ class PublicTermSectionsView(APIView):
                 "id": s.id,
                 "name": s.name,
                 "headcount": s.headcount,
-                "program": s.program,
+                "program": _program_from_section_name(s.name),
                 "year_level": s.year_level,
                 "term": {
                     "id": s.term.id,
@@ -1582,6 +1764,11 @@ class PublicSectionScheduleView(APIView):
                 "professor": {
                     "id": c.assignment.prof.id,
                     "name": c.assignment.prof.user.get_full_name() or c.assignment.prof.user.username,
+                    "department": (
+                        c.assignment.prof.department.name
+                        if c.assignment.prof.department
+                        else None
+                    ),
                 },
                 "mode": c.mode,
                 "mode_display": c.get_mode_display() if c.mode else None,
@@ -1819,7 +2006,15 @@ class ScheduleRunClassUpdateView(APIView):
             scheduled_class.day = request.data["day"]
 
         if "start_time" in request.data:
-            scheduled_class.start_time = request.data["start_time"]
+            try:
+                scheduled_class.start_time = dtime.fromisoformat(
+                    str(request.data["start_time"])
+                )
+            except (TypeError, ValueError):
+                return Response(
+                    {"error": "start_time must be in HH:MM format."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         if "duration_slots" in request.data:
             scheduled_class.duration_slots = request.data["duration_slots"]

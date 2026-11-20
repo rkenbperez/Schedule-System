@@ -1,5 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ScheduleCreatePayload } from '../types/Types';
+import type {
+  CreateAssignmentPayload,
+  GenerateSchedulePayload,
+  GenerateScheduleResponse,
+  ScheduleCreatePayload,
+} from '../types/Types';
 import { scheduleService } from '../services/Schedule.service';
 
 export function useSchedules(opts?: { teacherId?: number; enabled?: boolean }) {
@@ -20,7 +25,7 @@ export function useCourseAssignments(opts?: {
 
   return useQuery({
     queryKey: ['course-assignments', teacherId],
-    queryFn: () => scheduleService.getCourseAssignments(teacherId),
+    queryFn: () => scheduleService.getMyAssignments(),
     enabled: opts?.enabled ?? true,
   });
 }
@@ -105,26 +110,32 @@ export function useStudentSchedule(
   });
 }
 
-export function useTeachers(opts?: { enabled?: boolean }) {
+export function useTeachers(opts?: { termId?: number | null; enabled?: boolean }) {
+  const termId = opts?.termId ?? undefined;
+
   return useQuery({
-    queryKey: ['teachers'],
-    queryFn: () => scheduleService.getTeachers(),
+    queryKey: ['teachers', termId],
+    queryFn: () => scheduleService.getTeachers(termId),
     enabled: opts?.enabled ?? true,
   });
 }
 
-export function useAllAssignments(opts?: { enabled?: boolean }) {
+export function useAllAssignments(opts?: { termId?: number | null; enabled?: boolean }) {
+  const termId = opts?.termId ?? undefined;
+
   return useQuery({
-    queryKey: ['all-assignments'],
-    queryFn: () => scheduleService.getAllAssignments(),
+    queryKey: ['all-assignments', termId],
+    queryFn: () => scheduleService.getAllAssignments(termId),
     enabled: opts?.enabled ?? true,
   });
 }
 
-export function useAllSchedules(opts?: { enabled?: boolean }) {
+export function useAllSchedules(opts?: { termId?: number | null; enabled?: boolean }) {
+  const termId = opts?.termId ?? undefined;
+
   return useQuery({
-    queryKey: ['all-schedules'],
-    queryFn: () => scheduleService.getAllSchedules(),
+    queryKey: ['all-schedules', termId],
+    queryFn: () => scheduleService.getAllSchedules(termId),
     enabled: opts?.enabled ?? true,
   });
 }
@@ -148,10 +159,31 @@ export function useProfessorSchedule(opts?: {
   });
 }
 
+export function useUsers(opts?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['users'],
+    queryFn: () => scheduleService.getUsers(),
+    enabled: opts?.enabled ?? true,
+  });
+}
+
+export function useDepartments(opts?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['departments'],
+    queryFn: () => scheduleService.getDepartments(),
+    enabled: opts?.enabled ?? true,
+  });
+}
+
 export function useImportCommit() {
   return useMutation({
-    mutationFn: (previewToken: string) =>
-      scheduleService.importCommit(previewToken),
+    mutationFn: ({
+      previewToken,
+      selectedKeys,
+    }: {
+      previewToken: string;
+      selectedKeys?: string[];
+    }) => scheduleService.importCommit(previewToken, selectedKeys),
   });
 }
 
@@ -159,8 +191,13 @@ export function useCreateRegistrarSchedule() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (payload: ScheduleCreatePayload) =>
-      scheduleService.createSchedule(payload),
+    mutationFn: ({
+      runId,
+      payload,
+    }: {
+      runId: number;
+      payload: ScheduleCreatePayload;
+    }) => scheduleService.createSchedule(runId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['all-schedules'] });
       queryClient.invalidateQueries({ queryKey: ['schedules'] });
@@ -173,11 +210,458 @@ export function useCreateSchedule() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (payload: ScheduleCreatePayload) =>
-      scheduleService.createSchedule(payload),
+    mutationFn: ({
+      runId,
+      payload,
+    }: {
+      runId: number;
+      payload: ScheduleCreatePayload;
+    }) => scheduleService.createSchedule(runId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedules'] });
       queryClient.invalidateQueries({ queryKey: ['course-assignments'] });
     },
+  });
+}
+
+/* ---------- Registrar hooks (moved from Registrar.hooks.ts and GenerateManagement.hooks.ts) ---------- */
+
+export function useCourseAssignmentsByTeacher(opts?: {
+  teacherId?: number;
+  enabled?: boolean;
+}) {
+  const teacherId = opts?.teacherId;
+
+  return useQuery({
+    queryKey: ['registrar-course-assignments', teacherId],
+    queryFn: () => scheduleService.getCourseAssignments(teacherId),
+    enabled: opts?.enabled ?? true,
+  });
+}
+
+export function useCreateAssignment() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: CreateAssignmentPayload) =>
+      scheduleService.createAssignment(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['registrar-all-assignments'] });
+      queryClient.invalidateQueries({ queryKey: ['course-assignments'] });
+    },
+  });
+}
+
+export function useImportPreview() {
+  return useMutation({
+    mutationFn: (file: File) => scheduleService.importPreview(file),
+  });
+}
+
+export function useImportTemplate() {
+  return useMutation({
+    mutationFn: (format: 'xlsx' | 'csv') =>
+      scheduleService.downloadImportTemplate(format),
+  });
+}
+
+export function useGenerateSchedule() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: GenerateSchedulePayload) =>
+      scheduleService.generateSchedule(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['registrar-all-schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['registrar-all-assignments'] });
+    },
+  });
+}
+
+export function useRunClasses() {
+  return useMutation({
+    mutationFn: (runId: number) =>
+      scheduleService.getRunClasses(runId),
+  });
+}
+
+export function usePublishRun() {
+  return useMutation({
+    mutationFn: (runId: number) =>
+      scheduleService.publishRun(runId),
+  });
+}
+
+export function useUpdateScheduledClass() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      runId,
+      classId,
+      data,
+    }: {
+      runId: number;
+      classId: number;
+      data: {
+        room?: number | null;
+        day?: number;
+        start_time?: string;
+        duration_slots?: number;
+        mode?: string | null;
+        prof_id?: number;
+        subject_id?: number;
+        section_id?: number;
+      };
+    }) =>
+      scheduleService.updateScheduledClass(runId, classId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['registrar-all-schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['schedules'] });
+    },
+  });
+}
+
+export function useDeleteScheduledClass() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      runId,
+      classId,
+    }: {
+      runId: number;
+      classId: number;
+    }) => scheduleService.deleteScheduledClass(runId, classId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['registrar-all-schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['schedules'] });
+    },
+  });
+}
+
+/* ---------- Master Data CRUD hooks ---------- */
+
+export function useCreateRoom() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      name: string;
+      capacity: number;
+      department?: number | null;
+      building?: string;
+    }) => scheduleService.createRoom(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+    },
+  });
+}
+
+export function useUpdateRoom() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: {
+      id: number;
+      payload: Partial<{
+        name: string;
+        capacity: number;
+        department: number | null;
+        building: string;
+      }>;
+    }) => scheduleService.updateRoom(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+    },
+  });
+}
+
+export function useDeleteRoom() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => scheduleService.deleteRoom(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+    },
+  });
+}
+
+export function useCreateSubject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { code: string; title: string; units: number }) =>
+      scheduleService.createSubject(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['courses'] });
+    },
+  });
+}
+
+export function useUpdateSubject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: {
+      id: number;
+      payload: Partial<{ code: string; title: string; units: number }>;
+    }) => scheduleService.updateSubject(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['courses'] });
+    },
+  });
+}
+
+export function useDeleteSubject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => scheduleService.deleteSubject(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['courses'] });
+    },
+  });
+}
+
+export function useCreateSection() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      name: string;
+      headcount: number;
+      program?: string | null;
+      year_level?: number | null;
+      term_id?: number | null;
+    }) => scheduleService.createSection(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sections'] });
+    },
+  });
+}
+
+export function useUpdateSection() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: {
+      id: number;
+      payload: Partial<{
+        name: string;
+        headcount: number;
+        program: string | null;
+        year_level: number | null;
+        term: number | null;
+      }>;
+    }) => scheduleService.updateSection(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sections'] });
+    },
+  });
+}
+
+export function useDeleteSection() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => scheduleService.deleteSection(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sections'] });
+    },
+  });
+}
+
+export function useCreateProfessor() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      user_id: number;
+      department_id?: number | null;
+      max_daily_hours?: number;
+      max_consecutive?: number;
+    }) => scheduleService.createProfessor(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teachers'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+}
+
+export function useUpdateProfessor() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: {
+      id: number;
+      payload: Partial<{
+        user_id: number;
+        department_id: number | null;
+        max_daily_hours: number;
+        max_consecutive: number;
+      }>;
+    }) => scheduleService.updateProfessor(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teachers'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+}
+
+export function useDeleteProfessor() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => scheduleService.deleteProfessor(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teachers'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+}
+
+export function useClearScheduledClasses() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (runId: number) =>
+      scheduleService.clearScheduledClasses(runId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['registrar-all-schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['schedules'] });
+    },
+  });
+}
+
+export function useExportSchedule() {
+  return useMutation({
+    mutationFn: (params: {
+      runId: number;
+      format: string;
+    }) => scheduleService.exportSchedule(params),
+  });
+}
+
+/* ---------- Algorithm comparison hooks ---------- */
+
+export function useCompareAlgorithms() {
+  const generateSchedule = useGenerateSchedule();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      timeLimitS,
+      termId,
+    }: {
+      timeLimitS?: number;
+      termId?: number;
+    }) => {
+      const algorithms: GenerateSchedulePayload['algorithm'][] = [
+        'greedy',
+        'min_conflicts',
+        'backtracking',
+      ];
+      const results: GenerateScheduleResponse[] = [];
+
+      for (const algorithm of algorithms) {
+        const result = await generateSchedule.mutateAsync({
+          algorithm,
+          time_limit_s: timeLimitS,
+          term_id: termId,
+        });
+        results.push(result);
+      }
+
+      return results;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['registrar-all-schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['registrar-all-assignments'] });
+    },
+  });
+}
+
+/* ---------- Conflict resolution hooks ---------- */
+
+const BACKEND_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+
+export function useGetConflicts() {
+  return useMutation({
+    mutationFn: async (runId: number) => {
+      const response = await fetch(
+        `${BACKEND_URL}/api/admin/schedules/runs/${runId}/conflicts/`,
+      );
+      if (!response.ok) throw new Error('Failed to fetch conflicts');
+      return response.json();
+    },
+  });
+}
+
+export function useResolveConflict() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      conflictId,
+      resolutionType,
+      resolutionDetails,
+    }: {
+      conflictId: number;
+      resolutionType: string;
+      resolutionDetails?: Record<string, unknown>;
+    }) => {
+      const response = await fetch(
+        `/api/admin/conflict-resolutions/${conflictId}/resolve/`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            resolution_type: resolutionType,
+            resolution_details: resolutionDetails,
+          }),
+        },
+      );
+      if (!response.ok) throw new Error('Failed to resolve conflict');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['registrar-all-schedules'] });
+    },
+  });
+}
+
+export function useIgnoreConflict() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (conflictId: number) => {
+      const response = await fetch(
+        `/api/admin/conflict-resolutions/${conflictId}/ignore/`,
+        {
+          method: 'POST',
+        },
+      );
+      if (!response.ok) throw new Error('Failed to ignore conflict');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['registrar-all-schedules'] });
+    },
+  });
+}
+
+/* ---------- Public Schedule Hooks (no auth required) ---------- */
+
+export function usePublicTerms(opts?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['public-terms'],
+    queryFn: () => scheduleService.getPublicTerms(),
+    enabled: opts?.enabled ?? true,
+  });
+}
+
+export function usePublicTermSchedule(termCode: string, opts?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['public-term-schedule', termCode],
+    queryFn: () => scheduleService.getPublicTermSchedule(termCode),
+    enabled: (opts?.enabled ?? true) && !!termCode,
+  });
+}
+
+export function usePublicTermSections(termCode: string, opts?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['public-term-sections', termCode],
+    queryFn: () => scheduleService.getPublicTermSections(termCode),
+    enabled: (opts?.enabled ?? true) && !!termCode,
   });
 }

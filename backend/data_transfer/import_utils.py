@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
 
 from django.core.cache import cache
@@ -54,6 +55,279 @@ VALID_MODES = {"async", "sync", "lab"}
 VALID_DAYS = {0, 1, 2, 3, 4, 5}
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
+# The import parser accepts an optional "id" column on every sheet so existing
+# records can be updated. Include it in downloaded templates even though it is
+# not part of ALL_COLUMNS (which drives validation, not the workbook layout).
+TEMPLATE_COLUMNS = {name: ["id", *ALL_COLUMNS[name]] for name in SHEET_MODELS}
+
+# Realistic CvSU - Imus (Computer Science) sample rows. Sample ids are
+# deliberately high so they are easy to replace; cross-references must stay
+# consistent because validation checks them before committing.
+TEMPLATE_SAMPLE_ROWS = {
+    "Departments": [
+        {"id": 9001, "name": "Department of Computer Science"},
+        {"id": 9002, "name": "Department of Information Technology"},
+    ],
+    "Rooms": [
+        {
+            "id": 9101,
+            "name": "CS Lecture Room 1",
+            "capacity": 50,
+            "department_id": 9001,
+        },
+        {
+            "id": 9102,
+            "name": "CS Computer Laboratory 1",
+            "capacity": 40,
+            "department_id": 9001,
+        },
+        {
+            "id": 9103,
+            "name": "CS Computer Laboratory 2",
+            "capacity": 35,
+            "department_id": 9001,
+        },
+        {
+            "id": 9104,
+            "name": "IT Lecture Room 1",
+            "capacity": 45,
+            "department_id": 9002,
+        },
+    ],
+    "Subjects": [
+        {"id": 9201, "code": "CS 101", "title": "Introduction to Computing", "units": 3},
+        {"id": 9202, "code": "CS 102", "title": "Computer Programming 1", "units": 3},
+        {
+            "id": 9203,
+            "code": "CS 201",
+            "title": "Data Structures and Algorithms",
+            "units": 3,
+        },
+        {"id": 9204, "code": "CS 301", "title": "Operating Systems", "units": 3},
+        {
+            "id": 9205,
+            "code": "CS 302",
+            "title": "Database Management Systems",
+            "units": 3,
+        },
+        {"id": 9206, "code": "CS 401", "title": "Software Engineering", "units": 3},
+    ],
+    "Sections": [
+        {"id": 9301, "name": "BSCS 3-A", "headcount": 40},
+        {"id": 9302, "name": "BSCS 3-B", "headcount": 38},
+        {"id": 9303, "name": "BSCS 2-A", "headcount": 42},
+    ],
+    "Professors": [
+        {
+            "id": 9501,
+            "user_id": 1,
+            "department_id": 9001,
+            "max_daily_hours": 8,
+            "max_consecutive": 4,
+        },
+        {
+            "id": 9502,
+            "user_id": 2,
+            "department_id": 9001,
+            "max_daily_hours": 8,
+            "max_consecutive": 4,
+        },
+    ],
+    "Assignments": [
+        {
+            "id": 9401,
+            "professor_id": 9501,
+            "subject_id": 9203,
+            "section_id": 9301,
+        },
+        {
+            "id": 9402,
+            "professor_id": 9501,
+            "subject_id": 9205,
+            "section_id": 9301,
+        },
+        {
+            "id": 9403,
+            "professor_id": 9502,
+            "subject_id": 9204,
+            "section_id": 9302,
+        },
+        {
+            "id": 9404,
+            "professor_id": 9502,
+            "subject_id": 9206,
+            "section_id": 9303,
+        },
+    ],
+    "Meetings": [
+        {
+            "id": 9601,
+            "assignment_id": 9401,
+            "order": 1,
+            "mode": "sync",
+            "duration_slots": 2,
+        },
+        {
+            "id": 9602,
+            "assignment_id": 9401,
+            "order": 2,
+            "mode": "lab",
+            "duration_slots": 3,
+        },
+        {
+            "id": 9603,
+            "assignment_id": 9402,
+            "order": 1,
+            "mode": "sync",
+            "duration_slots": 2,
+        },
+        {
+            "id": 9604,
+            "assignment_id": 9403,
+            "order": 1,
+            "mode": "lab",
+            "duration_slots": 3,
+        },
+        {
+            "id": 9605,
+            "assignment_id": 9403,
+            "order": 2,
+            "mode": "async",
+            "duration_slots": 1,
+        },
+        {
+            "id": 9606,
+            "assignment_id": 9404,
+            "order": 1,
+            "mode": "sync",
+            "duration_slots": 2,
+        },
+    ],
+    "Availability": [
+        {
+            "id": 9701,
+            "professor_id": 9501,
+            "day": 0,
+            "start_time": "08:00",
+            "end_time": "17:00",
+            "is_preferred": True,
+        },
+        {
+            "id": 9702,
+            "professor_id": 9501,
+            "day": 2,
+            "start_time": "08:00",
+            "end_time": "17:00",
+            "is_preferred": False,
+        },
+        {
+            "id": 9703,
+            "professor_id": 9502,
+            "day": 1,
+            "start_time": "08:00",
+            "end_time": "17:00",
+            "is_preferred": True,
+        },
+        {
+            "id": 9704,
+            "professor_id": 9502,
+            "day": 3,
+            "start_time": "08:00",
+            "end_time": "17:00",
+            "is_preferred": False,
+        },
+    ],
+    "BusyBlocks": [
+        {
+            "id": 9801,
+            "professor_id": 9501,
+            "day": 4,
+            "start_time": "13:00",
+            "end_time": "15:00",
+        },
+        {
+            "id": 9802,
+            "professor_id": 9502,
+            "day": 5,
+            "start_time": "09:00",
+            "end_time": "11:00",
+        },
+    ],
+}
+
+# One row per column so the Instructions tab explains the entire schema.
+TEMPLATE_COLUMN_GUIDE = {
+    "Departments": [
+        ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
+        ("name", "Required", "Unique department name (max 100 characters). Sample: Department of Computer Science."),
+    ],
+    "Rooms": [
+        ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
+        ("name", "Required", "Unique room name (max 50 characters). Samples: CS Lecture Room 1, CS Computer Laboratory 1."),
+        ("capacity", "Required", "Positive integer seat capacity."),
+        ("department_id", "Optional", "Integer id from the Departments sheet."),
+    ],
+    "Subjects": [
+        ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
+        ("code", "Required", "Unique subject code (max 20 characters). Sample: CS 201."),
+        ("title", "Required", "Subject title (max 200 characters)."),
+        ("units", "Optional", "Positive integer; defaults to 3."),
+    ],
+    "Sections": [
+        ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
+        ("name", "Required", "Unique section name (max 50 characters). Sample: BSCS 3-A."),
+        ("headcount", "Required", "Positive integer number of students."),
+    ],
+    "Professors": [
+        ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
+        ("user_id", "Required", "Integer id of an existing auth user (not the professor profile id). Replace the sample values with real user ids."),
+        ("department_id", "Optional", "Integer id from the Departments sheet."),
+        ("max_daily_hours", "Optional", "Positive integer; defaults to 8."),
+        ("max_consecutive", "Optional", "Positive integer; defaults to 4."),
+    ],
+    "Assignments": [
+        ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
+        ("professor_id", "Required", "Integer id from the Professors sheet."),
+        ("subject_id", "Required", "Integer id from the Subjects sheet."),
+        ("section_id", "Required", "Integer id from the Sections sheet."),
+        ("term_id", "Optional", "Integer id of an existing AcademicTerm. Leave blank if not term-specific."),
+    ],
+    "Meetings": [
+        ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
+        ("assignment_id", "Required", "Integer id from the Assignments sheet."),
+        ("order", "Required", "Integer >= 1; must be unique per assignment."),
+        ("mode", "Required", "Allowed values: async, sync, lab (lowercase)."),
+        ("duration_slots", "Optional", "Integer >= 1; defaults to 1."),
+    ],
+    "Availability": [
+        ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
+        ("professor_id", "Required", "Integer id from the Professors sheet."),
+        ("day", "Required", "0-5 or a day name. 0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday."),
+        ("start_time", "Required", "24-hour time in HH:MM format, e.g., 08:00."),
+        ("end_time", "Required", "24-hour time in HH:MM format; must be after start_time."),
+        ("is_preferred", "Optional", "true/false (also accepts 1/0, yes/no); defaults to false."),
+    ],
+    "BusyBlocks": [
+        ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
+        ("professor_id", "Required", "Integer id from the Professors sheet."),
+        ("day", "Required", "0-5 or a day name. 0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday."),
+        ("start_time", "Required", "24-hour time in HH:MM format, e.g., 09:00."),
+        ("end_time", "Required", "24-hour time in HH:MM format; must be after start_time."),
+    ],
+}
+
+TEMPLATE_GENERAL_NOTES = [
+    "XLSX: use the exact sheet names below. Row 1 is the header row; data starts in row 2.",
+    "CSV: upload a .zip containing one .csv per sheet (Departments.csv, Rooms.csv, ..., BusyBlocks.csv). A single .csv file is not supported.",
+    "Leave 'id' blank to create a new record. Provide an existing id to update that record.",
+    "Foreign-key values must reference ids defined in the same workbook: department_id, professor_id, subject_id, section_id, assignment_id.",
+    "Every assignment must have at least one synchronous meeting: mode 'sync' or 'lab'.",
+    "Delivery modes: async, sync, lab. Day values: 0-5 or Monday-Saturday. Times: 24-hour HH:MM.",
+    "Capacity, headcount, units, max_daily_hours, max_consecutive, order, and duration_slots must be positive integers.",
+    "Rooms have no room-type column. Use descriptive names such as 'CS Lecture Room 1' or 'CS Computer Laboratory 1'.",
+    "The sample professor user_id values (1 and 2) are placeholders. Replace them with existing auth user ids before importing.",
+]
+
 
 @dataclass
 class ImportError:
@@ -71,6 +345,7 @@ class ImportResult:
     details: list = field(default_factory=list)
     errors: list = field(default_factory=list)
     parsed_data: dict = field(default_factory=dict)
+    preview_items: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -394,28 +669,93 @@ class ImportProcessor:
             "BusyBlocks": (BusyBlock, "id"),
         }
 
+        # Build error lookup by (sheet, row_num)
+        error_lookup = {}
+        for e in result.errors:
+            error_lookup.setdefault((e.sheet, e.row), []).append(e.message)
+
+        # Key display fields per entity for preview tables
+        display_fields = {
+            "Departments": ["name"],
+            "Rooms": ["name", "capacity", "department_id"],
+            "Subjects": ["code", "title", "units"],
+            "Sections": ["name", "headcount", "program", "year_level", "term_id"],
+            "Professors": ["user_id", "department_id", "max_daily_hours", "max_consecutive"],
+            "Assignments": ["professor_id", "subject_id", "section_id", "term_id"],
+            "Meetings": ["assignment_id", "order", "mode", "duration_slots"],
+            "Availability": ["professor_id", "day", "start_time", "end_time", "is_preferred"],
+            "BusyBlocks": ["professor_id", "day", "start_time", "end_time"],
+        }
+
+        result.preview_items = {}
+
         for sheet_name, (model, pk_field) in model_map.items():
             creates = 0
             updates = 0
+            items = []
+
             for row in parsed_data.get(sheet_name, []):
-                pk_val = row.get(pk_field)
-                if pk_val:
-                    exists = model.objects.filter(**{pk_field: pk_val}).exists()
-                    if exists:
-                        updates += 1
-                    else:
-                        creates += 1
+                row_num = row.get("_row_num", 0)
+                row_errors = error_lookup.get((sheet_name, row_num), [])
+
+                if row_errors:
+                    action = "error"
                 else:
-                    creates += 1
+                    pk_val = row.get(pk_field)
+                    if pk_val:
+                        exists = model.objects.filter(**{pk_field: pk_val}).exists()
+                        if exists:
+                            action = "update"
+                            updates += 1
+                        else:
+                            action = "create"
+                            creates += 1
+                    else:
+                        action = "create"
+                        creates += 1
+
+                # Build key-field display data for this row
+                row_data = {}
+                for field in display_fields.get(sheet_name, []):
+                    val = row.get(field)
+                    if val is not None and val != "":
+                        row_data[field] = val
+
+                items.append({
+                    "row": row_num,
+                    "action": action,
+                    "errors": row_errors,
+                    "data": row_data,
+                })
+
             result.summary["creates"] += creates
             result.summary["updates"] += updates
-            if creates or updates:
-                result.details.append({"model": sheet_name, "action": "create" if creates else "update", "count": creates + updates})
 
-    def commit(self, preview_token: str) -> CommitResult:
+            if items:
+                result.preview_items[sheet_name] = items
+
+            if creates or updates:
+                result.details.append({
+                    "model": sheet_name,
+                    "action": "create" if creates and not updates else ("update" if updates and not creates else "mixed"),
+                    "count": creates + updates,
+                })
+
+    def commit(self, preview_token: str, selected_keys: list[str] | None = None) -> CommitResult:
         parsed_data = cache.get(f"import_preview_{preview_token}")
         if not parsed_data:
             return CommitResult(committed=False, errors=[{"message": "Preview token expired or invalid"}])
+
+        if selected_keys is not None:
+            selected = set(selected_keys)
+            parsed_data = {
+                sheet: [
+                    row
+                    for row in rows
+                    if f"{sheet}:{row.get('_row_num', 0)}" in selected
+                ]
+                for sheet, rows in parsed_data.items()
+            }
 
         result = CommitResult(committed=True)
         try:
@@ -538,13 +878,19 @@ class ImportProcessor:
                         result.summary["updates"] += 1
 
                 # Meetings
+                from timetable.models import get_mode_duration
+
                 for row in parsed_data.get("Meetings", []):
                     pk = row.get("id")
+                    mode = parse_mode(row["mode"])
                     defaults = {
                         "assignment_id": parse_int(row["assignment_id"]),
                         "order": parse_int(row["order"]),
-                        "mode": parse_mode(row["mode"]),
-                        "duration_slots": parse_int(row.get("duration_slots")) or 1,
+                        "mode": mode,
+                        "duration_slots": (
+                            parse_int(row.get("duration_slots"))
+                            or get_mode_duration(mode)
+                        ),
                     }
                     if pk:
                         obj, created = MeetingSlot.objects.update_or_create(id=pk, defaults=defaults)
@@ -605,64 +951,47 @@ class ImportProcessor:
 
     def generate_template_xlsx(self) -> bytes:
         wb = Workbook()
+        header_fill = PatternFill("solid", fgColor="1E7145")
+        header_font = Font(bold=True, color="FFFFFF")
+        section_fill = PatternFill("solid", fgColor="E8F5E9")
+        section_font = Font(bold=True, color="1B5E20")
+
         for sheet_name in SHEET_MODELS:
-            if sheet_name == "Departments":
+            if sheet_name == SHEET_MODELS[0]:
                 ws = wb.active
                 ws.title = sheet_name
             else:
                 ws = wb.create_sheet(sheet_name)
 
-            columns = ALL_COLUMNS[sheet_name]
+            columns = TEMPLATE_COLUMNS[sheet_name]
+            ws.append(columns)
+
+            for sample in TEMPLATE_SAMPLE_ROWS.get(sheet_name, []):
+                ws.append([sample.get(col, "") for col in columns])
+
+            for cell in ws[1]:
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(
+                    horizontal="center", vertical="center"
+                )
+
+            ws.freeze_panes = "A2"
+            ws.auto_filter.ref = (
+                f"A1:{ws.cell(row=1, column=len(columns)).coordinate}"
+            )
+
             for col_idx, col_name in enumerate(columns, start=1):
-                ws.cell(row=1, column=col_idx, value=col_name)
+                ws.column_dimensions[
+                    ws.cell(row=1, column=col_idx).column_letter
+                ].width = max(12, len(col_name) + 4)
 
-            example_row = self._get_example_row(sheet_name)
-            for col_idx, val in enumerate(example_row, start=1):
-                ws.cell(row=2, column=col_idx, value=val)
-
-            for col_idx in range(1, len(columns) + 1):
-                ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = max(15, len(columns[col_idx-1]) + 2)
-
-            if sheet_name == "Meetings":
-                dv = DataValidation(type="list", formula1='"async,sync,lab"', allow_blank=True)
-                dv.error = "Invalid mode"
-                dv.errorTitle = "Mode must be async, sync, or lab"
-                mode_col_idx = columns.index("mode") + 1
-                dv.add(ws.cell(row=2, column=mode_col_idx))
-                ws.add_data_validation(dv)
-
-            if sheet_name in ("Availability", "BusyBlocks"):
-                dv = DataValidation(type="list", formula1='"0,1,2,3,4,5"', allow_blank=True)
-                dv.error = "Invalid day"
-                dv.errorTitle = "Day must be 0-5 (Mon-Sat)"
-                day_col_idx = columns.index("day") + 1
-                dv.add(ws.cell(row=2, column=day_col_idx))
-                ws.add_data_validation(dv)
+            self._add_template_validations(ws, columns, sheet_name)
 
         instructions = wb.create_sheet("Instructions")
-        instructions.append(["Schedule Import Template"])
-        instructions.append([])
-        instructions.append(["This file contains sheets for each data model."])
-        instructions.append(["Fill in the data starting from row 2."])
-        instructions.append(["Leave 'id' blank to create new records; provide 'id' to update existing."])
-        instructions.append([])
-        instructions.append(["Sheet Order (import processes in this order):"])
-        for i, name in enumerate(SHEET_MODELS, 1):
-            instructions.append([f"{i}. {name}"])
-        instructions.append([])
-        instructions.append(["Key Fields:"])
-        instructions.append(["- Departments: id, name"])
-        instructions.append(["- Rooms: id, name, capacity, department_id (optional)"])
-        instructions.append(["- Subjects: id, code (unique), title, units (optional, default 3)"])
-        instructions.append(["- Sections: id, name (unique), headcount"])
-        instructions.append(["- Professors: id, user_id (must exist), department_id, max_daily_hours, max_consecutive"])
-        instructions.append(["- Assignments: id, professor_id, subject_id, section_id"])
-        instructions.append(["- Meetings: id, assignment_id, order, mode (async/sync/lab), duration_slots (optional)"])
-        instructions.append(["- Availability: id, professor_id, day (0-5), start_time (HH:MM), end_time (HH:MM), is_preferred"])
-        instructions.append(["- BusyBlocks: id, professor_id, day (0-5), start_time (HH:MM), end_time (HH:MM)"])
-        instructions.append([])
-        instructions.append(["Time Format: HH:MM (24-hour, e.g., 08:30, 13:45)"])
-        instructions.append(["Day Values: 0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday"])
+        self._write_instructions_sheet(
+            instructions, header_fill, header_font, section_fill, section_font
+        )
 
         buf = io.BytesIO()
         wb.save(buf)
@@ -673,45 +1002,286 @@ class ImportProcessor:
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for sheet_name in SHEET_MODELS:
-                columns = ALL_COLUMNS[sheet_name]
-                example = self._get_example_row(sheet_name)
+                columns = TEMPLATE_COLUMNS[sheet_name]
                 output = io.StringIO()
                 writer = csv.writer(output)
                 writer.writerow(columns)
-                writer.writerow(example)
+                for sample in TEMPLATE_SAMPLE_ROWS.get(sheet_name, []):
+                    writer.writerow(
+                        [sample.get(col, "") for col in columns]
+                    )
                 zf.writestr(f"{sheet_name}.csv", output.getvalue())
 
-            instructions = (
-                "Schedule Import Template (CSV)\n\n"
-                "This ZIP contains one CSV file per data model.\n"
-                "Fill in data starting from row 2.\n"
-                "Leave 'id' blank to create new records; provide 'id' to update existing.\n\n"
-                "Sheet Order (import processes in this order):\n"
-                + "\n".join(f"{i}. {name}" for i, name in enumerate(SHEET_MODELS, 1))
-                + "\n\n"
-                "Time Format: HH:MM (24-hour)\n"
-                "Day Values: 0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday\n"
-                "Mode Values: async, sync, lab\n"
+            zf.writestr(
+                "Instructions.txt", self._template_instructions_text()
             )
-            zf.writestr("Instructions.txt", instructions)
         buf.seek(0)
         return buf.read()
 
-    def _get_example_row(self, sheet_name: str) -> list:
-        examples = {
-            "Departments": [1, "CS"],
-            "Rooms": [1, "R101", 40, 1],
-            "Subjects": [1, "CS101", "Introduction to Programming", 3],
-            "Sections": [1, "CS-1A", 35],
-            "Professors": [1, 2, 1, 8, 4],
-            "Assignments": [1, 1, 1, 1],
-            "Meetings": [1, 1, 1, "sync", 2],
-            "Availability": [1, 1, 0, "08:00", "12:00", True],
-            "BusyBlocks": [1, 1, 2, "13:00", "15:00"],
-        }
-        cols = ALL_COLUMNS[sheet_name]
-        ex = examples.get(sheet_name, [])
-        return [ex[cols.index(c)] if c in ex else "" for c in cols]
+    @staticmethod
+    def _add_list_validation(
+        ws,
+        columns: list[str],
+        field_name: str,
+        values: str,
+        title: str,
+        message: str,
+    ):
+        col_idx = columns.index(field_name) + 1
+        col_letter = ws.cell(row=1, column=col_idx).column_letter
+        dv = DataValidation(
+            type="list",
+            formula1=f'"{values}"',
+            allow_blank=True,
+            showErrorMessage=True,
+        )
+        dv.error = message
+        dv.errorTitle = title
+        dv.add(f"{col_letter}2:{col_letter}200")
+        ws.add_data_validation(dv)
+
+    @staticmethod
+    def _add_positive_int_validation(
+        ws,
+        columns: list[str],
+        field_name: str,
+        title: str,
+        message: str,
+    ):
+        col_idx = columns.index(field_name) + 1
+        col_letter = ws.cell(row=1, column=col_idx).column_letter
+        dv = DataValidation(
+            type="whole",
+            operator="greaterThan",
+            formula1="0",
+            allow_blank=True,
+            showErrorMessage=True,
+        )
+        dv.error = message
+        dv.errorTitle = title
+        dv.add(f"{col_letter}2:{col_letter}200")
+        ws.add_data_validation(dv)
+
+    def _add_template_validations(
+        self, ws, columns: list[str], sheet_name: str
+    ):
+        if sheet_name == "Meetings":
+            self._add_list_validation(
+                ws,
+                columns,
+                "mode",
+                "async,sync,lab",
+                "Invalid delivery mode",
+                "Mode must be async, sync, or lab.",
+            )
+            self._add_positive_int_validation(
+                ws,
+                columns,
+                "order",
+                "Invalid meeting order",
+                "Order must be a positive integer.",
+            )
+            self._add_positive_int_validation(
+                ws,
+                columns,
+                "duration_slots",
+                "Invalid duration",
+                "Duration slots must be a positive integer.",
+            )
+
+        if sheet_name in ("Availability", "BusyBlocks"):
+            self._add_list_validation(
+                ws,
+                columns,
+                "day",
+                "0,1,2,3,4,5",
+                "Invalid day",
+                "Day must be 0-5 (Monday-Saturday).",
+            )
+
+        if sheet_name == "Availability":
+            self._add_list_validation(
+                ws,
+                columns,
+                "is_preferred",
+                "true,false",
+                "Invalid preference",
+                "is_preferred must be true or false.",
+            )
+
+        if sheet_name == "Rooms":
+            self._add_positive_int_validation(
+                ws,
+                columns,
+                "capacity",
+                "Invalid capacity",
+                "Capacity must be a positive integer.",
+            )
+
+        if sheet_name == "Sections":
+            self._add_positive_int_validation(
+                ws,
+                columns,
+                "headcount",
+                "Invalid headcount",
+                "Headcount must be a positive integer.",
+            )
+
+        if sheet_name == "Subjects":
+            self._add_positive_int_validation(
+                ws,
+                columns,
+                "units",
+                "Invalid units",
+                "Units must be a positive integer.",
+            )
+
+        if sheet_name == "Professors":
+            self._add_positive_int_validation(
+                ws,
+                columns,
+                "max_daily_hours",
+                "Invalid daily hours",
+                "Max daily hours must be a positive integer.",
+            )
+            self._add_positive_int_validation(
+                ws,
+                columns,
+                "max_consecutive",
+                "Invalid consecutive limit",
+                "Max consecutive slots must be a positive integer.",
+            )
+
+    def _write_instructions_sheet(
+        self,
+        ws,
+        header_fill,
+        header_font,
+        section_fill,
+        section_font,
+    ):
+        ws.column_dimensions["A"].width = 18
+        ws.column_dimensions["B"].width = 22
+        ws.column_dimensions["C"].width = 12
+        ws.column_dimensions["D"].width = 95
+        ws.sheet_view.showGridLines = False
+
+        row = 1
+        ws.cell(
+            row=row,
+            column=1,
+            value=(
+                "Schedule Import Template - CvSU Imus "
+                "(Computer Science sample)"
+            ),
+        ).font = Font(bold=True, size=14, color="1B5E20")
+        ws.merge_cells(
+            start_row=row, start_column=1, end_row=row, end_column=4
+        )
+
+        row += 2
+        intro_lines = [
+            "Use this workbook as a starting point. Rows below each header contain realistic CvSU-Imus Computer Science examples:",
+            "Departments, lecture/laboratory rooms, CS subjects, BSCS sections, professors, assignments, meetings, availability, and busy blocks.",
+            "Replace or extend the sample rows with your own data. Leave 'id' blank to create new records.",
+            "Sheet order (the importer processes sheets in this order): "
+            + " -> ".join(SHEET_MODELS),
+        ]
+        for line in intro_lines:
+            cell = ws.cell(row=row, column=1, value=line)
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+            ws.merge_cells(
+                start_row=row,
+                start_column=1,
+                end_row=row,
+                end_column=4,
+            )
+            row += 1
+
+        row += 1
+        cell = ws.cell(row=row, column=1, value="General rules")
+        cell.font = section_font
+        cell.fill = section_fill
+        ws.merge_cells(
+            start_row=row, start_column=1, end_row=row, end_column=4
+        )
+        row += 1
+
+        for note in TEMPLATE_GENERAL_NOTES:
+            cell = ws.cell(row=row, column=1, value=f"- {note}")
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+            ws.merge_cells(
+                start_row=row,
+                start_column=1,
+                end_row=row,
+                end_column=4,
+            )
+            row += 1
+
+        row += 1
+        cell = ws.cell(row=row, column=1, value="Column guide")
+        cell.font = section_font
+        cell.fill = section_fill
+        ws.merge_cells(
+            start_row=row, start_column=1, end_row=row, end_column=4
+        )
+        row += 1
+
+        guide_headers = [
+            "Sheet",
+            "Column",
+            "Required?",
+            "Description / Allowed values",
+        ]
+        for col_idx, value in enumerate(guide_headers, start=1):
+            header_cell = ws.cell(row=row, column=col_idx, value=value)
+            header_cell.font = header_font
+            header_cell.fill = header_fill
+            header_cell.alignment = Alignment(vertical="center")
+        row += 1
+
+        for sheet_name in SHEET_MODELS:
+            for col_name, required, description in TEMPLATE_COLUMN_GUIDE[
+                sheet_name
+            ]:
+                ws.cell(row=row, column=1, value=sheet_name)
+                ws.cell(row=row, column=2, value=col_name)
+                ws.cell(row=row, column=3, value=required)
+                description_cell = ws.cell(
+                    row=row, column=4, value=description
+                )
+                description_cell.alignment = Alignment(
+                    wrap_text=True, vertical="top"
+                )
+                row += 1
+
+    def _template_instructions_text(self) -> str:
+        lines = [
+            "Schedule Import Template - CvSU Imus (Computer Science sample)",
+            "",
+            "CSV bundle: this ZIP contains one CSV file per sheet. A single .csv upload is not supported.",
+            "Keep the exact file names: "
+            + ", ".join(f"{name}.csv" for name in SHEET_MODELS)
+            + ".",
+            "Row 1 is the header row; data starts in row 2.",
+            "Sheet order: "
+            + " -> ".join(SHEET_MODELS),
+            "",
+            "General rules:",
+        ]
+        lines.extend(f"- {note}" for note in TEMPLATE_GENERAL_NOTES)
+        lines.extend(["", "Column guide:"])
+
+        for sheet_name in SHEET_MODELS:
+            lines.extend(["", f"[{sheet_name}]"])
+            for col_name, required, description in TEMPLATE_COLUMN_GUIDE[
+                sheet_name
+            ]:
+                lines.append(
+                    f"- {col_name} ({required}): {description}"
+                )
+
+        return "\n".join(lines) + "\n"
 
 
 processor = ImportProcessor()

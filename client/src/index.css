@@ -36,7 +36,6 @@
 
 * {
   box-sizing: border-box;
-  overflow-x: hidden;
 }
 
 html {
@@ -65,4 +64,22 @@ body {
 ::-webkit-scrollbar-thumb {
   background: #c7c7cc;
   border-radius: 3px;
+}
+
+/* Always-visible scrollbar utility for Linux/Chromium overlay scrollbars. */
+.visible-scrollbar {
+  scrollbar-width: thin;
+}
+.visible-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.visible-scrollbar::-webkit-scrollbar-track {
+  background: var(--color-border-light);
+}
+.visible-scrollbar::-webkit-scrollbar-thumb {
+  background: #c7c7cc;
+  border-radius: 4px;
+}
+.visible-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #a8a8ab;
 }
