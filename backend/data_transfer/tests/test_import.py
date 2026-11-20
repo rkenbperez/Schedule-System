@@ -47,6 +47,7 @@ class ImportTestCase(APITestCase):
         self.url_commit = "/api/imports/commit/"
         self.url_template = "/api/imports/template/"
         self.url_template_csv = "/api/imports/template/csv/"
+        self.url_data_transfer_template = "/api/data-transfer/template/"
 
     def auth(self, token):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
@@ -446,7 +447,47 @@ class ImportTemplateTests(ImportTestCase):
         for sheet_name in ["Departments", "Rooms", "Subjects", "Sections", "Professors",
                            "Assignments", "Meetings", "Availability", "BusyBlocks"]:
             ws = wb[sheet_name]
-            self.assertEqual(ws.max_row, 2)  # header + example row
+            self.assertGreaterEqual(ws.max_row, 2)  # header + sample rows
+            self.assertEqual(ws.cell(row=1, column=1).value, "id")
+
+        sections = [
+            row[1]
+            for row in wb["Sections"].iter_rows(min_row=2, values_only=True)
+        ]
+        self.assertIn("BSCS 3-A", sections)
+
+    def test_data_transfer_template_defaults_to_xlsx(self):
+        self.auth(self.reg_token)
+        response = self.client.get(self.url_data_transfer_template)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn(
+            "schedule_import_template.xlsx",
+            response["Content-Disposition"],
+        )
+
+    def test_data_transfer_template_csv_format(self):
+        self.auth(self.reg_token)
+        response = self.client.get(
+            f"{self.url_data_transfer_template}?format=csv"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/zip")
+        self.assertIn(
+            "schedule_import_template.zip",
+            response["Content-Disposition"],
+        )
+
+    def test_data_transfer_template_rejects_unknown_format(self):
+        self.auth(self.reg_token)
+        response = self.client.get(
+            f"{self.url_data_transfer_template}?format=pdf"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Unsupported template format", response.data["detail"])
 
     def test_csv_template_download(self):
         self.auth(self.reg_token)

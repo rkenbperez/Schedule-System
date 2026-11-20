@@ -26,6 +26,22 @@ urlpatterns = [
         ScheduleExportPDFView.as_view(),
         name="schedule-pdf-export",
     ),
+    # Backwards-compatible aliases used by older clients/tests.
+    path(
+        "data_transfer/schedules/<int:pk>.xlsx",
+        ScheduleExportView.as_view(),
+        name="schedule-export-legacy",
+    ),
+    path(
+        "data_transfer/schedules/<int:pk>.csv",
+        ScheduleExportCSVView.as_view(),
+        name="schedule-export-csv-legacy",
+    ),
+    path(
+        "data_transfer/schedules/<int:pk>.pdf",
+        ScheduleExportPDFView.as_view(),
+        name="schedule-pdf-export-legacy",
+    ),
     path(
         "imports/preview/",
         ImportPreviewView.as_view(),
@@ -40,6 +56,11 @@ urlpatterns = [
         "imports/template/",
         TemplateView.as_view(),
         name="import-template",
+    ),
+    path(
+        "data-transfer/template/",
+        TemplateView.as_view(),
+        name="data-transfer-template",
     ),
     path(
         "imports/template/csv/",

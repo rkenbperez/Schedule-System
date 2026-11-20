@@ -7,6 +7,7 @@ from rest_framework.test import APITestCase
 
 from catalog.models import Department, Room, Section, Subject
 from timetable.models import (
+    AcademicTerm,
     Assignment,
     AvailabilityWindow,
     BusyBlock,
@@ -605,3 +606,158 @@ class FullScheduleFlowTests(ApiTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 2)
         self.assertTrue(all(c["prof_id"] == prof2["id"] for c in response.data))
+
+
+class AssignmentTermFilterTests(ApiTestCase):
+    def setUp(self):
+        super().setUp()
+        from datetime import date
+        self.term1 = AcademicTerm.objects.create(
+            year=2026, semester=1, is_active=True,
+            start_date=date(2026, 8, 1), end_date=date(2026, 12, 15)
+        )
+        self.term2 = AcademicTerm.objects.create(
+            year=2025, semester=2, is_active=False,
+            start_date=date(2025, 8, 1), end_date=date(2025, 12, 15)
+        )
+        self.auth(self.reg_token)
+
+    def test_assignments_default_to_active_term(self):
+        from catalog.models import Section, Subject
+        subj = Subject.objects.create(code="CS101", title="Intro", units=3)
+        sec1 = Section.objects.create(name="BSIT-1A", headcount=30, term=self.term1)
+        sec2 = Section.objects.create(name="BSIT-1B", headcount=30, term=self.term2)
+        a1 = Assignment.objects.create(
+            prof=self.prof, subject=subj, section=sec1, term=self.term1
+        )
+        a2 = Assignment.objects.create(
+            prof=self.prof, subject=subj, section=sec2, term=self.term2
+        )
+
+        response = self.client.get("/api/assignments/")
+        self.assertEqual(response.status_code, 200)
+        ids = {a["id"] for a in response.data["results"]}
+        self.assertIn(a1.id, ids)
+        self.assertNotIn(a2.id, ids)
+
+    def test_assignments_filter_by_term_param(self):
+        from catalog.models import Section, Subject
+        subj = Subject.objects.create(code="CS101", title="Intro", units=3)
+        sec1 = Section.objects.create(name="BSIT-1A", headcount=30, term=self.term1)
+        sec2 = Section.objects.create(name="BSIT-1B", headcount=30, term=self.term2)
+        a1 = Assignment.objects.create(
+            prof=self.prof, subject=subj, section=sec1, term=self.term1
+        )
+        a2 = Assignment.objects.create(
+            prof=self.prof, subject=subj, section=sec2, term=self.term2
+        )
+
+        response = self.client.get(f"/api/assignments/?term={self.term2.id}")
+        self.assertEqual(response.status_code, 200)
+        ids = {a["id"] for a in response.data["results"]}
+        self.assertIn(a2.id, ids)
+        self.assertNotIn(a1.id, ids)
+
+
+class DashboardTermFilterTests(ApiTestCase):
+    def setUp(self):
+        super().setUp()
+        from datetime import date
+        self.term1 = AcademicTerm.objects.create(
+            year=2026, semester=1, is_active=True,
+            start_date=date(2026, 8, 1), end_date=date(2026, 12, 15)
+        )
+        self.term2 = AcademicTerm.objects.create(
+            year=2025, semester=2, is_active=False,
+            start_date=date(2025, 8, 1), end_date=date(2025, 12, 15)
+        )
+        self.auth(self.reg_token)
+
+    def test_dashboard_defaults_to_active_term(self):
+        from catalog.models import Section, Subject
+        subj = Subject.objects.create(code="CS101", title="Intro", units=3)
+        sec1 = Section.objects.create(name="BSIT-1A", headcount=30, term=self.term1)
+        sec2 = Section.objects.create(name="BSIT-1B", headcount=30, term=self.term2)
+        Assignment.objects.create(
+            prof=self.prof, subject=subj, section=sec1, term=self.term1
+        )
+        Assignment.objects.create(
+            prof=self.prof, subject=subj, section=sec2, term=self.term2
+        )
+
+        response = self.client.get("/api/admin/dashboard/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["active_term"]["id"], self.term1.id)
+        self.assertEqual(response.data["counts"]["assignments"], 1)
+
+    def test_dashboard_filters_by_term_param(self):
+        from catalog.models import Section, Subject
+        subj = Subject.objects.create(code="CS101", title="Intro", units=3)
+        sec1 = Section.objects.create(name="BSIT-1A", headcount=30, term=self.term1)
+        sec2 = Section.objects.create(name="BSIT-1B", headcount=30, term=self.term2)
+        Assignment.objects.create(
+            prof=self.prof, subject=subj, section=sec1, term=self.term1
+        )
+        Assignment.objects.create(
+            prof=self.prof, subject=subj, section=sec2, term=self.term2
+        )
+
+        response = self.client.get(f"/api/admin/dashboard/?term={self.term2.id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["active_term"]["id"], self.term2.id)
+        self.assertEqual(response.data["counts"]["assignments"], 1)
+
+
+class ProfessorsTermFilterTests(ApiTestCase):
+    def setUp(self):
+        super().setUp()
+        from datetime import date
+        self.term1 = AcademicTerm.objects.create(
+            year=2026, semester=1, is_active=True,
+            start_date=date(2026, 8, 1), end_date=date(2026, 12, 15)
+        )
+        self.term2 = AcademicTerm.objects.create(
+            year=2025, semester=2, is_active=False,
+            start_date=date(2025, 8, 1), end_date=date(2025, 12, 15)
+        )
+        self.auth(self.reg_token)
+
+    def test_professors_default_to_active_term(self):
+        from catalog.models import Section, Subject
+        subj = Subject.objects.create(code="CS101", title="Intro", units=3)
+        sec1 = Section.objects.create(name="BSIT-1A", headcount=30, term=self.term1)
+        sec2 = Section.objects.create(name="BSIT-1B", headcount=30, term=self.term2)
+        prof2_user = User.objects.create_user(username="prof2", password="pass12345")
+        prof2 = Professors.objects.create(user=prof2_user, department=self.dept)
+        Assignment.objects.create(
+            prof=self.prof, subject=subj, section=sec1, term=self.term1
+        )
+        Assignment.objects.create(
+            prof=prof2, subject=subj, section=sec2, term=self.term2
+        )
+
+        response = self.client.get("/api/profs/")
+        self.assertEqual(response.status_code, 200)
+        ids = {p["id"] for p in response.data["results"]}
+        self.assertIn(self.prof.id, ids)
+        self.assertNotIn(prof2.id, ids)
+
+    def test_professors_filter_by_term_param(self):
+        from catalog.models import Section, Subject
+        subj = Subject.objects.create(code="CS101", title="Intro", units=3)
+        sec1 = Section.objects.create(name="BSIT-1A", headcount=30, term=self.term1)
+        sec2 = Section.objects.create(name="BSIT-1B", headcount=30, term=self.term2)
+        prof2_user = User.objects.create_user(username="prof2b", password="pass12345")
+        prof2 = Professors.objects.create(user=prof2_user, department=self.dept)
+        Assignment.objects.create(
+            prof=self.prof, subject=subj, section=sec1, term=self.term1
+        )
+        Assignment.objects.create(
+            prof=prof2, subject=subj, section=sec2, term=self.term2
+        )
+
+        response = self.client.get(f"/api/profs/?term={self.term2.id}")
+        self.assertEqual(response.status_code, 200)
+        ids = {p["id"] for p in response.data["results"]}
+        self.assertIn(prof2.id, ids)
+        self.assertNotIn(self.prof.id, ids)

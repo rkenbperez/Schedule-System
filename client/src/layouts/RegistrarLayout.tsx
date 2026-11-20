@@ -4,12 +4,14 @@ import {
   LayoutDashboard,
   Users,
   Calendar,
+  Database,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react';
 import { useState } from 'react';
-import { useSignOut } from '../hooks/useAuth';
+import { useMe, useSignOut } from '../hooks/useAuth';
+import { ProfileDropdown } from '../components/shared/ProfileDropdown';
 import TimetableSidepanel from '../components/registrar/TimetableSidepanel';
 
 const navItems = [
@@ -35,8 +37,14 @@ const navItems = [
   {
     id: 4,
     icon: Calendar,
-    label: 'Timetable',
+    label: 'Master Schedule',
     to: '/registrar/timetable',
+  },
+  {
+    id: 5,
+    icon: Database,
+    label: 'Master Data',
+    to: '/registrar/master-data',
   },
 ];
 
@@ -44,12 +52,13 @@ export default function RegistrarLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [isTimetableOpen, setIsTimetableOpen] = useState(false);
   const signOut = useSignOut();
+  const { data: user } = useMe();
   const navigate = useNavigate();
 
   const { pathname } = useLocation();
 
   return (
-    <div className='mx-auto flex min-h-screen w-full max-w-300 border-x border-border bg-surface-secondary'>
+    <div className='mx-auto flex h-screen w-full max-w-300 border-x border-border bg-surface-secondary overflow-hidden'>
       {/* Sidebar */}
       <aside
         className={`flex flex-col border border-apple-green-400 bg-apple-green-50 transition-all duration-200 ${
@@ -94,7 +103,7 @@ export default function RegistrarLayout() {
         </nav>
 
         {/* Logout */}
-        <div className='border-t border-border p-3'>
+        <div className='border-t border-border px-3 py-2.5'>
           <button
             type='button'
             onClick={async () => {
@@ -117,9 +126,9 @@ export default function RegistrarLayout() {
       </aside>
 
       {/* Main */}
-      <main className='flex min-w-0 flex-1 flex-col'>
+      <main className='flex-1 min-h-0 overflow-y-auto flex flex-col'>
         {/* Header */}
-        <header className='flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface px-4 sm:px-6 md:px-8'>
+        <header className='relative z-40 flex h-14 shrink-0 items-center justify-between overflow-visible border-b border-border bg-surface px-4 sm:px-6 md:px-8'>
           {/* sidebar toggle */}
           <div className='flex items-center gap-5'>
             <button
@@ -145,10 +154,11 @@ export default function RegistrarLayout() {
 
           {/* User */}
           <div className='flex items-center gap-2 sm:gap-3'>
-            {/* Notification / Timetable */}
+            {/* Master Schedule quick view */}
             <button
               type='button'
               onClick={() => setIsTimetableOpen(true)}
+              aria-label='Open Master Schedule'
               className='relative grid h-8 w-8 place-items-center rounded-full bg-surface-secondary text-text-secondary transition hover:bg-border'
             >
               <Calendar size={15} />
@@ -156,31 +166,26 @@ export default function RegistrarLayout() {
               <span className='absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-apple-green-500' />
             </button>
             {/* Profile */}
-            <button
-              type='button'
-              className='flex items-center gap-2 rounded-full py-1 pl-1 pr-2 transition hover:bg-surface-secondary'
-            >
-              <span className='grid h-7 w-7 shrink-0 place-items-center rounded-full bg-apple-green-50 text-[11px] font-semibold text-apple-green-700'>
-                RC
-              </span>
-
-              <span className='hidden text-sm font-medium text-text-primary sm:block'>
-                Registrar Office
-              </span>
-
-              <PanelLeftClose size={13} className='text-text-tertiary' />
-            </button>
+            <ProfileDropdown
+              userName={user?.username || 'Registrar Office'}
+              userEmail={user?.email || 'registrar@school.edu'}
+              userRole={user?.role || 'registrar'}
+            />
           </div>
         </header>
 
         {/* Page Content */}
-        <div className='flex-1 px-4 py-5 overflow-y-auto'>
+        <div className='flex-1 px-4 py-5'>
           <Outlet />
         </div>
 
         {/* Timetable Sidepanel */}
-        <TimetableSidepanel isOpen={isTimetableOpen} onClose={() => setIsTimetableOpen(false)} />
+        <TimetableSidepanel
+          isOpen={isTimetableOpen}
+          onClose={() => setIsTimetableOpen(false)}
+        />
       </main>
+
     </div>
   );
 }

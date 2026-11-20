@@ -11,6 +11,7 @@ from .views import (
     JWTMeView,
     PasswordResetConfirmView,
     PasswordResetRequestView,
+    UserListView,
 )
 
 urlpatterns = [
@@ -31,6 +32,9 @@ urlpatterns = [
         PasswordResetConfirmView.as_view(),
         name="password-reset-confirm",
     ),
+    # User list (for master data forms)
+    path("users/", UserListView.as_view(), name="user-list"),
+
     # Legacy simplejwt endpoints (kept for backward compatibility)
     path("token/", TokenObtainPairView.as_view(), name="token-obtain-pair"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
