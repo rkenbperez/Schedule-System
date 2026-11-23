@@ -2,7 +2,7 @@ from io import BytesIO
 
 from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import OpenApiResponse, extend_schema
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
@@ -135,6 +135,7 @@ class ImportPreviewView(APIView):
             "preview_token": result.preview_token,
             "summary": result.summary,
             "details": result.details,
+            "preview_items": result.preview_items,
             "errors": [
                 {"sheet": e.sheet, "row": e.row, "field": e.field, "message": e.message}
                 for e in result.errors
@@ -155,7 +156,11 @@ class ImportCommitView(APIView):
             "application/json": {
                 "type": "object",
                 "properties": {
-                    "preview_token": {"type": "string"}
+                    "preview_token": {"type": "string"},
+                    "selected_keys": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
                 },
                 "required": ["preview_token"]
             }
@@ -170,7 +175,11 @@ class ImportCommitView(APIView):
         if not preview_token:
             return Response({"detail": "preview_token is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        result = processor.commit(preview_token)
+        selected_keys = request.data.get("selected_keys")
+        if selected_keys is not None and not isinstance(selected_keys, list):
+            return Response({"detail": "selected_keys must be a list"}, status=status.HTTP_400_BAD_REQUEST)
+
+        result = processor.commit(preview_token, selected_keys)
 
         if result.committed:
             return Response({
@@ -186,20 +195,83 @@ class ImportCommitView(APIView):
 class TemplateView(APIView):
     permission_classes = [IsRegistrar]
 
+    def perform_content_negotiation(self, request, force=False):
+        """Prevent DRF from treating ?format= as a renderer override.
+
+        DRF normally reserves the ``format`` query parameter for response
+        renderers and raises 404 for unknown values. This endpoint uses
+        ``format`` to choose the downloaded template instead, so hide it from
+        renderer negotiation and restore it before the view runs.
+        """
+        query_params = request.query_params
+        if "format" not in query_params:
+            return super().perform_content_negotiation(request, force=force)
+
+        original_get = request._request.GET
+        stripped_get = original_get.copy()
+        stripped_get.pop("format", None)
+        request._request.GET = stripped_get
+        try:
+            return super().perform_content_negotiation(request, force=force)
+        finally:
+            request._request.GET = original_get
+
     @extend_schema(
         tags=["imports"],
+        parameters=[
+            OpenApiParameter(
+                name="format",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                enum=["xlsx", "csv"],
+                default="xlsx",
+                description=(
+                    "Template format. 'xlsx' returns a multi-sheet workbook; "
+                    "'csv' returns a ZIP containing one CSV per sheet, which "
+                    "is the CSV format accepted by the importer."
+                ),
+            )
+        ],
         responses={
-            200: OpenApiResponse(description="XLSX template file"),
-        }
+            200: OpenApiResponse(
+                description="XLSX template or CSV ZIP template"
+            ),
+            400: OpenApiResponse(description="Unsupported template format"),
+        },
     )
     def get(self, request):
-        content = processor.generate_template_xlsx()
-        buf = BytesIO(content)
-        return FileResponse(
-            buf,
-            as_attachment=True,
-            filename="schedule_import_template.xlsx",
-            content_type=XLSX_CONTENT_TYPE,
+        template_format = (
+            request.query_params.get("format") or "xlsx"
+        ).strip().lower()
+
+        if template_format == "xlsx":
+            content = processor.generate_template_xlsx()
+            buf = BytesIO(content)
+            return FileResponse(
+                buf,
+                as_attachment=True,
+                filename="schedule_import_template.xlsx",
+                content_type=XLSX_CONTENT_TYPE,
+            )
+
+        if template_format == "csv":
+            content = processor.generate_template_csv_zip()
+            buf = BytesIO(content)
+            return FileResponse(
+                buf,
+                as_attachment=True,
+                filename="schedule_import_template.zip",
+                content_type=ZIP_CONTENT_TYPE,
+            )
+
+        return Response(
+            {
+                "detail": (
+                    "Unsupported template format. Use ?format=xlsx or "
+                    "?format=csv."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
 

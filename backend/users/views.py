@@ -13,6 +13,8 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from core.permissions import IsRegistrarOrReadOnly
 
+from django.contrib.auth import get_user_model
+
 from .models import PasswordResetToken, Professors
 from .serializers import (
     LoginSerializer,
@@ -21,6 +23,23 @@ from .serializers import (
     ProfessorsSerializer,
 )
 from .throttles import LoginRateThrottle
+
+User = get_user_model()
+
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["id", "username", "email", "first_name", "last_name"]
+
+
+class UserListView(APIView):
+    """Read-only list of users for use in professor creation dropdowns."""
+    permission_classes = [IsRegistrarOrReadOnly]
+
+    def get(self, request):
+        users = User.objects.all().order_by("username")
+        return Response(UserSerializer(users, many=True).data)
 
 
 class JWTLoginView(TokenObtainPairView):
@@ -200,6 +219,20 @@ class JWTMeView(APIView):
     destroy=extend_schema(tags=["users"]),
 )
 class ProfessorsViewSet(viewsets.ModelViewSet):
-    queryset = Professors.objects.select_related("user", "department").all()
     serializer_class = ProfessorsSerializer
     permission_classes = [IsRegistrarOrReadOnly]
+
+    def get_queryset(self):
+        qs = Professors.objects.select_related("user", "department").all()
+        term_id = self.request.query_params.get("term")
+        if term_id:
+            try:
+                qs = qs.filter(assignments__term_id=int(term_id)).distinct()
+            except (TypeError, ValueError):
+                pass
+        else:
+            from timetable.models import AcademicTerm
+            active_term = AcademicTerm.objects.filter(is_active=True).first()
+            if active_term is not None:
+                qs = qs.filter(assignments__term=active_term).distinct()
+        return qs

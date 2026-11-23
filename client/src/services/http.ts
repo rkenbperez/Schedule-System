@@ -149,7 +149,7 @@ export async function apiAllPages<T>(input: RequestInfo | URL, init?: RequestIni
   if (Array.isArray(first)) {
     return first;
   }
-  if (!first || !Array.isArray(first.results) || typeof first.next !== 'string') {
+  if (!first || !Array.isArray(first.results)) {
     return [];
   }
 

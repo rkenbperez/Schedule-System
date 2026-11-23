@@ -26,6 +26,7 @@ from .views import (
     BulkCreateSectionsView,
     BulkCreateAssignmentsView,
     ProfessorProfileView,
+    ProfessorMyAssignmentsView,
     ProfessorScheduleView,
     ProfessorScheduleConflictsView,
     ProfessorAvailabilityViewSet,
@@ -96,6 +97,7 @@ urlpatterns = [
     path("admin/assignments/bulk/", BulkCreateAssignmentsView.as_view(), name="bulk-create-assignments"),
     # Professor Panel APIs
     path("professor/me/", ProfessorProfileView.as_view(), name="professor-profile"),
+    path("professor/me/assignments/", ProfessorMyAssignmentsView.as_view(), name="professor-my-assignments"),
     path("professor/me/schedule/", ProfessorScheduleView.as_view(), name="professor-schedule"),
     path("professor/me/schedule/conflicts/", ProfessorScheduleConflictsView.as_view(), name="professor-schedule-conflicts"),
     # Public Schedule APIs
