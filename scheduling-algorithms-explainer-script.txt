@@ -1,0 +1,223 @@
+SCHEDULING ALGORITHMS - EXPLAINER VIDEO SCRIPT
+==============================================
+Runtime: ~4-5 minutes
+Tone: Friendly, clear, semi-technical
+Audience: Developers and project reviewers
+Format: [VISUAL] cues + NARRATION to read aloud
+
+
+--------------------------------------------------------------
+SCENE 1 - COLD OPEN (0:00-0:25)
+--------------------------------------------------------------
+[VISUAL: Fast montage of a messy timetable - overlapping classes,
+red conflict markers, students double-booked. Cut to title card:
+"Core Scheduling Algorithms - How the Solver Works".]
+
+NARRATION:
+Building a class timetable sounds simple - until you try it.
+Every meeting needs a time, a day, and a room. No professor can
+be in two places at once. No room can host two classes. And the
+result still needs to be... good.
+
+This video walks through the three solver engines that power
+this scheduling system, and the shared rules they all obey.
+
+
+--------------------------------------------------------------
+SCENE 2 - THE SHARED MODEL (0:25-1:10)
+--------------------------------------------------------------
+[VISUAL: Animated week grid, Monday to Friday 7 AM to 7 PM,
+Saturday 7 AM to 1 PM. A single block drops onto the grid labeled
+"Placement: day + start + room".]
+
+NARRATION:
+Every engine works with the same simple model. Time is measured
+in minutes since midnight, and classes default to sixty-minute
+slots. The week runs Monday through Friday from seven to seven,
+and Saturday morning from seven to one - sixty-six hours a week.
+
+A placement is just one meeting assigned a day, a start time, and
+a room. All three engines take the same input - a scenario - and
+return the same output - a mapping from each meeting to its
+placement.
+
+[VISUAL: A checklist ticks off one item at a time as each rule is
+named.]
+
+NARRATION:
+Then there are the hard constraints: every meeting must be fully
+placed, with no professor, section, or room overlaps. Slots must
+be grid-aligned and inside opening hours. Rooms must exist, match
+the department, be big enough, and fall within availability
+windows while avoiding busy blocks. Daily and consecutive-hour
+limits apply too.
+
+But feasibility is only the floor. We also score quality with a
+soft score - lower is better:
+
+[VISUAL: Formula appears:
+soft_score = 10 x spread + 2 x consecutive + 5 x preferred]
+
+NARRATION:
+Spread measures how uneven a professor's daily hours are.
+Consecutive counts adjacent occupied hours. And preferred tracks
+meetings placed outside a professor's preferred window.
+
+
+--------------------------------------------------------------
+SCENE 3 - GREEDY (1:10-1:55)
+--------------------------------------------------------------
+[VISUAL: Meetings arranged as cards sorted by size and constraint
+count. The most constrained card glows and moves first.]
+
+NARRATION:
+Engine number one is Greedy - constructive, with no repair.
+
+The idea: place the hardest meetings first, and never revisit a
+choice. It counts each meeting's legal slots on an empty schedule,
+then sorts by fewest legal slots and longest duration - most
+constrained first.
+
+For each meeting, it scans legal slots in order and takes the
+first one where a free room exists, choosing the smallest room
+that fits. Then it moves on.
+
+[VISUAL: A timeline builds cleanly, then one late meeting slides
+off the edge with a "no slot" marker.]
+
+NARRATION:
+It is fast and deterministic - a great baseline. But there is no
+backtracking. One bad early choice can leave a meeting unplaced,
+even when a perfect solution exists.
+
+
+--------------------------------------------------------------
+SCENE 4 - MIN-CONFLICTS (1:55-2:45)
+--------------------------------------------------------------
+[VISUAL: A fully packed, chaotic schedule with red conflict
+sparks. A hand cursor grabs one red meeting.]
+
+NARRATION:
+Engine number two is Min-conflicts - local search, built for
+repair.
+
+Instead of building from scratch, it starts with a complete - and
+possibly broken - schedule. Every meeting gets a random legal slot
+and room. Then it hunts down the meetings involved in an overlap
+or hard violation.
+
+It picks one conflicted meeting at random and evaluates every
+legal slot-and-room pair for it. The score is simple: the number
+of overlap conflicts, plus the hard violations the move would
+create. It moves the meeting to the best-scoring option, breaking
+ties randomly, and repeats.
+
+[VISUAL: Conflict sparks flicker and disappear one by one. A seed
+value "seed=0" and a progress bar appear.]
+
+NARRATION:
+It stops when there are no conflicts left, after twenty thousand
+iterations, or when the time limit hits. It is seeded by default,
+so runs are reproducible. It handles fully assigned schedules
+naturally. But it can stall in a local minimum - which is why the
+iteration cap and time limit exist.
+
+
+--------------------------------------------------------------
+SCENE 5 - BACKTRACKING (2:45-3:30)
+--------------------------------------------------------------
+[VISUAL: A search tree grows. One branch turns red and is pruned;
+the search backs up and tries a sibling branch.]
+
+NARRATION:
+Engine number three is Backtracking - a complete constraint
+search.
+
+It explores placements depth-first, undoing failed choices as it
+goes. At each step, it picks the unplaced meeting with the fewest
+legal candidates - most-constrained variable first. It forward-
+checks that a free, large-enough room exists for a candidate slot,
+then tries candidates recursively. If a branch fails, it removes
+that placement and tries the next.
+
+The first complete solution wins. And if it runs out of time, it
+returns the best partial placement found so far.
+
+[VISUAL: A small instance gets a "proven feasible" stamp. A large
+instance shows an expanding tree and a time-limit gauge.]
+
+NARRATION:
+Because it is exhaustive, it is deterministic and can actually
+prove feasibility or infeasibility on small instances. But the
+search space grows fast, so the time limit protects large inputs -
+and on timeout, you get a partial schedule instead of a complete
+one.
+
+
+--------------------------------------------------------------
+SCENE 6 - COMPARISON (3:30-4:15)
+--------------------------------------------------------------
+[VISUAL: Three columns - Greedy, Min-conflicts, Backtracking -
+with rows filling in as each comparison is spoken.]
+
+NARRATION:
+So which one wins? It depends on the job.
+
+Greedy is constructive, never backtracks, and is the speed
+champion. Min-conflicts is local search that repairs rough
+schedules, but can get stuck in local minima. Backtracking is the
+complete search that shines on tight, constrained instances, at
+the cost of search time.
+
+All three are deterministic - Min-conflicts thanks to its fixed
+seed. And all three can leave meetings unplaced when limits are
+hit.
+
+[VISUAL: The soft-score formula reappears with a caption:
+"Comparison metric - not a proof of optimality."]
+
+NARRATION:
+One important note: no engine guarantees the minimum soft score.
+The score is a shared comparison metric, not an optimality proof.
+
+
+--------------------------------------------------------------
+SCENE 7 - ENTRY POINT AND OUTRO (4:15-4:45)
+--------------------------------------------------------------
+[VISUAL: Code snippet appears:
+
+ALGORITHMS = {
+    "greedy": greedy.greedy,
+    "min_conflicts": min_conflicts.min_conflicts,
+    "backtracking": backtracking.backtracking,
+}]
+
+NARRATION:
+Everything runs through a single entry point - the runner. It
+looks up the engine by name, times the run, validates the hard
+constraints, builds sorted class rows, and scores only feasible
+schedules.
+
+Three engines, one model, one score. Pick the one that matches
+your instance - speed, repair, or completeness.
+
+[VISUAL: Title card with repo paths:
+backend/timetable/engines/
+docs/scheduling-engine.md]
+
+NARRATION:
+For the full details, see the engine documentation in the docs
+folder. Thanks for watching.
+
+
+--------------------------------------------------------------
+PRODUCTION NOTES
+--------------------------------------------------------------
+- B-roll suggestions: calendar grids, room floor plans, search
+  trees, progress bars, conflict sparks.
+- On-screen text should mirror the narration, not repeat it.
+- Key terms to bold on screen: Placement, Hard constraints,
+  soft_score, Most-constrained first, Local minimum.
+- Chapter markers: 0:00 Intro, 0:25 Shared model, 1:10 Greedy,
+  1:55 Min-conflicts, 2:45 Backtracking, 3:30 Comparison,
+  4:15 Entry point and outro.

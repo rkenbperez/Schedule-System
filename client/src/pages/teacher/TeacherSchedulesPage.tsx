@@ -1,25 +1,35 @@
-// pages/teacher/TeacherSchedulesPage.tsx
-import { useParams, Link } from 'react-router-dom';
-import { Calendar, ArrowRight } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { CalendarDays, Clock3, MapPin } from 'lucide-react';
 import { useSchedules } from '../../hooks/Schedule.hooks';
 import { useMe } from '../../hooks/useAuth';
-import { SkeletonCard } from '../../components/shared/Skeleton';
+import {
+  Alert,
+  Badge,
+  Card,
+  EmptyState,
+  LoadingState,
+  PageHeader,
+  SegmentedControl,
+} from '../../components/ui';
 import type { Schedule } from '../../types/Types';
 
 const DAYS = [
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
+  { label: 'Monday', short: 'Mon' },
+  { label: 'Tuesday', short: 'Tue' },
+  { label: 'Wednesday', short: 'Wed' },
+  { label: 'Thursday', short: 'Thu' },
+  { label: 'Friday', short: 'Fri' },
+  { label: 'Saturday', short: 'Sat' },
 ];
 
 const START_HOUR = 7;
-const END_HOUR = 20;
+const HOURS = Array.from({ length: 12 }, (_, index) => START_HOUR + index);
+
+type DayFilter = 'all' | '0' | '1' | '2' | '3' | '4' | '5';
 
 function timeToHours(time: string): number {
   const [hours, minutes = '0'] = time.split(':');
+
   return Number(hours) + Number(minutes) / 60;
 }
 
@@ -28,61 +38,12 @@ function formatHour(hour: number) {
   const whole = Math.floor(hour);
   const minutes = Math.round((hour - whole) * 60);
   const display = whole % 12 === 0 ? 12 : whole % 12;
+
   return `${display}:${String(minutes).padStart(2, '0')} ${period}`;
 }
 
-function splitSubject(label: string) {
-  const parts = label.split(' - ');
-  return {
-    code: parts[0] ?? '',
-    title: parts.slice(1).join(' - '),
-  };
-}
-
-function formatTimeRange(startHour: number, endHour: number): string {
-  const startPeriod = startHour < 12 ? 'am' : 'pm';
-  const endPeriod = endHour < 12 ? 'am' : 'pm';
-  const startDisplay = startHour % 12 === 0 ? 12 : startHour % 12;
-  const endDisplay = endHour % 12 === 0 ? 12 : endHour % 12;
-  // Same half of day: show period once at the end (e.g. "7–10am", "2–3pm").
-  // Cross-meridiem: show period on each side (e.g. "10am–1pm", "10am–12pm").
-  if (startPeriod === endPeriod) {
-    return `${startDisplay}–${endDisplay}${startPeriod}`;
-  }
-  return `${startDisplay}${startPeriod}–${endDisplay}${endPeriod}`;
-}
-
-function modeStyle(mode: string | null) {
-  switch (mode) {
-    case 'Synchronous':
-      return {
-        bg: 'bg-emerald-50',
-        border: 'border-emerald-300',
-        text: 'text-emerald-900',
-        modeText: 'text-emerald-800',
-      };
-    case 'Laboratory':
-      return {
-        bg: 'bg-amber-50',
-        border: 'border-amber-300',
-        text: 'text-amber-900',
-        modeText: 'text-amber-800',
-      };
-    case 'Asynchronous':
-      return {
-        bg: 'bg-indigo-50',
-        border: 'border-indigo-300',
-        text: 'text-indigo-900',
-        modeText: 'text-indigo-800',
-      };
-    default:
-      return {
-        bg: 'bg-surface-secondary',
-        border: 'border-border',
-        text: 'text-text-primary',
-        modeText: 'text-text-secondary',
-      };
-  }
+function formatTime(time: string) {
+  return formatHour(timeToHours(time));
 }
 
 function placementFor(schedule: Schedule): {
@@ -94,6 +55,7 @@ function placementFor(schedule: Schedule): {
   const endHour = schedule.end_time
     ? timeToHours(schedule.end_time)
     : startHour + 2;
+
   return {
     dayColumn: schedule.day + 2,
     startRow: startHour - START_HOUR + 2,
@@ -103,104 +65,193 @@ function placementFor(schedule: Schedule): {
 
 export default function TeacherSchedulesPage() {
   const { data: user } = useMe({ enabled: true });
-  const { name: teacherName } = useParams<{ name: string }>();
-  const teacher = teacherName ?? 'juan';
   const teacherId = user?.professor?.id;
+  const [dayFilter, setDayFilter] = useState<DayFilter>('all');
+
+  const mockSchedules: Schedule[] = [];
 
   const { data: schedules, isLoading, isError } = useSchedules({
     teacherId,
     enabled: !!teacherId,
   });
 
-  const resolvedSchedules: Schedule[] = schedules ?? [];
+  const resolvedSchedules: Schedule[] = schedules ?? mockSchedules;
 
-  if (isLoading) {
-    return (
-      <section className='w-full'>
-        <h1 className='mb-1 text-lg font-medium text-text-primary'>
-          My Schedule
-        </h1>
-        <div className='mt-8 flex flex-col items-center justify-center py-16 text-text-tertiary text-sm'>
-          <div className='mb-3 opacity-50'>
-            <SkeletonCard />
-          </div>
-          <p className='text-sm font-medium text-text-primary'>
-            Loading schedule…
-          </p>
-        </div>
-      </section>
-    );
-  }
+  const sortedSchedules = useMemo(
+    () =>
+      [...resolvedSchedules].sort(
+        (a, b) =>
+          a.day - b.day ||
+          timeToHours(a.start_time) - timeToHours(b.start_time)
+      ),
+    [resolvedSchedules]
+  );
 
-  if (isError) {
-    return (
-      <section className='w-full'>
-        <p className='text-sm text-text-secondary'>
-          Unable to load your schedules.
-        </p>
-      </section>
-    );
-  }
+  const filteredSchedules = useMemo(
+    () =>
+      dayFilter === 'all'
+        ? sortedSchedules
+        : sortedSchedules.filter(
+            (schedule) => String(schedule.day) === dayFilter
+          ),
+    [sortedSchedules, dayFilter]
+  );
 
-  const hours = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i);
+  const dayOptions = [
+    { value: 'all' as const, label: 'All days', count: sortedSchedules.length },
+    ...DAYS.map((day, index) => ({
+      value: String(index) as Exclude<DayFilter, 'all'>,
+      label: day.short,
+      count: sortedSchedules.filter((schedule) => schedule.day === index)
+        .length,
+    })),
+  ];
+
+  const lastEndRow = resolvedSchedules.reduce((max, schedule) => {
+    return Math.max(max, placementFor(schedule).endRow);
+  }, 13);
+
+  const rowCount = Math.max(12, lastEndRow - 1);
+
+  const termLabel =
+    resolvedSchedules.length > 0
+      ? '1st Semester, 2026–2027'
+      : 'No active schedules';
 
   return (
-    <section className='w-full'>
-      <h1 className='mb-1 text-lg font-medium text-text-primary'>
-        My Schedule
-      </h1>
+    <section className='w-full space-y-6'>
+      <PageHeader
+        eyebrow='Teacher'
+        title='My schedules'
+        description={termLabel}
+      />
 
-      {resolvedSchedules.length === 0 ? (
-        <div className='mt-8 flex flex-col items-center justify-center py-16 rounded-xl border-2 border-dashed border-border bg-surface-secondary'>
-          <Calendar size={32} className='mb-3 opacity-50' />
-          <h3 className='text-sm font-medium text-text-primary'>
-            No classes scheduled yet
-          </h3>
-          <p className='text-xs text-text-secondary mt-1'>
-            Your schedule will appear here once classes are assigned to you.
-          </p>
-          <Link
-            to={`/teacher/${teacher}/assignments`}
-            className='mt-4 flex items-center gap-1.5 text-xs font-medium text-apple-green-600 hover:text-apple-green-700'
-          >
-            Go to My assignments
-            <ArrowRight size={14} />
-          </Link>
-        </div>
+      {isLoading ? (
+        <LoadingState label='Loading your schedules…' />
+      ) : isError ? (
+        <Alert tone='danger' title='Unable to load your schedules'>
+          Please refresh the page or try again later.
+        </Alert>
+      ) : resolvedSchedules.length === 0 ? (
+        <EmptyState
+          icon={CalendarDays}
+          title='No schedules yet'
+          description='Your weekly timetable will appear here once classes are scheduled.'
+        />
       ) : (
         <>
-          <p className='mb-6 text-sm text-text-secondary'>
-            1st semester, 2026 to 2027
-          </p>
+          <div className='lg:hidden'>
+            <SegmentedControl
+              label='Filter by day'
+              options={dayOptions}
+              value={dayFilter}
+              onChange={setDayFilter}
+            />
+          </div>
 
-          <div className='overflow-x-auto overflow-y-auto visible-scrollbar max-h-[calc(100vh-10rem)]'>
-            <div className='min-w-[860px]'>
+          <div className='space-y-3 lg:hidden'>
+            {filteredSchedules.length === 0 ? (
+              <EmptyState
+                icon={CalendarDays}
+                title='No classes on this day'
+                description='Choose another day to see your schedule.'
+              />
+            ) : (
+              filteredSchedules.map((schedule) => (
+                <Card key={schedule.id} className='p-4'>
+                  <div className='flex flex-wrap items-start justify-between gap-2'>
+                    <div className='min-w-0'>
+                      <p className='text-body font-semibold text-text-primary'>
+                        {schedule.subject_label}
+                      </p>
+                      <p className='text-body-sm text-text-secondary'>
+                        Section {schedule.section_name}
+                      </p>
+                    </div>
+                    <Badge tone='green'>{schedule.mode_display}</Badge>
+                  </div>
+
+                  <dl className='mt-3 grid grid-cols-2 gap-3 border-t border-border-light pt-3'>
+                    <div className='flex items-start gap-2'>
+                      <CalendarDays
+                        size={15}
+                        className='mt-0.5 shrink-0 text-apple-green-600'
+                        aria-hidden='true'
+                      />
+                      <div>
+                        <dt className='text-caption uppercase tracking-wide text-text-tertiary'>
+                          Day
+                        </dt>
+                        <dd className='text-body-sm text-text-primary'>
+                          {schedule.day_display}
+                        </dd>
+                      </div>
+                    </div>
+                    <div className='flex items-start gap-2'>
+                      <Clock3
+                        size={15}
+                        className='mt-0.5 shrink-0 text-apple-green-600'
+                        aria-hidden='true'
+                      />
+                      <div>
+                        <dt className='text-caption uppercase tracking-wide text-text-tertiary'>
+                          Time
+                        </dt>
+                        <dd className='text-body-sm text-text-primary'>
+                          {formatTime(schedule.start_time)}
+                          {schedule.end_time
+                            ? ` – ${formatTime(schedule.end_time)}`
+                            : ''}
+                        </dd>
+                      </div>
+                    </div>
+                    <div className='col-span-2 flex items-start gap-2'>
+                      <MapPin
+                        size={15}
+                        className='mt-0.5 shrink-0 text-apple-green-600'
+                        aria-hidden='true'
+                      />
+                      <div>
+                        <dt className='text-caption uppercase tracking-wide text-text-tertiary'>
+                          Room
+                        </dt>
+                        <dd className='text-body-sm text-text-primary'>
+                          {schedule.room_name}
+                        </dd>
+                      </div>
+                    </div>
+                  </dl>
+                </Card>
+              ))
+            )}
+          </div>
+
+          <div className='hidden overflow-auto rounded-card border border-border bg-surface lg:block lg:max-h-[70vh]'>
+            <div className='min-w-[920px]'>
               <div
-                className='grid gap-px rounded-card border border-border bg-border'
+                className='grid gap-px bg-border'
                 style={{
-                  gridTemplateColumns: '64px repeat(6, minmax(0, 1fr))',
-                  gridTemplateRows: `2.5rem repeat(${END_HOUR - START_HOUR + 1}, 58px)`,
+                  gridTemplateColumns: '72px repeat(6, minmax(0, 1fr))',
+                  gridTemplateRows: `2.75rem repeat(${rowCount}, 4.5rem)`,
                 }}
               >
-                <div className='bg-surface' />
+                <div className='sticky left-0 top-0 z-30 bg-surface' />
                 {DAYS.map((day) => (
                   <div
-                    key={day}
-                    className='flex items-center justify-center bg-surface text-sm font-medium text-text-primary'
+                    key={day.label}
+                    className='sticky top-0 z-20 flex items-center justify-center bg-surface px-2 text-body-sm font-medium text-text-primary'
                   >
-                    {day}
+                    {day.label}
                   </div>
                 ))}
 
-                {hours.map((hour, index) => (
+                {HOURS.map((hour, index) => (
                   <div
                     key={hour}
-                    className='bg-surface'
+                    className='sticky left-0 z-10 bg-surface'
                     style={{ gridColumn: 1, gridRow: index + 2 }}
                   >
-                    <span
-                      className='flex h-full w-full items-start justify-end px-2 pt-1 text-[11px] leading-none text-text-secondary'
-                    >
+                    <span className='flex h-full w-full items-start justify-end px-2 pt-1.5 text-caption leading-none text-text-secondary'>
                       {formatHour(hour)}
                     </span>
                   </div>
@@ -208,46 +259,39 @@ export default function TeacherSchedulesPage() {
 
                 {resolvedSchedules.map((schedule) => {
                   const placement = placementFor(schedule);
-                  const { code } = splitSubject(schedule.subject_label);
-                  const startHour = timeToHours(schedule.start_time);
-                  const endHour = schedule.end_time
-                    ? timeToHours(schedule.end_time)
-                    : startHour + Math.max(1, schedule.duration_slots ?? 1);
-                  const { bg, border, text, modeText } = modeStyle(
-                    schedule.mode_display,
-                  );
+
                   return (
                     <div
                       key={schedule.id}
-                      className={`overflow-hidden rounded-md border ${border} ${bg} ${text} p-2 py-1`}
-                      title={schedule.subject_label}
+                      className='m-1 flex min-h-0 flex-col justify-between gap-1 overflow-hidden rounded-control border border-apple-green-300 bg-apple-green-50 p-2'
                       style={{
                         gridColumn: placement.dayColumn,
                         gridRow: `${placement.startRow} / ${placement.endRow}`,
                       }}
+                      title={`${schedule.subject_label} · Section ${schedule.section_name} · ${schedule.room_name}`}
                     >
-                      <div className='flex items-baseline justify-between gap-1 leading-tight mb-0.5'>
-                        <span className='font-semibold text-[10px] truncate'>
-                          {code}
-                        </span>
-                        <span className={`text-[9px] font-medium normal-case shrink-0 ${modeText}`}>
-                          {schedule.mode_display ?? '—'}
-                        </span>
+                      <div className='min-h-0'>
+                        <div className='flex items-start justify-between gap-1'>
+                          <p className='truncate text-caption font-semibold text-apple-green-900'>
+                            {schedule.subject_label}
+                          </p>
+                          <span className='shrink-0 text-caption font-medium text-apple-green-700'>
+                            {schedule.mode_display}
+                          </span>
+                        </div>
+                        <p className='truncate text-caption text-apple-green-800'>
+                          Section {schedule.section_name}
+                        </p>
+                        <p className='truncate text-caption text-apple-green-700'>
+                          {schedule.room_name}
+                        </p>
                       </div>
-                      <div className='flex items-center gap-1 leading-tight mb-0.5'>
-                        <span className={`text-[9px] truncate ${text}`}>
-                          {schedule.section_name}
-                        </span>
-                        <span className='text-[9px] text-text-tertiary'>·</span>
-                        <span className={`text-[9px] truncate ${text}`}>
-                          {formatTimeRange(startHour, endHour)}
-                        </span>
-                      </div>
-                      <div className='flex items-center gap-1 leading-tight'>
-                        <span className={`text-[9px] truncate ${text}`}>
-                          {schedule.room_name ?? 'No Room'}
-                        </span>
-                      </div>
+                      <p className='text-caption font-medium text-apple-green-900'>
+                        {formatTime(schedule.start_time)}
+                        {schedule.end_time
+                          ? ` – ${formatTime(schedule.end_time)}`
+                          : ''}
+                      </p>
                     </div>
                   );
                 })}

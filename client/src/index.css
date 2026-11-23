@@ -17,69 +17,175 @@
   --color-surface-tertiary: #fafafa;
   --color-border: #e5e5ea;
   --color-border-light: #f0f0f2;
+  --color-border-control: #8e8e93;
   --color-text-primary: #1d1d1f;
-  --color-text-secondary: #86868b;
-  --color-text-tertiary: #aeaeb2;
+  --color-text-secondary: #5f5f66;
+  --color-text-tertiary: #74747b;
+  --color-text-disabled: #a1a1a6;
+
+  --color-success: #196c45;
+  --color-success-soft: #f0faf4;
+  --color-success-border: #bbead0;
+  --color-warning: #92400e;
+  --color-warning-soft: #fffbeb;
+  --color-warning-border: #fde68a;
+  --color-danger: #b91c1c;
+  --color-danger-soft: #fef2f2;
+  --color-danger-border: #fecaca;
+  --color-info: #1d4ed8;
+  --color-info-soft: #eff6ff;
+  --color-info-border: #bfdbfe;
 
   --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
   --text-sm: 0.875rem;
+  --text-sm--line-height: 1.375rem;
   --text-md: 1rem;
+  --text-md--line-height: 1.5rem;
   --text-lg: 1.125rem;
+  --text-lg--line-height: 1.75rem;
   --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
   --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
   --text-3xl: 1.875rem;
+  --text-3xl--line-height: 2.25rem;
+
+  --text-hero: 3rem;
+  --text-hero--line-height: 3.5rem;
+  --text-hero--letter-spacing: -0.035em;
+  --text-hero--font-weight: 600;
+  --text-display: 1.875rem;
+  --text-display--line-height: 2.25rem;
+  --text-display--letter-spacing: -0.025em;
+  --text-display--font-weight: 600;
+  --text-h1: 1.5rem;
+  --text-h1--line-height: 2rem;
+  --text-h1--letter-spacing: -0.02em;
+  --text-h1--font-weight: 600;
+  --text-h2: 1.25rem;
+  --text-h2--line-height: 1.75rem;
+  --text-h2--letter-spacing: -0.015em;
+  --text-h2--font-weight: 600;
+  --text-h3: 1rem;
+  --text-h3--line-height: 1.5rem;
+  --text-h3--letter-spacing: -0.01em;
+  --text-h3--font-weight: 600;
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.375rem;
+  --text-body-sm: 0.8125rem;
+  --text-body-sm--line-height: 1.25rem;
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1rem;
+  --text-overline: 0.6875rem;
+  --text-overline--line-height: 1rem;
+  --text-overline--letter-spacing: 0.06em;
+  --text-overline--font-weight: 600;
+  --text-numeric: 1.75rem;
+  --text-numeric--line-height: 2rem;
+  --text-numeric--letter-spacing: -0.02em;
+  --text-numeric--font-weight: 600;
+
+  --radius-control: 0.625rem;
+  --radius-card: 1rem;
+  --radius-panel: 1.25rem;
+  --radius-pill: 9999px;
+
+  --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  --shadow-popover: 0 8px 24px -8px rgb(0 0 0 / 0.16);
+  --shadow-overlay: 0 24px 64px -16px rgb(0 0 0 / 0.28);
 
   --font-sf:
     'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     Helvetica, Arial, sans-serif;
 }
 
-* {
-  box-sizing: border-box;
+@layer base {
+  html {
+    font-family: var(--font-sf);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: var(--color-surface-secondary);
+    color: var(--color-text-primary);
+    color-scheme: light;
+    scroll-behavior: smooth;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    overflow-x: clip;
+  }
+
+  #root {
+    min-height: 100dvh;
+  }
+
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-apple-green-600);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: var(--color-apple-green-100);
+    color: var(--color-apple-green-900);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
-html {
-  font-family: var(--font-sf);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background-color: var(--color-surface-secondary);
-  color: var(--color-text-primary);
+@media (pointer: fine) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #c7c7cc transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #c7c7cc;
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #aeaeb2;
+  }
 }
 
-body {
-  margin: 0;
-  min-height: 100vh;
-}
+@layer utilities {
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 
-#root {
-  min-height: 100vh;
-}
-
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #c7c7cc;
-  border-radius: 3px;
-}
-
-/* Always-visible scrollbar utility for Linux/Chromium overlay scrollbars. */
-.visible-scrollbar {
-  scrollbar-width: thin;
-}
-.visible-scrollbar::-webkit-scrollbar {
-  width: 8px;
-}
-.visible-scrollbar::-webkit-scrollbar-track {
-  background: var(--color-border-light);
-}
-.visible-scrollbar::-webkit-scrollbar-thumb {
-  background: #c7c7cc;
-  border-radius: 4px;
-}
-.visible-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #a8a8ab;
+  .animate-rise-in {
+    animation: rise-in 650ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
 }

@@ -1,47 +1,61 @@
 // pages/registrar/RegistrarTimetablePage.tsx
-// Standalone master schedule view for the registrar: view, add, edit, delete, clear schedules.
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+// Standalone timetable view for the registrar: view, add, edit, delete, clear schedules.
+import { useId, useState } from 'react';
 import {
-  AlertTriangle,
-  Calendar,
+  CalendarDays,
   Download,
-  Edit,
-  ListChecks,
+  Pencil,
   RefreshCw,
+  Sparkles,
+  Trash2,
   X,
 } from 'lucide-react';
 import {
-  useAllAssignments,
-  useClearScheduledClasses,
-  useCourses,
-  useExportSchedule,
-  useGetConflicts,
-  useIgnoreConflict,
-  useResolveConflict,
-  useRooms,
   useSchedules,
-  useSections,
   useTeachers,
-  useTerms,
+  useCourses,
+  useSections,
+  useRooms,
 } from '../../hooks/Schedule.hooks';
-import { ClassScheduleModal } from '../../components/shared/ClassScheduleModal';
-import { ConfirmDialog } from '../../components/shared/ConfirmDialog';
-import { SlideOverDrawer } from '../../components/shared/SlideOverDrawer';
-import { useToast } from '../../hooks/useToast';
+import {
+  useDeleteScheduledClass,
+  useUpdateScheduledClass,
+  useClearScheduledClasses,
+  useExportSchedule,
+} from '../../hooks/GenerateManagement.hooks';
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  IconButton,
+  LinkButton,
+  LoadingState,
+  Modal,
+  PageHeader,
+  SegmentedControl,
+  SelectField,
+  Table,
+  TableContainer,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+  TextField,
+  type SegmentedOption,
+} from '../../components/ui';
 import type {
-  Course,
-  CourseAssignmentDetail,
-  Room,
   Schedule,
-  Section,
   TeacherListItem,
+  Course,
+  Section,
 } from '../../types/Types';
-import { DAY_LABELS } from '../../types/Types';
+import { DAY_LABELS } from './registrarData';
 
-const cleanTeacherName = (name: string) => {
-  return name.replace(/^demo_/, '');
-};
+const cleanTeacherName = (name: string) => name.replace(/^demo_/, '');
 
 const splitSubject = (label: string) => {
   const parts = label.split(' - ');
@@ -51,687 +65,848 @@ const splitSubject = (label: string) => {
   };
 };
 
+const TIME_SLOTS = [
+  { label: '07:00', hour: 7 },
+  { label: '08:00', hour: 8 },
+  { label: '09:00', hour: 9 },
+  { label: '10:00', hour: 10 },
+  { label: '11:00', hour: 11 },
+  { label: '12:00', hour: 12 },
+  { label: '13:00', hour: 13 },
+  { label: '14:00', hour: 14 },
+  { label: '15:00', hour: 15 },
+  { label: '16:00', hour: 16 },
+];
+
+const MODE_OPTIONS = [
+  { value: 'sync', label: 'Synchronous' },
+  { value: 'async', label: 'Asynchronous' },
+  { value: 'lab', label: 'Laboratory' },
+];
+
+const DURATION_OPTIONS = [1, 2, 3];
+
+type DayFilter = 'all' | '0' | '1' | '2' | '3' | '4';
+
+const formatTime = (value: string | null) =>
+  value ? value.replace(/:00$/, '').slice(0, 5) : '—';
+
+function calculateEndTime(startTime: string, durationSlots: number) {
+  if (!startTime) return '—';
+  const [hours, minutes] = startTime.split(':').map(Number);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return '—';
+  const end = new Date(0, 0, 0, hours + durationSlots, minutes);
+  return `${String(end.getHours()).padStart(2, '0')}:${String(
+    end.getMinutes()
+  ).padStart(2, '0')}`;
+}
+
 export default function RegistrarTimetablePage() {
-  const navigate = useNavigate();
+  const editFormId = useId();
+
   const { data: schedules, isLoading } = useSchedules();
   const { data: teachersData } = useTeachers();
   const { data: coursesData } = useCourses();
   const { data: sectionsData } = useSections();
   const { data: roomsData } = useRooms();
 
-  const { data: termsData } = useTerms();
-  const { data: assignmentsData } = useAllAssignments({
-    termId: termsData?.find((t) => t.is_active)?.id,
-  });
-
+  const updateScheduledClassMutation = useUpdateScheduledClass();
+  const deleteScheduledClassMutation = useDeleteScheduledClass();
   const clearScheduledClassesMutation = useClearScheduledClasses();
+  const exportScheduleMutation = useExportSchedule();
 
   const teachers: TeacherListItem[] = teachersData ?? [];
   const courses: Course[] = coursesData ?? [];
   const sections: Section[] = sectionsData ?? [];
-  const rooms: Room[] = roomsData ?? [];
+  const rooms = (roomsData ?? []) as { id: number; name: string }[];
 
-  const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
-  const [queueOpen, setQueueOpen] = useState(false);
-  const [schedulingAssignment, setSchedulingAssignment] =
-    useState<CourseAssignmentDetail | null>(null);
-  const [sectionFilter, setSectionFilter] = useState<number | 'all'>('all');
-  const [roomFilter, setRoomFilter] = useState<number | 'all'>('all');
-  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [editingClassId, setEditingClassId] = useState<number | null>(null);
+  const [editProfId, setEditProfId] = useState<number | null>(null);
+  const [editSubjectId, setEditSubjectId] = useState<number | null>(null);
+  const [editSectionId, setEditSectionId] = useState<number | null>(null);
+  const [editRoom, setEditRoom] = useState<number | null>(null);
+  const [editDay, setEditDay] = useState<number | null>(null);
+  const [editStartTime, setEditStartTime] = useState('');
+  const [editDurationSlots, setEditDurationSlots] = useState(1);
+  const [editMode, setEditMode] = useState('sync');
+
+  const [actionError, setActionError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [dayFilter, setDayFilter] = useState<DayFilter>('all');
 
-  const exportScheduleMutation = useExportSchedule();
-  const [exportPanelOpen, setExportPanelOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [confirmClear, setConfirmClear] = useState(false);
-  const [selectedConflict, setSelectedConflict] = useState<number | null>(null);
+  const [exportFormat, setExportFormat] = useState<string | null>(null);
 
-  const getConflicts = useGetConflicts();
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Schedule | null>(null);
 
-  const [conflicts, setConflicts] = useState<{
-    room_conflicts: Array<{ id: number; classes: Array<{ id: number }> }>;
-    professor_conflicts: Array<{ id: number; classes: Array<{ id: number }> }>;
-    section_conflicts: Array<{ id: number; classes: Array<{ id: number }> }>;
-    capacity_violations: Array<{ class_id: number }>;
-    availability_violations: Array<{ class_id: number }>;
-    consecutive_violations: Array<{ classes: Array<{ id: number }> }>;
-    daily_hours_violations: Array<{ classes: Array<{ id: number }> }>;
-  }>({ room_conflicts: [], professor_conflicts: [], section_conflicts: [], capacity_violations: [], availability_violations: [], consecutive_violations: [], daily_hours_violations: [] });
-  const runId = (schedules ?? [])[0]?.run ?? null;
+  const scheduleList = schedules ?? [];
+  const totalClasses = scheduleList.length;
+  const runId = scheduleList[0]?.run ?? null;
 
-  useEffect(() => {
-    if (runId) {
-      getConflicts.mutate(runId, {
-        onSuccess: (data) => setConflicts(data),
-        onError: () => setConflicts({
-          room_conflicts: [], professor_conflicts: [], section_conflicts: [],
-          capacity_violations: [], availability_violations: [], consecutive_violations: [], daily_hours_violations: [],
-        }),
-      });
-    }
-  }, [runId, getConflicts]);
+  const normalizedSearch = search.trim().toLowerCase();
+  const searchedSchedules = scheduleList.filter((schedule) => {
+    if (!normalizedSearch) return true;
+    const cleaned = cleanTeacherName(schedule.prof_name).toLowerCase();
+    return (
+      cleaned.includes(normalizedSearch) ||
+      schedule.prof_name.toLowerCase().includes(normalizedSearch)
+    );
+  });
 
-  const handleExport = async (format: string) => {
-    if (!runId) {
-      setGenerateError('No schedule data available to export.');
-      return;
-    }
-    setExportPanelOpen(false);
-    setExporting(true);
-    try {
-      const blob = await exportScheduleMutation.mutateAsync({
-        runId,
-        format,
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `timetable.${format === 'xlsx' ? 'xlsx' : format}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch {
-      setGenerateError('Failed to export Master Schedule.');
-    } finally {
-      setExporting(false);
-    }
+  const filteredSchedules = searchedSchedules
+    .filter(
+      (schedule) =>
+        dayFilter === 'all' || schedule.day === Number(dayFilter)
+    )
+    .sort((a, b) => {
+      if (a.day !== b.day) return a.day - b.day;
+      return a.start_time.localeCompare(b.start_time);
+    });
+
+  const dayOptions: SegmentedOption<DayFilter>[] = [
+    {
+      value: 'all',
+      label: 'All days',
+      count: searchedSchedules.length,
+    },
+    ...DAY_LABELS.map((label, index) => ({
+      value: String(index) as DayFilter,
+      label: label.slice(0, 3),
+      count: searchedSchedules.filter((schedule) => schedule.day === index)
+        .length,
+    })),
+  ];
+
+  const handleOpenEdit = (schedule: Schedule) => {
+    setEditingClassId(schedule.id);
+    setEditProfId(schedule.prof_id ?? null);
+    setEditSubjectId(schedule.subject_id ?? null);
+    setEditSectionId(schedule.section_id ?? null);
+    setEditRoom(schedule.room ?? null);
+    setEditDay(schedule.day);
+    setEditStartTime(schedule.start_time.slice(0, 5));
+    setEditDurationSlots(schedule.duration_slots ?? 1);
+    setEditMode(schedule.mode ?? 'sync');
   };
 
-  const totalClasses = (schedules ?? []).length;
+  const closeEditModal = () => {
+    setEditingClassId(null);
+    setEditProfId(null);
+    setEditSubjectId(null);
+    setEditSectionId(null);
+    setEditRoom(null);
+    setEditDay(null);
+    setEditStartTime('');
+    setEditDurationSlots(1);
+    setEditMode('sync');
+  };
 
-  const activeTerm = termsData?.find((term) => term.is_active) ?? null;
-  const scheduledAssignmentIds = new Set(
-    (schedules ?? []).map((cls) => cls.assignment)
-  );
-  const unscheduledAssignments = (assignmentsData ?? []).filter(
-    (assignment) =>
-      (!activeTerm || assignment.term === activeTerm.id) &&
-      !scheduledAssignmentIds.has(assignment.id)
-  );
+  const handleSaveEdit = () => {
+    if (editingClassId === null) return;
 
-  const filteredClasses = (() => {
-    const query = search.trim().toLowerCase();
-    return (schedules ?? []).filter((cls) => {
-      if (sectionFilter !== 'all' && cls.section_id !== sectionFilter) {
-        return false;
+    const current = scheduleList.find(
+      (schedule) => schedule.id === editingClassId
+    );
+    if (!current) return;
+
+    const updateData: {
+      room?: number | null;
+      day?: number;
+      start_time?: string;
+      duration_slots?: number;
+      mode?: string | null;
+      prof_id?: number;
+      subject_id?: number;
+      section_id?: number;
+    } = {};
+
+    if (editRoom !== null && editRoom !== current.room) {
+      updateData.room = editRoom;
+    }
+    if (editDay !== null && editDay !== current.day) {
+      updateData.day = editDay;
+    }
+    if (
+      editStartTime &&
+      editStartTime !== current.start_time.slice(0, 5)
+    ) {
+      updateData.start_time = editStartTime;
+    }
+    if (editDurationSlots !== (current.duration_slots ?? 1)) {
+      updateData.duration_slots = editDurationSlots;
+    }
+    if (editMode && editMode !== (current.mode ?? 'sync')) {
+      updateData.mode = editMode;
+    }
+    if (editProfId !== null && editProfId !== current.prof_id) {
+      updateData.prof_id = editProfId;
+    }
+    if (editSubjectId !== null && editSubjectId !== current.subject_id) {
+      updateData.subject_id = editSubjectId;
+    }
+    if (editSectionId !== null && editSectionId !== current.section_id) {
+      updateData.section_id = editSectionId;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      closeEditModal();
+      return;
+    }
+
+    updateScheduledClassMutation.mutate(
+      {
+        runId: current.run,
+        classId: editingClassId,
+        data: updateData,
+      },
+      {
+        onSuccess: () => closeEditModal(),
+        onError: (error: Error) => {
+          setActionError(error.message || 'Failed to update class.');
+        },
       }
-      if (roomFilter !== 'all' && cls.room !== roomFilter) {
-        return false;
-      }
-      if (!query) return true;
-      const cleaned = cleanTeacherName(cls.prof_name).toLowerCase();
-      const raw = cls.prof_name.toLowerCase();
-      return cleaned.includes(query) || raw.includes(query);
-    });
-  })();
+    );
+  };
 
-  const handleClearSchedule = () => {
-    if (totalClasses === 0) return;
-    setConfirmClear(true);
+  const handleConfirmDelete = () => {
+    if (!pendingDelete) return;
+    deleteScheduledClassMutation.mutate(
+      { runId: pendingDelete.run, classId: pendingDelete.id },
+      {
+        onSuccess: () => setPendingDelete(null),
+        onError: (error: Error) => {
+          setPendingDelete(null);
+          setActionError(error.message || 'Failed to delete class.');
+        },
+      }
+    );
   };
 
   const handleConfirmClear = () => {
-    const runId = (schedules ?? [])[0]?.run;
-    if (!runId) {
-      setConfirmClear(false);
-      return;
-    }
+    if (!runId) return;
     clearScheduledClassesMutation.mutate(runId, {
-      onError: (err: Error) => {
-        setGenerateError(err.message || 'Failed to clear schedules');
+      onSuccess: () => setClearConfirmOpen(false),
+      onError: (error: Error) => {
+        setClearConfirmOpen(false);
+        setActionError(error.message || 'Failed to clear schedules.');
       },
     });
-    setConfirmClear(false);
   };
 
-  const conflictClassIds = new Set<number>();
-  conflicts.room_conflicts.forEach((c) =>
-    c.classes.forEach((cls) => conflictClassIds.add(cls.id))
-  );
-  conflicts.professor_conflicts.forEach((c) =>
-    c.classes.forEach((cls) => conflictClassIds.add(cls.id))
-  );
-  conflicts.section_conflicts.forEach((c) =>
-    c.classes.forEach((cls) => conflictClassIds.add(cls.id))
-  );
-  conflicts.capacity_violations.forEach((c) => conflictClassIds.add(c.class_id));
-  conflicts.availability_violations.forEach((c) =>
-    conflictClassIds.add(c.class_id)
-  );
-  conflicts.consecutive_violations.forEach((c) =>
-    c.classes.forEach((cls) => conflictClassIds.add(cls.id))
-  );
-  conflicts.daily_hours_violations.forEach((c) =>
-    c.classes.forEach((cls) => conflictClassIds.add(cls.id))
-  );
+  const handleExport = async (format: string) => {
+    if (!runId) {
+      setActionError('No schedule data available to export.');
+      setExportOpen(false);
+      return;
+    }
+
+    setExportFormat(format);
+    setExporting(true);
+
+    try {
+      const blob = await exportScheduleMutation.mutateAsync({ runId, format });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `timetable.${format}`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+      setExportOpen(false);
+    } catch {
+      setActionError('Failed to export timetable.');
+      setExportOpen(false);
+    } finally {
+      setExporting(false);
+      setExportFormat(null);
+    }
+  };
+
+  const clearFilters = () => {
+    setSearch('');
+    setDayFilter('all');
+  };
 
   if (isLoading) {
     return (
-      <div className='flex min-h-screen items-center justify-center bg-surface-secondary'>
-        <div className='text-text-secondary'>Loading master schedule…</div>
-      </div>
+      <section className='w-full space-y-6'>
+        <PageHeader
+          eyebrow='Registrar'
+          title='Timetable'
+          description='Review and adjust the generated class timetable.'
+        />
+        <LoadingState label='Loading timetable…' />
+      </section>
     );
   }
 
   return (
-    <>
-      <div className='flex min-h-screen bg-surface-secondary'>
-      <div className='flex-1 px-6 py-8 sm:px-8 lg:px-12'>
-        <div className='flex items-center justify-between mb-6'>
-          <div>
-            <h1 className='text-lg font-semibold text-text-primary'>Master Schedule</h1>
-            <p className='text-sm text-text-secondary mt-0.5'>
-              {totalClasses} scheduled class{totalClasses !== 1 ? 'es' : ''}
-            </p>
-          </div>
-          <div className='flex flex-wrap justify-end gap-2'>
-            <button
-              type='button'
-              onClick={() => setQueueOpen(true)}
-              className='flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 text-xs font-medium text-text-primary transition hover:bg-surface-secondary'
-            >
-              <ListChecks size={14} /> Unscheduled ({unscheduledAssignments.length})
-            </button>
-            <button
-              type='button'
-              onClick={handleClearSchedule}
-              disabled={totalClasses === 0}
-              className='flex h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-xs font-medium text-white transition hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed'
-            >
-              Clear All Schedules
-            </button>
-            <button
-              type='button'
-              onClick={() => setExportPanelOpen(true)}
-              disabled={totalClasses === 0}
-              className='flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 text-xs font-medium text-text-primary transition hover:bg-surface-secondary disabled:opacity-60'
-            >
-              <Download size={14} /> Export
-            </button>
-            <button
-              type='button'
-              onClick={() => navigate('/registrar/schedule-management')}
-              className='flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 text-xs font-medium text-text-primary transition hover:bg-surface-secondary'
-            >
-              <RefreshCw size={14} /> Back to Generate
-            </button>
-          </div>
-        </div>
-
-        {generateError && (
-          <div className='mb-6 rounded-lg border border-red-200 bg-red-50 p-3'>
-            <p className='text-sm text-red-700'>{generateError}</p>
-          </div>
-        )}
-
-        {/* Export format panel */}
-        {exportPanelOpen && (
-          <div className='fixed inset-0 z-50 flex items-center justify-center'>
-            <div
-              className='absolute inset-0 bg-black/40 backdrop-blur-sm'
-              onClick={() => setExportPanelOpen(false)}
-            />
-            <div className='relative bg-surface p-6 rounded-xl border border-border shadow-xl w-full max-w-xs z-10'>
-              <div className='flex items-center justify-between mb-4'>
-                <h3 className='text-sm font-medium text-text-primary'>
-                  Export Master Schedule
-                </h3>
-                <button
-                  type='button'
-                  onClick={() => setExportPanelOpen(false)}
-                  className='text-text-secondary hover:text-text-primary'
-                >
-                  <X size={16} />
-                </button>
-              </div>
-              <p className='text-xs text-text-secondary mb-6'>
-                Choose a format to download the current Master Schedule.
-              </p>
-              <div className='grid grid-cols-1 gap-2'>
-                <button
-                  type='button'
-                  onClick={() => handleExport('csv')}
-                  disabled={exporting}
-                  className='flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-primary transition hover:bg-surface-secondary disabled:opacity-60'
-                >
-                  {exporting ? 'Exporting…' : 'CSV'}
-                </button>
-                <button
-                  type='button'
-                  onClick={() => handleExport('xlsx')}
-                  disabled={exporting}
-                  className='flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-primary transition hover:bg-surface-secondary disabled:opacity-60'
-                >
-                  {exporting ? 'Exporting…' : 'Excel (XLSX)'}
-                </button>
-                <button
-                  type='button'
-                  onClick={() => handleExport('pdf')}
-                  disabled={exporting}
-                  className='flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-primary transition hover:bg-surface-secondary disabled:opacity-60'
-                >
-                  {exporting ? 'Exporting…' : 'PDF'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {totalClasses === 0 ? (
-          <div className='rounded-card border border-border bg-surface p-6 text-center py-16'>
-            <div className='flex h-16 w-16 items-center justify-center rounded-full bg-apple-green-50 text-apple-green-600 mx-auto mb-4'>
-              <Calendar size={24} />
-            </div>
-            <h2 className='text-sm font-semibold text-text-primary mb-1'>
-              No scheduled classes yet.
-            </h2>
-            <p className='text-xs text-text-secondary'>
-              Generate a schedule on the Schedule Management page to populate
-              the Master Schedule.
-            </p>
-          </div>
-        ) : (
+    <section className='w-full space-y-6'>
+      <PageHeader
+        eyebrow='Registrar'
+        title='Timetable'
+        description={`${totalClasses} scheduled class${
+          totalClasses === 1 ? '' : 's'
+        } in the active run.`}
+        actions={
           <>
-            <div className='mb-3 flex flex-wrap items-center gap-2'>
-              <input
-                type='text'
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder='Filter by professor…'
-                className='h-9 w-full max-w-xs rounded-lg border border-border bg-surface px-3 text-xs text-text-primary outline-none transition focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100'
-              />
-              <select
-                value={sectionFilter}
-                onChange={(e) =>
-                  setSectionFilter(
-                    e.target.value === 'all' ? 'all' : Number(e.target.value)
-                  )
-                }
-                aria-label='Filter by section'
-                className='h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-primary outline-none transition focus:border-apple-green-400'
-              >
-                <option value='all'>All sections</option>
-                {sections.map((section) => (
-                  <option key={section.id} value={section.id}>
-                    {section.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={roomFilter}
-                onChange={(e) =>
-                  setRoomFilter(
-                    e.target.value === 'all' ? 'all' : Number(e.target.value)
-                  )
-                }
-                aria-label='Filter by room'
-                className='h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-primary outline-none transition focus:border-apple-green-400'
-              >
-                <option value='all'>All rooms</option>
-                {rooms.map((room) => (
-                  <option key={room.id} value={room.id}>
-                    {room.name || `Room ${room.id}`}
-                  </option>
-                ))}
-              </select>
-              {(search || sectionFilter !== 'all' || roomFilter !== 'all') && (
-                <span className='text-xs text-text-secondary'>
-                  {filteredClasses.length} of {totalClasses} classes
-                </span>
-              )}
-            </div>
-            <div className='max-h-[65vh] overflow-auto border border-border rounded-lg'>
-            <table className='min-w-full text-xs border-collapse'>
-              <thead>
-                <tr className='border-b border-border text-left text-[10px] text-text-secondary'>
-                  <th className='px-3 py-2'>Day</th>
-                  <th className='px-3 py-2'>Start</th>
-                  <th className='px-3 py-2'>End</th>
-                  <th className='px-3 py-2'>Subject Code</th>
-                  <th className='px-3 py-2'>Title</th>
-                  <th className='px-3 py-2'>Section</th>
-                  <th className='px-3 py-2'>Professor</th>
-                  <th className='px-3 py-2'>Room</th>
-                  <th className='px-3 py-2'>Mode</th>
-                  <th className='px-3 py-2'>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                  {filteredClasses.length === 0 ? (
-                    <tr>
-                      <td colSpan={10} className='px-3 py-8 text-center text-text-secondary'>
-                        No classes match the current filters.
-                      </td>
-                    </tr>
-                  ) : (
-                  filteredClasses
-                    .sort((a, b) => {
-                      const da = a.day ?? 0;
-                      const db = b.day ?? 0;
-                      if (da !== db) return da - db;
-                      return a.start_time.localeCompare(b.start_time);
-                    })
-                    .map((cls) => {
-                      const hasConflict = conflictClassIds.has(cls.id);
-                      const clsConflicts = [
-                        ...conflicts.room_conflicts,
-                        ...conflicts.professor_conflicts,
-                        ...conflicts.section_conflicts,
-                      ].filter((c) =>
-                        c.classes.some((c2) => c2.id === cls.id)
-                      );
-                      return (
-                        <tr key={cls.id} className={`border-b border-border-light ${hasConflict ? 'bg-red-50' : 'hover:bg-surface-secondary'}`}>
-                          <td className='px-3 py-1 text-[9px] text-text-secondary'>
-                            {DAY_LABELS[cls.day ?? 0]}
-                          </td>
-                          <td className='px-3 py-1 text-[9px] text-text-secondary'>
-                            {cls.start_time.replace(/:00$/, '')}
-                          </td>
-                          <td className='px-3 py-1 text-[9px] text-text-secondary'>
-                            {cls.end_time ? cls.end_time.replace(/:00$/, '') : ''}
-                          </td>
-                          <td className='px-3 py-1 text-[9px] text-text-primary truncate max-w-[90px]'>
-                            {splitSubject(cls.subject_label).code}
-                          </td>
-                          <td className='px-3 py-1 text-[9px] text-text-secondary truncate max-w-[150px]'>
-                            {splitSubject(cls.subject_label).title}
-                          </td>
-                          <td className='px-3 py-1 text-[9px] text-text-secondary truncate max-w-[100px]'>
-                            {cls.section_name}
-                          </td>
-                          <td className='px-3 py-1 text-[9px] text-text-secondary truncate max-w-[110px]'>
-                            {cleanTeacherName(cls.prof_name)}
-                          </td>
-                          <td className='px-3 py-1 text-[9px] text-text-secondary truncate max-w-[90px]'>
-                            {cls.room_name ?? cls.room}
-                          </td>
-                          <td className='px-3 py-1 text-[9px] text-text-secondary'>
-                            <div className='flex items-center gap-1'>
-                              {cls.mode_display ?? cls.mode ?? ''}
-                              {clsConflicts.length > 0 && (
-                                <span className='ml-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[8px] font-medium text-red-700 bg-red-50'>
-                                  ⚠ {clsConflicts.length}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className='px-3 py-1 text-[9px] text-center'>
-                            <div className='flex items-center gap-1'>
-                              <button
-                                type='button'
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingSchedule(cls);
-                                }}
-                                className='w-full h-7 rounded bg-apple-green-600 text-[9px] font-medium text-white hover:bg-apple-green-700 transition flex items-center justify-center gap-1'
-                                title='Edit'
-                              >
-                                <Edit size={10} className='mr-0.5' /> Edit
-                              </button>
-                              {clsConflicts.length > 0 && (
-                                <button
-                                  type='button'
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedConflict(cls.id);
-                                  }}
-                                  className='w-full h-7 rounded bg-red-600 text-[9px] font-medium text-white hover:bg-red-700 transition flex items-center justify-center gap-1'
-                                  title='Resolve Conflict'
-                                >
-                                  <AlertTriangle size={10} className='mr-0.5' /> Resolve
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-              </tbody>
-            </table>
-            </div>
+            <Button
+              variant='danger'
+              icon={<Trash2 size={16} aria-hidden='true' />}
+              onClick={() => setClearConfirmOpen(true)}
+              disabled={totalClasses === 0}
+            >
+              Clear all
+            </Button>
+            <Button
+              variant='secondary'
+              icon={<Download size={16} aria-hidden='true' />}
+              onClick={() => setExportOpen(true)}
+              disabled={totalClasses === 0}
+            >
+              Export
+            </Button>
+            <LinkButton
+              to='/registrar/schedule-management'
+              variant='secondary'
+              icon={<RefreshCw size={16} aria-hidden='true' />}
+            >
+              Generate
+            </LinkButton>
           </>
-        )}
-
-        {schedulingAssignment && runId && (
-          <ClassScheduleModal
-            mode='create'
-            runId={runId}
-            assignment={schedulingAssignment}
-            professors={teachers}
-            courses={courses}
-            sections={sections}
-            rooms={rooms}
-            onClose={() => setSchedulingAssignment(null)}
-            onSaved={() => {
-              if (runId) getConflicts.mutate(runId);
-            }}
-          />
-        )}
-
-        {editingSchedule && (
-          <ClassScheduleModal
-            mode='edit'
-            runId={editingSchedule.run}
-            schedule={editingSchedule}
-            professors={teachers}
-            courses={courses}
-            sections={sections}
-            rooms={rooms}
-            onClose={() => setEditingSchedule(null)}
-            onSaved={() => {
-              if (runId) getConflicts.mutate(runId);
-            }}
-            onDeleted={() => {
-              if (runId) getConflicts.mutate(runId);
-            }}
-          />
-        )}
-      </div>
-    </div>
-
-    <SlideOverDrawer isOpen={queueOpen} onClose={() => setQueueOpen(false)}>
-      <div className='flex shrink-0 items-center justify-between border-b border-border px-6 py-4'>
-        <div>
-          <h2 className='text-sm font-medium text-text-primary'>
-            Unscheduled Assignments
-          </h2>
-          <p className='text-xs text-text-tertiary'>
-            {unscheduledAssignments.length} awaiting scheduling
-            {activeTerm ? ` · ${activeTerm.name}` : ''}
-          </p>
-        </div>
-        <button
-          type='button'
-          onClick={() => setQueueOpen(false)}
-          className='shrink-0 rounded-full p-1.5 text-text-tertiary transition hover:bg-surface-secondary hover:text-text-primary'
-        >
-          <X size={16} />
-        </button>
-      </div>
-
-      <div className='flex-1 overflow-y-auto p-6'>
-        {unscheduledAssignments.length === 0 ? (
-          <p className='text-sm text-text-secondary'>
-            Everything in the active term is scheduled.
-          </p>
-        ) : (
-          <div className='space-y-3'>
-            {unscheduledAssignments.map((assignment) => (
-              <div
-                key={assignment.id}
-                className='rounded-lg border border-border p-3'
-              >
-                <div className='flex items-start justify-between gap-3'>
-                  <div className='min-w-0'>
-                    <p className='truncate text-sm font-medium text-text-primary'>
-                      {assignment.subject_label}
-                    </p>
-                    <p className='truncate text-xs text-text-secondary'>
-                      {cleanTeacherName(assignment.prof_name)} ·{' '}
-                      {assignment.section_name}
-                    </p>
-                    <p className='mt-1 text-[10px] text-text-tertiary'>
-                      {assignment.meetings?.[0]?.mode_display ?? 'No meeting'} ·{' '}
-                      {assignment.meetings?.[0]?.duration_slots ?? 1} slot(s)
-                    </p>
-                  </div>
-                  <button
-                    type='button'
-                    onClick={() => {
-                      setQueueOpen(false);
-                      setSchedulingAssignment(assignment);
-                    }}
-                    disabled={!runId}
-                    title={
-                      runId ? 'Schedule class' : 'Generate a schedule first'
-                    }
-                    className='h-8 shrink-0 rounded-md bg-apple-green-600 px-3 text-xs font-medium text-white transition hover:bg-apple-green-700 disabled:cursor-not-allowed disabled:opacity-50'
-                  >
-                    Schedule
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </SlideOverDrawer>
-
-    <ConfirmDialog
-      isOpen={confirmClear}
-      title='Clear All Schedules'
-      message='Are you sure you want to clear all scheduled classes? This cannot be undone.'
-      confirmText='Clear All'
-      cancelText='Cancel'
-      onConfirm={handleConfirmClear}
-      onCancel={() => setConfirmClear(false)}
-    />
-    {selectedConflict && (
-      <ConflictResolutionDialog
-        conflictId={selectedConflict}
-        onClose={() => setSelectedConflict(null)}
-        onResolved={() => {
-          setSelectedConflict(null);
-          if (runId) getConflicts.mutate(runId);
-        }}
+        }
       />
-    )}
-  </>
-  );
-}
 
-function ConflictResolutionDialog({
-  conflictId,
-  onClose,
-  onResolved,
-}: {
-  conflictId: number;
-  onClose: () => void;
-  onResolved: () => void;
-}) {
-  const [resolutionType, setResolutionType] = useState<string>('');
-  const resolveConflict = useResolveConflict();
-  const ignoreConflict = useIgnoreConflict();
-  const toast = useToast();
+      {actionError && (
+        <Alert
+          tone='danger'
+          title='Something went wrong'
+          action={
+            <IconButton
+              label='Dismiss error'
+              size='sm'
+              onClick={() => setActionError(null)}
+            >
+              <X size={16} aria-hidden='true' />
+            </IconButton>
+          }
+        >
+          {actionError}
+        </Alert>
+      )}
 
-  const handleResolve = () => {
-    resolveConflict.mutate(
-      {
-        conflictId,
-        resolutionType,
-        resolutionDetails: {},
-      },
-      {
-        onSuccess: () => {
-          toast.addToast({ type: 'success', title: 'Conflict resolved.' });
-          onClose();
-          onResolved();
-        },
-        onError: () =>
-          toast.addToast({ type: 'error', title: 'Failed to resolve conflict.' }),
-      },
-    );
-  };
-
-  const handleIgnore = () => {
-    ignoreConflict.mutate(conflictId, {
-      onSuccess: () => {
-        toast.addToast({ type: 'success', title: 'Conflict ignored.' });
-        onClose();
-      },
-      onError: () =>
-        toast.addToast({ type: 'error', title: 'Failed to ignore conflict.' }),
-    });
-  };
-
-  return (
-    <div className='fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4' onClick={onClose}>
-      <div className='fixed inset-y-0 right-0 z-[100] w-full max-w-md bg-surface border-l border-border shadow-2xl flex flex-col' onClick={(e) => e.stopPropagation()}>
-        <div className='flex items-center justify-between border-b border-border px-6 py-4 shrink-0'>
-          <h2 className='text-sm font-medium text-text-primary'>Resolve Conflict</h2>
-          <button type='button' onClick={onClose} className='shrink-0 rounded-full p-1.5 text-text-tertiary hover:bg-surface-secondary hover:text-text-primary transition'>
-            <X size={16} />
-          </button>
-        </div>
-        <div className='flex-1 overflow-y-auto px-6 py-4'>
-          <div className='flex items-center justify-between mb-4'>
-            <span className='text-sm font-medium text-text-tertiary'>Conflict ID:</span>
-            <span className='text-sm font-medium text-text-primary'>#{conflictId}</span>
-          </div>
-          <div className='mb-4'>
-            <label className='text-xs font-medium text-text-tertiary uppercase tracking-wide mb-2'>Resolution Type</label>
-            <div className='space-y-2'>
-              <label className='flex items-center gap-2 cursor-pointer'>
-                <input
-                  type='radio'
-                  name='resolutionType'
-                  value='swap_times'
-                  checked={resolutionType === 'swap_times'}
-                  onChange={(e) => setResolutionType(e.target.value)}
-                  className='rounded border-red-600 text-red-600 focus:ring-red-600'
-                />
-                <span className='text-sm text-text-primary'>Swap Times</span>
-              </label>
-              <label className='flex items-center gap-2 cursor-pointer'>
-                <input
-                  type='radio'
-                  name='resolutionType'
-                  value='swap_rooms'
-                  checked={resolutionType === 'swap_rooms'}
-                  onChange={(e) => setResolutionType(e.target.value)}
-                  className='rounded border-red-600 text-red-600 focus:ring-red-600'
-                />
-                <span className='text-sm text-text-primary'>Swap Rooms</span>
-              </label>
-              <label className='flex items-center gap-2 cursor-pointer'>
-                <input
-                  type='radio'
-                  name='resolutionType'
-                  value='change_professor'
-                  checked={resolutionType === 'change_professor'}
-                  onChange={(e) => setResolutionType(e.target.value)}
-                  className='rounded border-red-600 text-red-600 focus:ring-red-600'
-                />
-                <span className='text-sm text-text-primary'>Change Professor</span>
-              </label>
+      {totalClasses === 0 ? (
+        <EmptyState
+          icon={CalendarDays}
+          title='No scheduled classes yet'
+          description='Generate a schedule on the Schedule Management page to populate the timetable.'
+          action={
+            <LinkButton
+              to='/registrar/schedule-management'
+              icon={<Sparkles size={16} aria-hidden='true' />}
+            >
+              Generate a schedule
+            </LinkButton>
+          }
+        />
+      ) : (
+        <>
+          <div className='space-y-3 rounded-card border border-border bg-surface p-3 sm:p-4'>
+            <div className='flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'>
+              <TextField
+                id='timetable-search'
+                label='Filter by professor'
+                type='search'
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder='Search professor…'
+                containerClassName='w-full sm:max-w-xs'
+              />
+              <p className='text-body-sm text-text-secondary'>
+                Showing {filteredSchedules.length} of {totalClasses} classes
+              </p>
             </div>
+            <SegmentedControl<DayFilter>
+              options={dayOptions}
+              value={dayFilter}
+              onChange={setDayFilter}
+              label='Filter timetable by day'
+            />
           </div>
-          <div className='mt-6 flex justify-end gap-3'>
-            <button type='button' onClick={onClose} className='flex h-8 items-center justify-center gap-2 rounded-md border border-border bg-surface px-4 py-2 text-[13px] font-medium text-text-primary transition hover:bg-surface-secondary'>
-              Cancel
-            </button>
-            <button type='button' onClick={handleResolve} disabled={!resolutionType} className='flex h-8 items-center justify-center gap-2 rounded-md bg-apple-green-600 px-4 py-2 text-[13px] font-medium text-white shadow-sm transition hover:bg-apple-green-700 disabled:opacity-60 disabled:cursor-not-allowed'>
-              Resolve
-            </button>
-            <button type='button' onClick={handleIgnore} className='flex h-8 items-center justify-center gap-2 rounded-md border border-border bg-surface px-4 py-2 text-[13px] font-medium text-text-primary transition hover:bg-surface-secondary'>
-              Ignore
-            </button>
-          </div>
+
+          {filteredSchedules.length === 0 ? (
+            <EmptyState
+              icon={CalendarDays}
+              title='No classes match your filters'
+              description='Try a different professor name or day.'
+              action={
+                <Button variant='secondary' onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              }
+            />
+          ) : (
+            <>
+              <div className='hidden lg:block'>
+                <TableContainer className='max-h-[65vh] overflow-y-auto'>
+                  <Table className='min-w-[900px]'>
+                    <THead>
+                      <TR className='hover:bg-transparent'>
+                        <TH className='sticky top-0 z-10 bg-surface-tertiary'>
+                          Day
+                        </TH>
+                        <TH className='sticky top-0 z-10 bg-surface-tertiary'>
+                          Time
+                        </TH>
+                        <TH className='sticky top-0 z-10 bg-surface-tertiary'>
+                          Course
+                        </TH>
+                        <TH className='sticky top-0 z-10 bg-surface-tertiary'>
+                          Section
+                        </TH>
+                        <TH className='sticky top-0 z-10 bg-surface-tertiary'>
+                          Professor
+                        </TH>
+                        <TH className='sticky top-0 z-10 bg-surface-tertiary'>
+                          Room
+                        </TH>
+                        <TH className='sticky top-0 z-10 bg-surface-tertiary'>
+                          Mode
+                        </TH>
+                        <TH className='sticky top-0 z-10 bg-surface-tertiary text-right'>
+                          Actions
+                        </TH>
+                      </TR>
+                    </THead>
+                    <TBody>
+                      {filteredSchedules.map((schedule) => {
+                        const subject = splitSubject(schedule.subject_label);
+                        return (
+                          <TR key={schedule.id}>
+                            <TD className='whitespace-nowrap text-text-secondary'>
+                              {DAY_LABELS[schedule.day ?? 0]}
+                            </TD>
+                            <TD className='whitespace-nowrap text-text-secondary'>
+                              {formatTime(schedule.start_time)} –{' '}
+                              {formatTime(schedule.end_time)}
+                            </TD>
+                            <TD>
+                              <p className='font-medium text-text-primary'>
+                                {subject.code}
+                              </p>
+                              <p className='max-w-[220px] truncate text-caption text-text-secondary'>
+                                {subject.title || '—'}
+                              </p>
+                            </TD>
+                            <TD className='text-text-secondary'>
+                              {schedule.section_name}
+                            </TD>
+                            <TD className='text-text-secondary'>
+                              {cleanTeacherName(schedule.prof_name)}
+                            </TD>
+                            <TD className='text-text-secondary'>
+                              {schedule.room_name ?? schedule.room ?? '—'}
+                            </TD>
+                            <TD>
+                              <Badge tone='neutral'>
+                                {schedule.mode_display ??
+                                  schedule.mode ??
+                                  '—'}
+                              </Badge>
+                            </TD>
+                            <TD>
+                              <div className='flex items-center justify-end gap-1'>
+                                <Button
+                                  variant='secondary'
+                                  size='sm'
+                                  icon={
+                                    <Pencil size={14} aria-hidden='true' />
+                                  }
+                                  onClick={() => handleOpenEdit(schedule)}
+                                >
+                                  Edit
+                                </Button>
+                                <IconButton
+                                  label={`Delete ${subject.code} on ${
+                                    DAY_LABELS[schedule.day ?? 0]
+                                  }`}
+                                  variant='ghost'
+                                  size='sm'
+                                  onClick={() => setPendingDelete(schedule)}
+                                >
+                                  <Trash2 size={16} aria-hidden='true' />
+                                </IconButton>
+                              </div>
+                            </TD>
+                          </TR>
+                        );
+                      })}
+                    </TBody>
+                  </Table>
+                </TableContainer>
+              </div>
+
+              <div className='space-y-5 lg:hidden'>
+                {DAY_LABELS.map((dayLabel, dayIndex) => {
+                  const dayClasses = filteredSchedules.filter(
+                    (schedule) => schedule.day === dayIndex
+                  );
+                  if (dayClasses.length === 0) return null;
+
+                  return (
+                    <section key={dayLabel} className='space-y-2'>
+                      <h2 className='flex items-center gap-2 text-h3 text-text-primary'>
+                        {dayLabel}
+                        <Badge tone='neutral'>{dayClasses.length}</Badge>
+                      </h2>
+                      <ul className='space-y-2'>
+                        {dayClasses.map((schedule) => {
+                          const subject = splitSubject(schedule.subject_label);
+                          return (
+                            <li key={schedule.id}>
+                              <Card className='p-4'>
+                                <div className='flex items-start justify-between gap-3'>
+                                  <div className='min-w-0'>
+                                    <p className='text-body font-semibold text-text-primary'>
+                                      {subject.code}
+                                    </p>
+                                    <p className='text-body-sm text-text-secondary'>
+                                      {subject.title || '—'}
+                                    </p>
+                                  </div>
+                                  <Badge tone='neutral'>
+                                    {schedule.mode_display ??
+                                      schedule.mode ??
+                                      '—'}
+                                  </Badge>
+                                </div>
+                                <dl className='mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-body-sm'>
+                                  <div>
+                                    <dt className='text-caption text-text-tertiary'>
+                                      Time
+                                    </dt>
+                                    <dd className='text-text-primary'>
+                                      {formatTime(schedule.start_time)} –{' '}
+                                      {formatTime(schedule.end_time)}
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt className='text-caption text-text-tertiary'>
+                                      Room
+                                    </dt>
+                                    <dd className='text-text-primary'>
+                                      {schedule.room_name ??
+                                        schedule.room ??
+                                        '—'}
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt className='text-caption text-text-tertiary'>
+                                      Section
+                                    </dt>
+                                    <dd className='text-text-primary'>
+                                      {schedule.section_name}
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt className='text-caption text-text-tertiary'>
+                                      Professor
+                                    </dt>
+                                    <dd className='text-text-primary'>
+                                      {cleanTeacherName(schedule.prof_name)}
+                                    </dd>
+                                  </div>
+                                </dl>
+                                <div className='mt-3 flex gap-2'>
+                                  <Button
+                                    variant='secondary'
+                                    size='sm'
+                                    className='flex-1'
+                                    icon={
+                                      <Pencil size={14} aria-hidden='true' />
+                                    }
+                                    onClick={() => handleOpenEdit(schedule)}
+                                  >
+                                    Edit
+                                  </Button>
+                                  <IconButton
+                                    label={`Delete ${subject.code} on ${dayLabel}`}
+                                    variant='secondary'
+                                    size='sm'
+                                    onClick={() => setPendingDelete(schedule)}
+                                  >
+                                    <Trash2 size={16} aria-hidden='true' />
+                                  </IconButton>
+                                </div>
+                              </Card>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </section>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      <Modal
+        open={exportOpen}
+        onClose={() => {
+          if (!exporting) setExportOpen(false);
+        }}
+        title='Export timetable'
+        description='Choose a format to download the current timetable.'
+        size='sm'
+        footer={
+          <Button
+            variant='secondary'
+            onClick={() => setExportOpen(false)}
+            disabled={exporting}
+          >
+            Cancel
+          </Button>
+        }
+      >
+        <div className='grid gap-2'>
+          <Button
+            variant='secondary'
+            onClick={() => handleExport('csv')}
+            loading={exporting && exportFormat === 'csv'}
+            disabled={exporting}
+          >
+            CSV
+          </Button>
+          <Button
+            variant='secondary'
+            onClick={() => handleExport('xlsx')}
+            loading={exporting && exportFormat === 'xlsx'}
+            disabled={exporting}
+          >
+            Excel (XLSX)
+          </Button>
+          <Button
+            variant='secondary'
+            onClick={() => handleExport('pdf')}
+            loading={exporting && exportFormat === 'pdf'}
+            disabled={exporting}
+          >
+            PDF
+          </Button>
         </div>
-      </div>
-    </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={clearConfirmOpen}
+        onClose={() => setClearConfirmOpen(false)}
+        onConfirm={handleConfirmClear}
+        title='Clear all schedules?'
+        description={`This removes all ${totalClasses} scheduled class${
+          totalClasses === 1 ? '' : 'es'
+        } from the active run. This action cannot be undone.`}
+        confirmLabel='Clear all'
+        loading={clearScheduledClassesMutation.isPending}
+      />
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={handleConfirmDelete}
+        title='Delete scheduled class?'
+        description={
+          pendingDelete
+            ? `${splitSubject(pendingDelete.subject_label).code} · Section ${
+                pendingDelete.section_name
+              } on ${DAY_LABELS[pendingDelete.day ?? 0]} at ${formatTime(
+                pendingDelete.start_time
+              )} will be removed from the timetable.`
+            : ''
+        }
+        confirmLabel='Delete class'
+        loading={deleteScheduledClassMutation.isPending}
+      />
+
+      {editingClassId !== null && (
+        <Modal
+          open
+          onClose={closeEditModal}
+          title='Edit class'
+          description='Update the class details and save your changes.'
+          size='lg'
+          footer={
+            <>
+              <Button
+                variant='secondary'
+                onClick={closeEditModal}
+                disabled={updateScheduledClassMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type='submit'
+                form={editFormId}
+                loading={updateScheduledClassMutation.isPending}
+              >
+                Save changes
+              </Button>
+            </>
+          }
+        >
+          <form
+            id={editFormId}
+            onSubmit={(event) => {
+              event.preventDefault();
+              handleSaveEdit();
+            }}
+            className='grid gap-4 sm:grid-cols-2'
+          >
+            <SelectField
+              id='edit-professor'
+              label='Professor'
+              value={editProfId ?? ''}
+              onChange={(event) =>
+                setEditProfId(
+                  event.target.value ? Number(event.target.value) : null
+                )
+              }
+            >
+              <option value=''>Select professor</option>
+              {teachers.map((teacher) => (
+                <option key={teacher.id} value={teacher.id}>
+                  {teacher.full_name}
+                </option>
+              ))}
+            </SelectField>
+
+            <SelectField
+              id='edit-subject'
+              label='Subject'
+              value={editSubjectId ?? ''}
+              onChange={(event) =>
+                setEditSubjectId(
+                  event.target.value ? Number(event.target.value) : null
+                )
+              }
+            >
+              <option value=''>Select subject</option>
+              {courses.map((course) => (
+                <option key={course.id} value={course.id}>
+                  {course.code} — {course.title}
+                </option>
+              ))}
+            </SelectField>
+
+            <SelectField
+              id='edit-section'
+              label='Section'
+              value={editSectionId ?? ''}
+              onChange={(event) =>
+                setEditSectionId(
+                  event.target.value ? Number(event.target.value) : null
+                )
+              }
+            >
+              <option value=''>Select section</option>
+              {sections.map((section) => (
+                <option key={section.id} value={section.id}>
+                  {section.name}
+                </option>
+              ))}
+            </SelectField>
+
+            <SelectField
+              id='edit-room'
+              label='Room'
+              value={editRoom ?? ''}
+              onChange={(event) =>
+                setEditRoom(
+                  event.target.value ? Number(event.target.value) : null
+                )
+              }
+            >
+              <option value=''>Select room</option>
+              {rooms.map((room) => (
+                <option key={room.id} value={room.id}>
+                  {room.name || `Room ${room.id}`}
+                </option>
+              ))}
+            </SelectField>
+
+            <SelectField
+              id='edit-day'
+              label='Day'
+              value={editDay ?? ''}
+              onChange={(event) =>
+                setEditDay(
+                  event.target.value ? Number(event.target.value) : null
+                )
+              }
+            >
+              {DAY_LABELS.map((day, index) => (
+                <option key={day} value={index}>
+                  {day}
+                </option>
+              ))}
+            </SelectField>
+
+            <SelectField
+              id='edit-start-time'
+              label='Start time'
+              value={editStartTime}
+              onChange={(event) => setEditStartTime(event.target.value)}
+            >
+              <option value=''>Select time</option>
+              {TIME_SLOTS.map((slot) => (
+                <option key={slot.label} value={slot.label}>
+                  {slot.label}
+                </option>
+              ))}
+            </SelectField>
+
+            <SelectField
+              id='edit-duration'
+              label='Duration'
+              value={editDurationSlots}
+              onChange={(event) =>
+                setEditDurationSlots(Number(event.target.value))
+              }
+            >
+              {DURATION_OPTIONS.map((duration) => (
+                <option key={duration} value={duration}>
+                  {duration} slot{duration === 1 ? '' : 's'}
+                </option>
+              ))}
+            </SelectField>
+
+            <SelectField
+              id='edit-mode'
+              label='Mode'
+              value={editMode}
+              onChange={(event) => setEditMode(event.target.value)}
+            >
+              {MODE_OPTIONS.map((mode) => (
+                <option key={mode.value} value={mode.value}>
+                  {mode.label}
+                </option>
+              ))}
+            </SelectField>
+
+            <TextField
+              id='edit-end-time'
+              label='End time'
+              value={calculateEndTime(editStartTime, editDurationSlots)}
+              readOnly
+              hint='Calculated from the start time and duration.'
+              containerClassName='sm:col-span-2'
+            />
+          </form>
+        </Modal>
+      )}
+    </section>
   );
 }
