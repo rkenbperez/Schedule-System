@@ -183,20 +183,35 @@ class ScheduleService {
   }
 
   async createSchedule(
-    runId: number,
-    payload: ScheduleCreatePayload
+    runIdOrPayload: number | ScheduleCreatePayload,
+    payload?: ScheduleCreatePayload
   ): Promise<Schedule> {
+    if (typeof runIdOrPayload === 'number') {
+      if (!payload) throw new Error('Schedule payload is required');
+
+      const data: Schedule = await apiJson(
+        `${BASE_URL}/api/schedules/runs/${runIdOrPayload}/classes/`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+      return data;
+    }
+
     const data: Schedule = await apiJson(
-      `${BASE_URL}/api/schedules/runs/${runId}/classes/`,
+      `${BASE_URL}/api/schedules/generate`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(runIdOrPayload),
       }
     );
-
     return data;
   }
 

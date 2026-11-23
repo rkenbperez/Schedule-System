@@ -45,7 +45,6 @@ import type {
   GenerateSchedulePayload,
   GenerateScheduleResponse,
   ImportPreviewResponse,
-  ImportRecord,
 } from '../../types/Types';
 
 const ALLOWED_EXTENSIONS = ['.xlsx', '.xls', '.csv'];
@@ -302,9 +301,9 @@ export default function RegistrarScheduleManagementPage() {
     );
   }
 
-  const previewRecords = previewResult?.records ?? [];
+  const previewRecords: never[] = [];
   const previewErrors = previewResult?.errors ?? [];
-  const previewWarnings = previewResult?.warnings ?? [];
+  const previewWarnings: never[] = [];
 
   return (
     <section className='w-full space-y-6'>
@@ -433,10 +432,10 @@ export default function RegistrarScheduleManagementPage() {
                 <h3 className='text-h3 text-text-primary'>Preview results</h3>
                 <div className='flex flex-wrap gap-2'>
                   <Badge tone='success'>
-                    {previewResult.created_count ?? 0} new
+                    {previewResult.summary.creates} new
                   </Badge>
                   <Badge tone='warning'>
-                    {previewResult.updated_count ?? 0} updated
+                    {previewResult.summary.updates} updated
                   </Badge>
                   <Badge tone={previewErrors.length > 0 ? 'danger' : 'neutral'}>
                     {previewErrors.length} errors
@@ -453,7 +452,9 @@ export default function RegistrarScheduleManagementPage() {
                 <Alert tone='danger' title='Import errors'>
                   <ul className='list-disc space-y-1 pl-4'>
                     {previewErrors.slice(0, 5).map((error, index) => (
-                      <li key={index}>{error}</li>
+                      <li key={index}>
+                        {error.sheet} row {error.row}: {error.field} - {error.message}
+                      </li>
                     ))}
                   </ul>
                   {previewErrors.length > 5 && (
@@ -497,7 +498,7 @@ export default function RegistrarScheduleManagementPage() {
                           </TR>
                         </THead>
                         <TBody>
-                          {previewRecords.map((record: ImportRecord) => (
+                          {previewRecords.map((record) => (
                             <TR key={record.id}>
                               <TD className='font-medium'>
                                 {record.course_code}
@@ -529,7 +530,7 @@ export default function RegistrarScheduleManagementPage() {
                   </div>
 
                   <ul className='space-y-2 md:hidden'>
-                    {previewRecords.map((record: ImportRecord) => (
+                    {previewRecords.map((record) => (
                       <li
                         key={record.id}
                         className='rounded-control border border-border p-3'
