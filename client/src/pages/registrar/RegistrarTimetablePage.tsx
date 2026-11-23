@@ -1,8 +1,15 @@
 // pages/registrar/RegistrarTimetablePage.tsx
 // Standalone timetable view for the registrar: view, add, edit, delete, clear schedules.
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Calendar, Download, Edit, X, RefreshCw } from 'lucide-react';
+import { useId, useState } from 'react';
+import {
+  CalendarDays,
+  Download,
+  Pencil,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+  X,
+} from 'lucide-react';
 import {
   useSchedules,
   useTeachers,
@@ -16,12 +23,39 @@ import {
   useClearScheduledClasses,
   useExportSchedule,
 } from '../../hooks/GenerateManagement.hooks';
-import type { Schedule, TeacherListItem, Course, Section } from '../../types/Types';
-import { DAY_LABELS } from '../../pages/registrar/registrarData';
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  IconButton,
+  LinkButton,
+  LoadingState,
+  Modal,
+  PageHeader,
+  SegmentedControl,
+  SelectField,
+  Table,
+  TableContainer,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+  TextField,
+  type SegmentedOption,
+} from '../../components/ui';
+import type {
+  Schedule,
+  TeacherListItem,
+  Course,
+  Section,
+} from '../../types/Types';
+import { DAY_LABELS } from './registrarData';
 
-const cleanTeacherName = (name: string) => {
-  return name.replace(/^demo_/, '');
-};
+const cleanTeacherName = (name: string) => name.replace(/^demo_/, '');
 
 const splitSubject = (label: string) => {
   const parts = label.split(' - ');
@@ -44,8 +78,32 @@ const TIME_SLOTS = [
   { label: '16:00', hour: 16 },
 ];
 
+const MODE_OPTIONS = [
+  { value: 'sync', label: 'Synchronous' },
+  { value: 'async', label: 'Asynchronous' },
+  { value: 'lab', label: 'Laboratory' },
+];
+
+const DURATION_OPTIONS = [1, 2, 3];
+
+type DayFilter = 'all' | '0' | '1' | '2' | '3' | '4';
+
+const formatTime = (value: string | null) =>
+  value ? value.replace(/:00$/, '').slice(0, 5) : '—';
+
+function calculateEndTime(startTime: string, durationSlots: number) {
+  if (!startTime) return '—';
+  const [hours, minutes] = startTime.split(':').map(Number);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return '—';
+  const end = new Date(0, 0, 0, hours + durationSlots, minutes);
+  return `${String(end.getHours()).padStart(2, '0')}:${String(
+    end.getMinutes()
+  ).padStart(2, '0')}`;
+}
+
 export default function RegistrarTimetablePage() {
-  const navigate = useNavigate();
+  const editFormId = useId();
+
   const { data: schedules, isLoading } = useSchedules();
   const { data: teachersData } = useTeachers();
   const { data: coursesData } = useCourses();
@@ -55,6 +113,7 @@ export default function RegistrarTimetablePage() {
   const updateScheduledClassMutation = useUpdateScheduledClass();
   const deleteScheduledClassMutation = useDeleteScheduledClass();
   const clearScheduledClassesMutation = useClearScheduledClasses();
+  const exportScheduleMutation = useExportSchedule();
 
   const teachers: TeacherListItem[] = teachersData ?? [];
   const courses: Course[] = coursesData ?? [];
@@ -67,71 +126,89 @@ export default function RegistrarTimetablePage() {
   const [editSectionId, setEditSectionId] = useState<number | null>(null);
   const [editRoom, setEditRoom] = useState<number | null>(null);
   const [editDay, setEditDay] = useState<number | null>(null);
-  const [editStartTime, setEditStartTime] = useState<string>('');
-  const [editDurationSlots, setEditDurationSlots] = useState<number>(1);
-  const [editMode, setEditMode] = useState<string>('sync');
-  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [editStartTime, setEditStartTime] = useState('');
+  const [editDurationSlots, setEditDurationSlots] = useState(1);
+  const [editMode, setEditMode] = useState('sync');
+
+  const [actionError, setActionError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [dayFilter, setDayFilter] = useState<DayFilter>('all');
 
-  const exportScheduleMutation = useExportSchedule();
-  const [exportPanelOpen, setExportPanelOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportFormat, setExportFormat] = useState<string | null>(null);
 
-  const runId = (schedules ?? [])[0]?.run ?? null;
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Schedule | null>(null);
 
-  const handleExport = async (format: string) => {
-    if (!runId) {
-      setGenerateError('No schedule data available to export.');
-      return;
-    }
-    setExportPanelOpen(false);
-    setExporting(true);
-    try {
-      const blob = await exportScheduleMutation.mutateAsync({
-        runId,
-        format,
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `timetable.${format === 'xlsx' ? 'xlsx' : format}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch {
-      setGenerateError('Failed to export timetable.');
-    } finally {
-      setExporting(false);
-    }
-  };
+  const scheduleList = schedules ?? [];
+  const totalClasses = scheduleList.length;
+  const runId = scheduleList[0]?.run ?? null;
 
-  const totalClasses = (schedules ?? []).length;
+  const normalizedSearch = search.trim().toLowerCase();
+  const searchedSchedules = scheduleList.filter((schedule) => {
+    if (!normalizedSearch) return true;
+    const cleaned = cleanTeacherName(schedule.prof_name).toLowerCase();
+    return (
+      cleaned.includes(normalizedSearch) ||
+      schedule.prof_name.toLowerCase().includes(normalizedSearch)
+    );
+  });
 
-  const MODE_OPTIONS = [
-    { value: 'sync', label: 'Synchronous' },
-    { value: 'async', label: 'Asynchronous' },
-    { value: 'lab', label: 'Laboratory' },
+  const filteredSchedules = searchedSchedules
+    .filter(
+      (schedule) =>
+        dayFilter === 'all' || schedule.day === Number(dayFilter)
+    )
+    .sort((a, b) => {
+      if (a.day !== b.day) return a.day - b.day;
+      return a.start_time.localeCompare(b.start_time);
+    });
+
+  const dayOptions: SegmentedOption<DayFilter>[] = [
+    {
+      value: 'all',
+      label: 'All days',
+      count: searchedSchedules.length,
+    },
+    ...DAY_LABELS.map((label, index) => ({
+      value: String(index) as DayFilter,
+      label: label.slice(0, 3),
+      count: searchedSchedules.filter((schedule) => schedule.day === index)
+        .length,
+    })),
   ];
 
-  const DURATION_OPTIONS = [1, 2, 3];
+  const handleOpenEdit = (schedule: Schedule) => {
+    setEditingClassId(schedule.id);
+    setEditProfId(schedule.prof_id ?? null);
+    setEditSubjectId(schedule.subject_id ?? null);
+    setEditSectionId(schedule.section_id ?? null);
+    setEditRoom(schedule.room ?? null);
+    setEditDay(schedule.day);
+    setEditStartTime(schedule.start_time.slice(0, 5));
+    setEditDurationSlots(schedule.duration_slots ?? 1);
+    setEditMode(schedule.mode ?? 'sync');
+  };
 
-  const handleOpenEdit = (cls: Schedule) => {
-    setEditingClassId(cls.id);
-    setEditProfId(cls.prof_id ?? null);
-    setEditSubjectId(cls.subject_id ?? null);
-    setEditSectionId(cls.section_id ?? null);
-    setEditRoom(cls.room ?? null);
-    setEditDay(cls.day);
-    setEditStartTime(cls.start_time);
-    setEditDurationSlots(cls.duration_slots ?? 1);
-    setEditMode(cls.mode ?? 'sync');
+  const closeEditModal = () => {
+    setEditingClassId(null);
+    setEditProfId(null);
+    setEditSubjectId(null);
+    setEditSectionId(null);
+    setEditRoom(null);
+    setEditDay(null);
+    setEditStartTime('');
+    setEditDurationSlots(1);
+    setEditMode('sync');
   };
 
   const handleSaveEdit = () => {
-    if (!editingClassId) return;
+    if (editingClassId === null) return;
 
-    const current = (schedules ?? []).find((c) => c.id === editingClassId);
+    const current = scheduleList.find(
+      (schedule) => schedule.id === editingClassId
+    );
     if (!current) return;
 
     const updateData: {
@@ -151,7 +228,10 @@ export default function RegistrarTimetablePage() {
     if (editDay !== null && editDay !== current.day) {
       updateData.day = editDay;
     }
-    if (editStartTime && editStartTime !== current.start_time) {
+    if (
+      editStartTime &&
+      editStartTime !== current.start_time.slice(0, 5)
+    ) {
       updateData.start_time = editStartTime;
     }
     if (editDurationSlots !== (current.duration_slots ?? 1)) {
@@ -171,547 +251,662 @@ export default function RegistrarTimetablePage() {
     }
 
     if (Object.keys(updateData).length === 0) {
-      setEditingClassId(null);
-      setEditRoom(null);
-      setEditDay(null);
-      setEditStartTime('');
+      closeEditModal();
       return;
     }
 
-    // We need the run_id; schedules don't include it directly, so use the first
-    // schedule's run as the active run. If we need a specific run_id, it should
-    // be passed from context. For now, we attempt update without run_id —
-    // the backend URL needs run_id. We'll get it from the schedule's run field.
-    const runId = current.run;
-
     updateScheduledClassMutation.mutate(
       {
-        runId,
+        runId: current.run,
         classId: editingClassId,
         data: updateData,
       },
       {
-        onSuccess: () => {
-          setEditingClassId(null);
-          setEditProfId(null);
-          setEditSubjectId(null);
-          setEditSectionId(null);
-          setEditRoom(null);
-          setEditDay(null);
-          setEditStartTime('');
-          setEditDurationSlots(1);
-          setEditMode('sync');
-        },
-        onError: (err: Error) => {
-          setGenerateError(err.message || 'Failed to update class');
+        onSuccess: () => closeEditModal(),
+        onError: (error: Error) => {
+          setActionError(error.message || 'Failed to update class.');
         },
       }
     );
   };
 
-  const handleCancelEdit = () => {
-    setEditingClassId(null);
-    setEditProfId(null);
-    setEditSubjectId(null);
-    setEditSectionId(null);
-    setEditRoom(null);
-    setEditDay(null);
-    setEditStartTime('');
-    setEditDurationSlots(1);
-    setEditMode('sync');
-  };
-
-  const handleDeleteClass = (classId: number) => {
-    const current = (schedules ?? []).find((c) => c.id === classId);
-    if (!current) return;
-
+  const handleConfirmDelete = () => {
+    if (!pendingDelete) return;
     deleteScheduledClassMutation.mutate(
-      { runId: current.run, classId },
+      { runId: pendingDelete.run, classId: pendingDelete.id },
       {
-        onError: (err: Error) => {
-          setGenerateError(err.message || 'Failed to delete class');
+        onSuccess: () => setPendingDelete(null),
+        onError: (error: Error) => {
+          setPendingDelete(null);
+          setActionError(error.message || 'Failed to delete class.');
         },
       }
     );
   };
 
-  const handleClearSchedule = () => {
-    if (totalClasses === 0) return;
-    if (!window.confirm('Are you sure you want to clear all scheduled classes?')) return;
-
-    // Use the first schedule's run as the active run
-    const runId = (schedules ?? [])[0]?.run;
+  const handleConfirmClear = () => {
     if (!runId) return;
-
     clearScheduledClassesMutation.mutate(runId, {
-      onError: (err: Error) => {
-        setGenerateError(err.message || 'Failed to clear schedules');
+      onSuccess: () => setClearConfirmOpen(false),
+      onError: (error: Error) => {
+        setClearConfirmOpen(false);
+        setActionError(error.message || 'Failed to clear schedules.');
       },
     });
   };
 
-  const filterTeacher = (search: string) => {
-    const query = search.trim().toLowerCase();
-    const list = schedules ?? [];
-    if (!query) return [...list];
-    return list.filter((cls) => {
-      const cleaned = cleanTeacherName(cls.prof_name).toLowerCase();
-      const raw = cls.prof_name.toLowerCase();
-      return cleaned.includes(query) || raw.includes(query);
-    });
+  const handleExport = async (format: string) => {
+    if (!runId) {
+      setActionError('No schedule data available to export.');
+      setExportOpen(false);
+      return;
+    }
+
+    setExportFormat(format);
+    setExporting(true);
+
+    try {
+      const blob = await exportScheduleMutation.mutateAsync({ runId, format });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `timetable.${format}`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+      setExportOpen(false);
+    } catch {
+      setActionError('Failed to export timetable.');
+      setExportOpen(false);
+    } finally {
+      setExporting(false);
+      setExportFormat(null);
+    }
   };
 
+  const clearFilters = () => {
+    setSearch('');
+    setDayFilter('all');
+  };
 
   if (isLoading) {
     return (
-      <div className='flex min-h-screen items-center justify-center bg-surface-secondary'>
-        <div className='text-text-secondary'>Loading timetable…</div>
-      </div>
+      <section className='w-full space-y-6'>
+        <PageHeader
+          eyebrow='Registrar'
+          title='Timetable'
+          description='Review and adjust the generated class timetable.'
+        />
+        <LoadingState label='Loading timetable…' />
+      </section>
     );
   }
 
   return (
-    <div className='flex min-h-screen bg-surface-secondary'>
-      <div className='flex-1 px-6 py-8 sm:px-8 lg:px-12'>
-        <div className='flex items-center justify-between mb-6'>
-          <div>
-            <h1 className='text-lg font-semibold text-text-primary'>Timetable</h1>
-            <p className='text-sm text-text-secondary mt-0.5'>
-              {totalClasses} scheduled class{totalClasses !== 1 ? 's' : ''}
-            </p>
-          </div>
-          <div className='flex gap-2'>
-            <button
-              type='button'
-              onClick={handleClearSchedule}
-              disabled={totalClasses === 0}
-              className='flex h-10 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-xs font-medium text-white transition hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed'
-            >
-              Clear All Schedules
-            </button>
-            <button
-              type='button'
-              onClick={() => setExportPanelOpen(true)}
-              disabled={totalClasses === 0}
-              className='flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 text-xs font-medium text-text-primary transition hover:bg-surface-secondary disabled:opacity-60'
-            >
-              <Download size={14} /> Export
-            </button>
-            <button
-              type='button'
-              onClick={() => navigate('/registrar/schedule-management')}
-              className='flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 text-xs font-medium text-text-primary transition hover:bg-surface-secondary'
-            >
-              <RefreshCw size={14} /> Back to Generate
-            </button>
-          </div>
-        </div>
-
-        {generateError && (
-          <div className='mb-6 rounded-lg border border-red-200 bg-red-50 p-3'>
-            <p className='text-sm text-red-700'>{generateError}</p>
-          </div>
-        )}
-
-        {/* Export format panel */}
-        {exportPanelOpen && (
-          <div className='fixed inset-0 z-50 flex items-center justify-center'>
-            <div
-              className='absolute inset-0 bg-black/40 backdrop-blur-sm'
-              onClick={() => setExportPanelOpen(false)}
-            />
-            <div className='relative bg-surface p-6 rounded-xl border border-border shadow-xl w-full max-w-xs z-10'>
-              <div className='flex items-center justify-between mb-4'>
-                <h3 className='text-sm font-medium text-text-primary'>
-                  Export Timetable
-                </h3>
-                <button
-                  type='button'
-                  onClick={() => setExportPanelOpen(false)}
-                  className='text-text-secondary hover:text-text-primary'
-                >
-                  <X size={16} />
-                </button>
-              </div>
-              <p className='text-xs text-text-secondary mb-6'>
-                Choose a format to download the current timetable.
-              </p>
-              <div className='grid grid-cols-1 gap-2'>
-                <button
-                  type='button'
-                  onClick={() => handleExport('csv')}
-                  disabled={exporting}
-                  className='flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-primary transition hover:bg-surface-secondary disabled:opacity-60'
-                >
-                  {exporting ? 'Exporting…' : 'CSV'}
-                </button>
-                <button
-                  type='button'
-                  onClick={() => handleExport('xlsx')}
-                  disabled={exporting}
-                  className='flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-primary transition hover:bg-surface-secondary disabled:opacity-60'
-                >
-                  {exporting ? 'Exporting…' : 'Excel (XLSX)'}
-                </button>
-                <button
-                  type='button'
-                  onClick={() => handleExport('pdf')}
-                  disabled={exporting}
-                  className='flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-primary transition hover:bg-surface-secondary disabled:opacity-60'
-                >
-                  {exporting ? 'Exporting…' : 'PDF'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {totalClasses === 0 ? (
-          <div className='rounded-card border border-border bg-surface p-6 text-center py-16'>
-            <div className='flex h-16 w-16 items-center justify-center rounded-full bg-apple-green-50 text-apple-green-600 mx-auto mb-4'>
-              <Calendar size={24} />
-            </div>
-            <h2 className='text-sm font-semibold text-text-primary mb-1'>
-              No scheduled classes yet.
-            </h2>
-            <p className='text-xs text-text-secondary'>
-              Generate a schedule on the Schedule Management page to populate
-              the timetable.
-            </p>
-          </div>
-        ) : (
+    <section className='w-full space-y-6'>
+      <PageHeader
+        eyebrow='Registrar'
+        title='Timetable'
+        description={`${totalClasses} scheduled class${
+          totalClasses === 1 ? '' : 's'
+        } in the active run.`}
+        actions={
           <>
-            <div className='mb-3 flex items-center justify-between gap-3'>
-              <input
-                type='text'
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder='Filter by professor…'
-                className='h-9 w-full max-w-xs rounded-lg border border-border bg-surface px-3 text-xs text-text-primary outline-none transition focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100'
-              />
-              {search && (
-                <span className='text-xs text-text-secondary'>
-                  {filterTeacher(search).length} of {totalClasses} classes
-                </span>
-              )}
-            </div>
-            <div className='max-h-[65vh] overflow-auto border border-border rounded-lg'>
-            <table className='min-w-full text-xs border-collapse'>
-              <thead>
-                <tr className='border-b border-border text-left text-[10px] text-text-secondary'>
-                  <th className='px-3 py-2'>Day</th>
-                  <th className='px-3 py-2'>Start</th>
-                  <th className='px-3 py-2'>End</th>
-                  <th className='px-3 py-2'>Subject Code</th>
-                  <th className='px-3 py-2'>Title</th>
-                  <th className='px-3 py-2'>Section</th>
-                  <th className='px-3 py-2'>Professor</th>
-                  <th className='px-3 py-2'>Room</th>
-                  <th className='px-3 py-2'>Mode</th>
-                  <th className='px-3 py-2'>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filterTeacher(search).length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className='px-3 py-8 text-center text-text-secondary'>
-                      No classes match "{search}".
-                    </td>
-                  </tr>
-                ) : (
-                filterTeacher(search)
-                  .sort((a, b) => {
-                    const da = a.day ?? 0;
-                    const db = b.day ?? 0;
-                    if (da !== db) return da - db;
-                    return a.start_time.localeCompare(b.start_time);
-                  })
-                  .map((cls) => (
-                    <tr key={cls.id} className='border-b border-border-light hover:bg-surface-secondary'>
-                      <td className='px-3 py-1 text-[9px] text-text-secondary'>
-                        {DAY_LABELS[cls.day ?? 0]}
-                      </td>
-                      <td className='px-3 py-1 text-[9px] text-text-secondary'>
-                        {cls.start_time.replace(/:00$/, '')}
-                      </td>
-                      <td className='px-3 py-1 text-[9px] text-text-secondary'>
-                        {cls.end_time ? cls.end_time.replace(/:00$/, '') : ''}
-                      </td>
-                      <td className='px-3 py-1 text-[9px] text-text-primary truncate max-w-[90px]'>
-                        {splitSubject(cls.subject_label).code}
-                      </td>
-                      <td className='px-3 py-1 text-[9px] text-text-secondary truncate max-w-[150px]'>
-                        {splitSubject(cls.subject_label).title}
-                      </td>
-                      <td className='px-3 py-1 text-[9px] text-text-secondary truncate max-w-[100px]'>
-                        {cls.section_name}
-                      </td>
-                      <td className='px-3 py-1 text-[9px] text-text-secondary truncate max-w-[110px]'>
-                        {cleanTeacherName(cls.prof_name)}
-                      </td>
-                      <td className='px-3 py-1 text-[9px] text-text-secondary truncate max-w-[90px]'>
-                        {cls.room_name ?? cls.room}
-                      </td>
-                      <td className='px-3 py-1 text-[9px] text-text-secondary'>
-                        {cls.mode_display ?? cls.mode ?? ''}
-                      </td>
-                      <td className='px-3 py-1 text-[9px]'>
-                        <button
-                          type='button'
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenEdit(cls);
-                          }}
-                          className='w-full h-7 rounded bg-apple-green-600 text-[9px] font-medium text-white hover:bg-apple-green-700 transition flex items-center justify-center gap-1'
-                          title='Edit'
-                        >
-                          <Edit size={10} className='mr-0.5' /> Edit
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-            </div>
+            <Button
+              variant='danger'
+              icon={<Trash2 size={16} aria-hidden='true' />}
+              onClick={() => setClearConfirmOpen(true)}
+              disabled={totalClasses === 0}
+            >
+              Clear all
+            </Button>
+            <Button
+              variant='secondary'
+              icon={<Download size={16} aria-hidden='true' />}
+              onClick={() => setExportOpen(true)}
+              disabled={totalClasses === 0}
+            >
+              Export
+            </Button>
+            <LinkButton
+              to='/registrar/schedule-management'
+              variant='secondary'
+              icon={<RefreshCw size={16} aria-hidden='true' />}
+            >
+              Generate
+            </LinkButton>
           </>
-        )}
+        }
+      />
 
-        {/* Edit Class Modal */}
-        {editingClassId !== null && (
-          <div className='fixed inset-0 z-50 flex items-center justify-center'>
-            <div
-              className='absolute inset-0 bg-black/40 backdrop-blur-sm'
-              onClick={handleCancelEdit}
-            />
-            <div className='relative bg-surface p-6 rounded-xl border border-border shadow-xl w-full max-w-md z-10'>
-              <div className='flex items-center justify-between mb-4'>
-                <h3 className='text-sm font-medium text-text-primary'>
-                  Edit Class
-                </h3>
-                <button
-                  type='button'
-                  onClick={handleCancelEdit}
-                  className='text-text-secondary hover:text-text-primary'
-                >
-                  <X size={16} />
-                </button>
-              </div>
+      {actionError && (
+        <Alert
+          tone='danger'
+          title='Something went wrong'
+          action={
+            <IconButton
+              label='Dismiss error'
+              size='sm'
+              onClick={() => setActionError(null)}
+            >
+              <X size={16} aria-hidden='true' />
+            </IconButton>
+          }
+        >
+          {actionError}
+        </Alert>
+      )}
 
-              <div className='space-y-4'>
-                {/* Professor */}
-                <div className='flex flex-col gap-1.5'>
-                  <label className='text-xs font-medium text-text-secondary'>
-                    Professor
-                  </label>
-                  <select
-                    value={editProfId ?? ''}
-                    onChange={(e) =>
-                      setEditProfId(e.target.value ? Number(e.target.value) : null)
-                    }
-                    className='h-9 rounded-lg border border-border bg-surface-tertiary px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
-                  >
-                    <option value=''>Select professor</option>
-                    {teachers.map((t: TeacherListItem) => (
-                      <option key={t.id} value={t.id}>
-                        {t.full_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Subject */}
-                <div className='flex flex-col gap-1.5'>
-                  <label className='text-xs font-medium text-text-secondary'>
-                    Subject
-                  </label>
-                  <select
-                    value={editSubjectId ?? ''}
-                    onChange={(e) =>
-                      setEditSubjectId(e.target.value ? Number(e.target.value) : null)
-                    }
-                    className='h-9 rounded-lg border border-border bg-surface-tertiary px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
-                  >
-                    <option value=''>Select subject</option>
-                    {courses.map((c: Course) => (
-                      <option key={c.id} value={c.id}>
-                        {c.code} — {c.title}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Section */}
-                <div className='flex flex-col gap-1.5'>
-                  <label className='text-xs font-medium text-text-secondary'>
-                    Section
-                  </label>
-                  <select
-                    value={editSectionId ?? ''}
-                    onChange={(e) =>
-                      setEditSectionId(
-                        e.target.value ? Number(e.target.value) : null
-                      )
-                    }
-                    className='h-9 rounded-lg border border-border bg-surface-tertiary px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
-                  >
-                    <option value=''>Select section</option>
-                    {sections.map((s: Section) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Room */}
-                <div className='flex flex-col gap-1.5'>
-                  <label className='text-xs font-medium text-text-secondary'>
-                    Room
-                  </label>
-                  <select
-                    value={editRoom ?? ''}
-                    onChange={(e) =>
-                      setEditRoom(e.target.value ? Number(e.target.value) : null)
-                    }
-                    className='h-9 rounded-lg border border-border bg-surface-tertiary px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
-                  >
-                    <option value=''>Select room</option>
-                    {rooms.map((room: { id: number; name: string }) => (
-                      <option key={room.id} value={room.id}>
-                        {room.name || `Room ${room.id}`}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Day */}
-                <div className='flex flex-col gap-1.5'>
-                  <label className='text-xs font-medium text-text-secondary'>
-                    Day
-                  </label>
-                  <select
-                    value={editDay ?? ''}
-                    onChange={(e) =>
-                      setEditDay(e.target.value ? Number(e.target.value) : null)
-                    }
-                    className='h-9 rounded-lg border border-border bg-surface-tertiary px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
-                  >
-                    {[0, 1, 2, 3, 4].map((d) => (
-                      <option key={d} value={d}>
-                        {DAY_LABELS[d]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Start Time */}
-                <div className='flex flex-col gap-1.5'>
-                  <label className='text-xs font-medium text-text-secondary'>
-                    Start Time
-                  </label>
-                  <select
-                    value={editStartTime}
-                    onChange={(e) => setEditStartTime(e.target.value)}
-                    className='h-9 rounded-lg border border-border bg-surface-tertiary px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
-                  >
-                    <option value=''>Select time</option>
-                    {TIME_SLOTS.map((s: { label: string; hour: number }) => (
-                      <option key={s.label} value={s.label}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Duration */}
-                <div className='flex flex-col gap-1.5'>
-                  <label className='text-xs font-medium text-text-secondary'>
-                    Duration (slots)
-                  </label>
-                  <select
-                    value={editDurationSlots}
-                    onChange={(e) => setEditDurationSlots(Number(e.target.value))}
-                    className='h-9 rounded-lg border border-border bg-surface-tertiary px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
-                  >
-                    {DURATION_OPTIONS.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Mode */}
-                <div className='flex flex-col gap-1.5'>
-                  <label className='text-xs font-medium text-text-secondary'>
-                    Mode
-                  </label>
-                  <select
-                    value={editMode}
-                    onChange={(e) => setEditMode(e.target.value)}
-                    className='h-9 rounded-lg border border-border bg-surface-tertiary px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
-                  >
-                    {MODE_OPTIONS.map((m) => (
-                      <option key={m.value} value={m.value}>
-                        {m.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* End Time (read-only) */}
-                <div className='flex flex-col gap-1.5'>
-                  <label className='text-xs font-medium text-text-secondary'>
-                    End Time
-                  </label>
-                  <div className='h-9 rounded-lg border border-border bg-surface-tertiary px-2 text-xs text-text-secondary flex items-center'>
-                    {editStartTime
-                      ? (() => {
-                          const [h, m] = editStartTime.split(':').map(Number);
-                          const end = new Date(0, 0, 0, h + editDurationSlots, m);
-                          const eh = String(end.getHours()).padStart(2, '0');
-                          const em = String(end.getMinutes()).padStart(2, '0');
-                          return `${eh}:${em}`;
-                        })()
-                      : '—'}
-                  </div>
-                </div>
-              </div>
-
-              <div className='mt-6 flex gap-3'>
-                <button
-                  type='button'
-                  onClick={handleCancelEdit}
-                  className='flex-1 h-9 rounded-lg border border-border bg-surface-tertiary px-3 text-xs font-medium text-text-secondary transition hover:bg-surface-secondary'
-                >
-                  Cancel
-                </button>
-                <button
-                  type='button'
-                  onClick={() => {
-                    handleDeleteClass(editingClassId!);
-                    handleCancelEdit();
-                  }}
-                  className='flex-1 h-9 rounded-lg bg-red-600 px-3 text-xs font-medium text-white transition hover:bg-red-700'
-                >
-                  Delete
-                </button>
-                <button
-                  type='button'
-                  onClick={handleSaveEdit}
-                  disabled={updateScheduledClassMutation.isPending}
-                  className='flex-1 h-9 rounded-lg bg-apple-green-600 px-3 text-xs font-medium text-white transition hover:bg-apple-green-700 disabled:opacity-60'
-                >
-                  {updateScheduledClassMutation.isPending
-                    ? 'Saving…'
-                    : 'Save Changes'}
-                </button>
-              </div>
+      {totalClasses === 0 ? (
+        <EmptyState
+          icon={CalendarDays}
+          title='No scheduled classes yet'
+          description='Generate a schedule on the Schedule Management page to populate the timetable.'
+          action={
+            <LinkButton
+              to='/registrar/schedule-management'
+              icon={<Sparkles size={16} aria-hidden='true' />}
+            >
+              Generate a schedule
+            </LinkButton>
+          }
+        />
+      ) : (
+        <>
+          <div className='space-y-3 rounded-card border border-border bg-surface p-3 sm:p-4'>
+            <div className='flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'>
+              <TextField
+                id='timetable-search'
+                label='Filter by professor'
+                type='search'
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder='Search professor…'
+                containerClassName='w-full sm:max-w-xs'
+              />
+              <p className='text-body-sm text-text-secondary'>
+                Showing {filteredSchedules.length} of {totalClasses} classes
+              </p>
             </div>
+            <SegmentedControl<DayFilter>
+              options={dayOptions}
+              value={dayFilter}
+              onChange={setDayFilter}
+              label='Filter timetable by day'
+            />
           </div>
-        )}
-      </div>
-    </div>
+
+          {filteredSchedules.length === 0 ? (
+            <EmptyState
+              icon={CalendarDays}
+              title='No classes match your filters'
+              description='Try a different professor name or day.'
+              action={
+                <Button variant='secondary' onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              }
+            />
+          ) : (
+            <>
+              <div className='hidden lg:block'>
+                <TableContainer className='max-h-[65vh] overflow-y-auto'>
+                  <Table className='min-w-[900px]'>
+                    <THead>
+                      <TR className='hover:bg-transparent'>
+                        <TH className='sticky top-0 z-10 bg-surface-tertiary'>
+                          Day
+                        </TH>
+                        <TH className='sticky top-0 z-10 bg-surface-tertiary'>
+                          Time
+                        </TH>
+                        <TH className='sticky top-0 z-10 bg-surface-tertiary'>
+                          Course
+                        </TH>
+                        <TH className='sticky top-0 z-10 bg-surface-tertiary'>
+                          Section
+                        </TH>
+                        <TH className='sticky top-0 z-10 bg-surface-tertiary'>
+                          Professor
+                        </TH>
+                        <TH className='sticky top-0 z-10 bg-surface-tertiary'>
+                          Room
+                        </TH>
+                        <TH className='sticky top-0 z-10 bg-surface-tertiary'>
+                          Mode
+                        </TH>
+                        <TH className='sticky top-0 z-10 bg-surface-tertiary text-right'>
+                          Actions
+                        </TH>
+                      </TR>
+                    </THead>
+                    <TBody>
+                      {filteredSchedules.map((schedule) => {
+                        const subject = splitSubject(schedule.subject_label);
+                        return (
+                          <TR key={schedule.id}>
+                            <TD className='whitespace-nowrap text-text-secondary'>
+                              {DAY_LABELS[schedule.day ?? 0]}
+                            </TD>
+                            <TD className='whitespace-nowrap text-text-secondary'>
+                              {formatTime(schedule.start_time)} –{' '}
+                              {formatTime(schedule.end_time)}
+                            </TD>
+                            <TD>
+                              <p className='font-medium text-text-primary'>
+                                {subject.code}
+                              </p>
+                              <p className='max-w-[220px] truncate text-caption text-text-secondary'>
+                                {subject.title || '—'}
+                              </p>
+                            </TD>
+                            <TD className='text-text-secondary'>
+                              {schedule.section_name}
+                            </TD>
+                            <TD className='text-text-secondary'>
+                              {cleanTeacherName(schedule.prof_name)}
+                            </TD>
+                            <TD className='text-text-secondary'>
+                              {schedule.room_name ?? schedule.room ?? '—'}
+                            </TD>
+                            <TD>
+                              <Badge tone='neutral'>
+                                {schedule.mode_display ??
+                                  schedule.mode ??
+                                  '—'}
+                              </Badge>
+                            </TD>
+                            <TD>
+                              <div className='flex items-center justify-end gap-1'>
+                                <Button
+                                  variant='secondary'
+                                  size='sm'
+                                  icon={
+                                    <Pencil size={14} aria-hidden='true' />
+                                  }
+                                  onClick={() => handleOpenEdit(schedule)}
+                                >
+                                  Edit
+                                </Button>
+                                <IconButton
+                                  label={`Delete ${subject.code} on ${
+                                    DAY_LABELS[schedule.day ?? 0]
+                                  }`}
+                                  variant='ghost'
+                                  size='sm'
+                                  onClick={() => setPendingDelete(schedule)}
+                                >
+                                  <Trash2 size={16} aria-hidden='true' />
+                                </IconButton>
+                              </div>
+                            </TD>
+                          </TR>
+                        );
+                      })}
+                    </TBody>
+                  </Table>
+                </TableContainer>
+              </div>
+
+              <div className='space-y-5 lg:hidden'>
+                {DAY_LABELS.map((dayLabel, dayIndex) => {
+                  const dayClasses = filteredSchedules.filter(
+                    (schedule) => schedule.day === dayIndex
+                  );
+                  if (dayClasses.length === 0) return null;
+
+                  return (
+                    <section key={dayLabel} className='space-y-2'>
+                      <h2 className='flex items-center gap-2 text-h3 text-text-primary'>
+                        {dayLabel}
+                        <Badge tone='neutral'>{dayClasses.length}</Badge>
+                      </h2>
+                      <ul className='space-y-2'>
+                        {dayClasses.map((schedule) => {
+                          const subject = splitSubject(schedule.subject_label);
+                          return (
+                            <li key={schedule.id}>
+                              <Card className='p-4'>
+                                <div className='flex items-start justify-between gap-3'>
+                                  <div className='min-w-0'>
+                                    <p className='text-body font-semibold text-text-primary'>
+                                      {subject.code}
+                                    </p>
+                                    <p className='text-body-sm text-text-secondary'>
+                                      {subject.title || '—'}
+                                    </p>
+                                  </div>
+                                  <Badge tone='neutral'>
+                                    {schedule.mode_display ??
+                                      schedule.mode ??
+                                      '—'}
+                                  </Badge>
+                                </div>
+                                <dl className='mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-body-sm'>
+                                  <div>
+                                    <dt className='text-caption text-text-tertiary'>
+                                      Time
+                                    </dt>
+                                    <dd className='text-text-primary'>
+                                      {formatTime(schedule.start_time)} –{' '}
+                                      {formatTime(schedule.end_time)}
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt className='text-caption text-text-tertiary'>
+                                      Room
+                                    </dt>
+                                    <dd className='text-text-primary'>
+                                      {schedule.room_name ??
+                                        schedule.room ??
+                                        '—'}
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt className='text-caption text-text-tertiary'>
+                                      Section
+                                    </dt>
+                                    <dd className='text-text-primary'>
+                                      {schedule.section_name}
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt className='text-caption text-text-tertiary'>
+                                      Professor
+                                    </dt>
+                                    <dd className='text-text-primary'>
+                                      {cleanTeacherName(schedule.prof_name)}
+                                    </dd>
+                                  </div>
+                                </dl>
+                                <div className='mt-3 flex gap-2'>
+                                  <Button
+                                    variant='secondary'
+                                    size='sm'
+                                    className='flex-1'
+                                    icon={
+                                      <Pencil size={14} aria-hidden='true' />
+                                    }
+                                    onClick={() => handleOpenEdit(schedule)}
+                                  >
+                                    Edit
+                                  </Button>
+                                  <IconButton
+                                    label={`Delete ${subject.code} on ${dayLabel}`}
+                                    variant='secondary'
+                                    size='sm'
+                                    onClick={() => setPendingDelete(schedule)}
+                                  >
+                                    <Trash2 size={16} aria-hidden='true' />
+                                  </IconButton>
+                                </div>
+                              </Card>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </section>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      <Modal
+        open={exportOpen}
+        onClose={() => {
+          if (!exporting) setExportOpen(false);
+        }}
+        title='Export timetable'
+        description='Choose a format to download the current timetable.'
+        size='sm'
+        footer={
+          <Button
+            variant='secondary'
+            onClick={() => setExportOpen(false)}
+            disabled={exporting}
+          >
+            Cancel
+          </Button>
+        }
+      >
+        <div className='grid gap-2'>
+          <Button
+            variant='secondary'
+            onClick={() => handleExport('csv')}
+            loading={exporting && exportFormat === 'csv'}
+            disabled={exporting}
+          >
+            CSV
+          </Button>
+          <Button
+            variant='secondary'
+            onClick={() => handleExport('xlsx')}
+            loading={exporting && exportFormat === 'xlsx'}
+            disabled={exporting}
+          >
+            Excel (XLSX)
+          </Button>
+          <Button
+            variant='secondary'
+            onClick={() => handleExport('pdf')}
+            loading={exporting && exportFormat === 'pdf'}
+            disabled={exporting}
+          >
+            PDF
+          </Button>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={clearConfirmOpen}
+        onClose={() => setClearConfirmOpen(false)}
+        onConfirm={handleConfirmClear}
+        title='Clear all schedules?'
+        description={`This removes all ${totalClasses} scheduled class${
+          totalClasses === 1 ? '' : 'es'
+        } from the active run. This action cannot be undone.`}
+        confirmLabel='Clear all'
+        loading={clearScheduledClassesMutation.isPending}
+      />
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={handleConfirmDelete}
+        title='Delete scheduled class?'
+        description={
+          pendingDelete
+            ? `${splitSubject(pendingDelete.subject_label).code} · Section ${
+                pendingDelete.section_name
+              } on ${DAY_LABELS[pendingDelete.day ?? 0]} at ${formatTime(
+                pendingDelete.start_time
+              )} will be removed from the timetable.`
+            : ''
+        }
+        confirmLabel='Delete class'
+        loading={deleteScheduledClassMutation.isPending}
+      />
+
+      {editingClassId !== null && (
+        <Modal
+          open
+          onClose={closeEditModal}
+          title='Edit class'
+          description='Update the class details and save your changes.'
+          size='lg'
+          footer={
+            <>
+              <Button
+                variant='secondary'
+                onClick={closeEditModal}
+                disabled={updateScheduledClassMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type='submit'
+                form={editFormId}
+                loading={updateScheduledClassMutation.isPending}
+              >
+                Save changes
+              </Button>
+            </>
+          }
+        >
+          <form
+            id={editFormId}
+            onSubmit={(event) => {
+              event.preventDefault();
+              handleSaveEdit();
+            }}
+            className='grid gap-4 sm:grid-cols-2'
+          >
+            <SelectField
+              id='edit-professor'
+              label='Professor'
+              value={editProfId ?? ''}
+              onChange={(event) =>
+                setEditProfId(
+                  event.target.value ? Number(event.target.value) : null
+                )
+              }
+            >
+              <option value=''>Select professor</option>
+              {teachers.map((teacher) => (
+                <option key={teacher.id} value={teacher.id}>
+                  {teacher.full_name}
+                </option>
+              ))}
+            </SelectField>
+
+            <SelectField
+              id='edit-subject'
+              label='Subject'
+              value={editSubjectId ?? ''}
+              onChange={(event) =>
+                setEditSubjectId(
+                  event.target.value ? Number(event.target.value) : null
+                )
+              }
+            >
+              <option value=''>Select subject</option>
+              {courses.map((course) => (
+                <option key={course.id} value={course.id}>
+                  {course.code} — {course.title}
+                </option>
+              ))}
+            </SelectField>
+
+            <SelectField
+              id='edit-section'
+              label='Section'
+              value={editSectionId ?? ''}
+              onChange={(event) =>
+                setEditSectionId(
+                  event.target.value ? Number(event.target.value) : null
+                )
+              }
+            >
+              <option value=''>Select section</option>
+              {sections.map((section) => (
+                <option key={section.id} value={section.id}>
+                  {section.name}
+                </option>
+              ))}
+            </SelectField>
+
+            <SelectField
+              id='edit-room'
+              label='Room'
+              value={editRoom ?? ''}
+              onChange={(event) =>
+                setEditRoom(
+                  event.target.value ? Number(event.target.value) : null
+                )
+              }
+            >
+              <option value=''>Select room</option>
+              {rooms.map((room) => (
+                <option key={room.id} value={room.id}>
+                  {room.name || `Room ${room.id}`}
+                </option>
+              ))}
+            </SelectField>
+
+            <SelectField
+              id='edit-day'
+              label='Day'
+              value={editDay ?? ''}
+              onChange={(event) =>
+                setEditDay(
+                  event.target.value ? Number(event.target.value) : null
+                )
+              }
+            >
+              {DAY_LABELS.map((day, index) => (
+                <option key={day} value={index}>
+                  {day}
+                </option>
+              ))}
+            </SelectField>
+
+            <SelectField
+              id='edit-start-time'
+              label='Start time'
+              value={editStartTime}
+              onChange={(event) => setEditStartTime(event.target.value)}
+            >
+              <option value=''>Select time</option>
+              {TIME_SLOTS.map((slot) => (
+                <option key={slot.label} value={slot.label}>
+                  {slot.label}
+                </option>
+              ))}
+            </SelectField>
+
+            <SelectField
+              id='edit-duration'
+              label='Duration'
+              value={editDurationSlots}
+              onChange={(event) =>
+                setEditDurationSlots(Number(event.target.value))
+              }
+            >
+              {DURATION_OPTIONS.map((duration) => (
+                <option key={duration} value={duration}>
+                  {duration} slot{duration === 1 ? '' : 's'}
+                </option>
+              ))}
+            </SelectField>
+
+            <SelectField
+              id='edit-mode'
+              label='Mode'
+              value={editMode}
+              onChange={(event) => setEditMode(event.target.value)}
+            >
+              {MODE_OPTIONS.map((mode) => (
+                <option key={mode.value} value={mode.value}>
+                  {mode.label}
+                </option>
+              ))}
+            </SelectField>
+
+            <TextField
+              id='edit-end-time'
+              label='End time'
+              value={calculateEndTime(editStartTime, editDurationSlots)}
+              readOnly
+              hint='Calculated from the start time and duration.'
+              containerClassName='sm:col-span-2'
+            />
+          </form>
+        </Modal>
+      )}
+    </section>
   );
 }

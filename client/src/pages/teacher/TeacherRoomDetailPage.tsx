@@ -1,7 +1,20 @@
+import { CalendarDays, Clock3 } from 'lucide-react';
 import { useParams } from 'react-router-dom';
-import { ArrowLeft, Link } from 'lucide-react';
-import { useRooms } from '../../hooks/Schedule.hooks';
-import { useRoomSchedule } from '../../hooks/Schedule.hooks';
+import { useRoomSchedule, useRooms } from '../../hooks/Schedule.hooks';
+import {
+  Badge,
+  Card,
+  EmptyState,
+  LoadingState,
+  PageHeader,
+  Table,
+  TableContainer,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+} from '../../components/ui';
 import type { Schedule } from '../../types/Types';
 
 // Mock example data for testing without backend.
@@ -50,128 +63,199 @@ const exampleSchedules: Schedule[] = [
   },
 ];
 
+function formatTime(time: string) {
+  const [rawHours, rawMinutes = '0'] = time.split(':');
+  const hours = Number(rawHours);
+  const minutes = Number(rawMinutes);
+  const period = hours < 12 ? 'AM' : 'PM';
+  const display = hours % 12 === 0 ? 12 : hours % 12;
+
+  return `${display}:${String(minutes).padStart(2, '0')} ${period}`;
+}
+
 export default function TeacherRoomDetailPage() {
-  const { roomId, name: teacherName } = useParams<{ roomId: string; name: string }>();
+  const { roomId, name: teacherName } = useParams<{
+    roomId: string;
+    name: string;
+  }>();
   const id = roomId ? Number(roomId) : undefined;
   const teacher = teacherName ?? 'juan';
 
   const { data: rooms } = useRooms({ enabled: true });
-  const room = rooms?.find((r) => r.id === id);
+  const room = rooms?.find((candidate) => candidate.id === id);
 
   const { data: schedules, isLoading } = useRoomSchedule({
     roomId: id,
     enabled: !!id,
   });
 
-  const resolvedSchedules: Schedule[] = schedules ?? exampleSchedules.filter(
-    (s) => s.room === id
-  );
+  const resolvedSchedules: Schedule[] =
+    schedules ?? exampleSchedules.filter((schedule) => schedule.room === id);
 
   return (
-    <section className='w-full'>
-      <div className='mb-5 flex items-center gap-2'>
-        <Link
-          to={`/teacher/${teacher}/rooms`}
-          className='inline-flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary'
-        >
-          <ArrowLeft size={15} /> Back to rooms
-        </Link>
-        <h1 className='text-lg font-medium text-text-primary ml-auto'>
-          Room {room?.name}
-        </h1>
-      </div>
+    <section className='w-full space-y-6'>
+      <PageHeader
+        eyebrow='Teacher'
+        title={room ? `Room ${room.name}` : 'Room schedule'}
+        description={
+          room
+            ? `${room.building}${room.department_name ? ` · ${room.department_name}` : ''}`
+            : undefined
+        }
+        backTo={`/teacher/${teacher}/rooms`}
+        backLabel='Back to rooms'
+      />
 
       {!id ? (
-        <p className='text-sm text-text-secondary'>No room selected.</p>
+        <EmptyState
+          icon={CalendarDays}
+          title='No room selected'
+          description='Choose a room to view its schedule.'
+        />
       ) : !room ? (
-        <p className='text-sm text-text-secondary'>Room not found.</p>
+        <EmptyState
+          icon={CalendarDays}
+          title='Room not found'
+          description='This room may have been removed or is no longer available.'
+        />
       ) : (
         <>
-          <div className='mb-5 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4'>
-            <div className='rounded-lg border border-border bg-surface p-4'>
-              <p className='text-xs font-medium text-text-tertiary'>Room</p>
-              <p className='text-base font-medium text-text-primary'>{room.name}</p>
-            </div>
-            <div className='rounded-lg border border-border bg-surface p-4'>
-              <p className='text-xs font-medium text-text-tertiary'>Capacity</p>
-              <p className='text-base font-medium text-text-primary'>{room.capacity}</p>
-            </div>
-            <div className='rounded-lg border border-border bg-surface p-4'>
-              <p className='text-xs font-medium text-text-tertiary'>Building</p>
-              <p className='text-base font-medium text-text-primary'>{room.building}</p>
-            </div>
-            <div className='rounded-lg border border-border bg-surface p-4'>
-              <p className='text-xs font-medium text-text-tertiary'>Department</p>
-              <p className='text-base font-medium text-text-primary'>
-                {room.department_name || '—'}
-              </p>
-            </div>
+          <div className='grid grid-cols-2 gap-4 lg:grid-cols-4'>
+            {[
+              { label: 'Room', value: room.name },
+              { label: 'Capacity', value: `${room.capacity} students` },
+              { label: 'Building', value: room.building },
+              { label: 'Department', value: room.department_name || '—' },
+            ].map((item) => (
+              <Card key={item.label} className='p-4'>
+                <p className='text-caption uppercase tracking-wide text-text-tertiary'>
+                  {item.label}
+                </p>
+                <p className='mt-1 text-body font-semibold text-text-primary'>
+                  {item.value}
+                </p>
+              </Card>
+            ))}
           </div>
 
-          <div className='overflow-hidden rounded-card border border-border bg-surface'>
-            <table className='w-full text-sm'>
-              <thead>
-                <tr className='border-b border-border text-left text-text-secondary'>
-                  <th scope='col' className='px-4 py-2.5 font-normal'>
-                    Day
-                  </th>
-                  <th scope='col' className='px-4 py-2.5 font-normal'>
-                    Time
-                  </th>
-                  <th scope='col' className='px-4 py-2.5 font-normal'>
-                    Course
-                  </th>
-                  <th scope='col' className='px-4 py-2.5 font-normal'>
-                    Section
-                  </th>
-                  <th scope='col' className='px-4 py-2.5 font-normal'>
-                    Professor
-                  </th>
-                  <th scope='col' className='px-4 py-2.5 font-normal'>
-                    Type
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <tr>
-                    <td colSpan={6} className='px-4 py-8 text-center text-sm text-text-secondary'>
-                      Loading schedule…
-                    </td>
-                  </tr>
-                ) : resolvedSchedules.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className='px-4 py-8 text-center text-sm text-text-secondary'>
-                      No scheduled classes for this room.
-                    </td>
-                  </tr>
-                ) : (
-                  resolvedSchedules.map((s) => (
-                    <tr key={s.id} className='border-t border-border'>
-                      <td className='px-4 py-3 text-text-secondary'>
-                        {s.day_display}
-                      </td>
-                      <td className='px-4 py-3 text-text-secondary'>
-                        {s.start_time} — {s.end_time ?? '—'}
-                      </td>
-                      <td className='px-4 py-3 text-text-primary'>
-                        {s.subject_label}
-                      </td>
-                      <td className='px-4 py-3 text-text-secondary'>
-                        {s.section_name}
-                      </td>
-                      <td className='px-4 py-3 text-text-secondary'>
-                        {s.prof_name}
-                      </td>
-                      <td className='px-4 py-3 text-text-secondary'>
-                        {s.mode_display}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          {isLoading ? (
+            <LoadingState label='Loading room schedule…' />
+          ) : resolvedSchedules.length === 0 ? (
+            <EmptyState
+              icon={CalendarDays}
+              title='No scheduled classes'
+              description='This room has no classes scheduled for the current term.'
+            />
+          ) : (
+            <>
+              <TableContainer className='hidden md:block'>
+                <Table className='min-w-[760px]'>
+                  <caption className='sr-only'>
+                    Weekly schedule for {room.name}
+                  </caption>
+                  <THead>
+                    <TR>
+                      <TH>Day</TH>
+                      <TH>Time</TH>
+                      <TH>Course</TH>
+                      <TH>Section</TH>
+                      <TH>Professor</TH>
+                      <TH>Mode</TH>
+                    </TR>
+                  </THead>
+                  <TBody>
+                    {resolvedSchedules.map((schedule) => (
+                      <TR key={schedule.id}>
+                        <TD className='text-text-secondary'>
+                          {schedule.day_display}
+                        </TD>
+                        <TD className='whitespace-nowrap text-text-secondary'>
+                          {formatTime(schedule.start_time)}
+                          {schedule.end_time
+                            ? ` – ${formatTime(schedule.end_time)}`
+                            : ''}
+                        </TD>
+                        <TD className='font-medium'>
+                          {schedule.subject_label}
+                        </TD>
+                        <TD className='text-text-secondary'>
+                          {schedule.section_name}
+                        </TD>
+                        <TD className='text-text-secondary'>
+                          {schedule.prof_name}
+                        </TD>
+                        <TD>
+                          <Badge tone='green'>{schedule.mode_display}</Badge>
+                        </TD>
+                      </TR>
+                    ))}
+                  </TBody>
+                </Table>
+              </TableContainer>
+
+              <div className='space-y-3 md:hidden'>
+                {resolvedSchedules.map((schedule) => (
+                  <Card key={schedule.id} className='p-4'>
+                    <div className='flex flex-wrap items-start justify-between gap-2'>
+                      <div className='min-w-0'>
+                        <p className='text-body font-semibold text-text-primary'>
+                          {schedule.subject_label}
+                        </p>
+                        <p className='text-body-sm text-text-secondary'>
+                          Section {schedule.section_name}
+                        </p>
+                      </div>
+                      <Badge tone='green'>{schedule.mode_display}</Badge>
+                    </div>
+
+                    <dl className='mt-3 grid grid-cols-2 gap-3 border-t border-border-light pt-3'>
+                      <div className='flex items-start gap-2'>
+                        <CalendarDays
+                          size={15}
+                          className='mt-0.5 shrink-0 text-apple-green-600'
+                          aria-hidden='true'
+                        />
+                        <div>
+                          <dt className='text-caption uppercase tracking-wide text-text-tertiary'>
+                            Day
+                          </dt>
+                          <dd className='text-body-sm text-text-primary'>
+                            {schedule.day_display}
+                          </dd>
+                        </div>
+                      </div>
+                      <div className='flex items-start gap-2'>
+                        <Clock3
+                          size={15}
+                          className='mt-0.5 shrink-0 text-apple-green-600'
+                          aria-hidden='true'
+                        />
+                        <div>
+                          <dt className='text-caption uppercase tracking-wide text-text-tertiary'>
+                            Time
+                          </dt>
+                          <dd className='text-body-sm text-text-primary'>
+                            {formatTime(schedule.start_time)}
+                            {schedule.end_time
+                              ? ` – ${formatTime(schedule.end_time)}`
+                              : ''}
+                          </dd>
+                        </div>
+                      </div>
+                      <div className='col-span-2'>
+                        <dt className='text-caption uppercase tracking-wide text-text-tertiary'>
+                          Professor
+                        </dt>
+                        <dd className='text-body-sm text-text-primary'>
+                          {schedule.prof_name}
+                        </dd>
+                      </div>
+                    </dl>
+                  </Card>
+                ))}
+              </div>
+            </>
+          )}
         </>
       )}
     </section>

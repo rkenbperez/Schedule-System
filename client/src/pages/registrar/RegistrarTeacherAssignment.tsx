@@ -1,8 +1,24 @@
 // pages/registrar/RegistrarTeacherAssignment.tsx
-import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { useParams } from 'react-router-dom';
+import { CalendarPlus, CheckCircle2, UserRoundX, X } from 'lucide-react';
 import { useState } from 'react';
 import ScheduleModal from './components/ScheduleModal';
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  IconButton,
+  PageHeader,
+  Table,
+  TableContainer,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+} from '../../components/ui';
 import { scheduleService } from '../../services/Schedule.service';
 import type {
   CourseAssignmentDetail,
@@ -340,19 +356,6 @@ export default function RegistrarTeacherAssignment() {
   const { teacherId } = useParams<{ teacherId: string }>();
   const id = teacherId ? Number(teacherId) : undefined;
 
-  // Hook: /api/professor/me/ takes NO parameter — it returns the currently
-  // logged-in professor ("me"), not a teacher you specify by ID.
-  // To fetch a specific teacher's assignments by ID, the backend would need
-  // an endpoint such as GET /api/assignments/?prof_id={teacherId}.
-  // Commented out for now — using mock data below for testing.
-  /*
-  const {
-    data: professorProfile,
-    isLoading: profileLoading,
-    error: profileError,
-  } = useProfessorProfile({ enabled: !!id });
-  */
-
   // Mock example data (retained for testing / offline use)
   const mockAssignments: CourseAssignmentDetail[] = exampleAssignments.filter(
     (a) => a.prof === id
@@ -362,7 +365,6 @@ export default function RegistrarTeacherAssignment() {
   const teacherAssignments: CourseAssignmentDetail[] = mockAssignments;
   const teacher = mockTeacher;
 
-  // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedAssignment, setSelectedAssignment] =
     useState<CourseAssignmentDetail | null>(null);
@@ -406,156 +408,168 @@ export default function RegistrarTeacherAssignment() {
   };
 
   const clearNotification = () => setNotification(null);
+  const teacherName = teacher?.full_name ?? (id ? `Teacher #${id}` : null);
+
+  if (id === undefined) {
+    return (
+      <section className='w-full space-y-6'>
+        <PageHeader
+          backTo='/registrar/teachers'
+          backLabel='Back to teachers'
+          eyebrow='Registrar'
+          title='Teacher assignments'
+        />
+        <EmptyState
+          icon={UserRoundX}
+          title='No teacher selected'
+          description='Choose a teacher from the list to view and schedule their course assignments.'
+        />
+      </section>
+    );
+  }
 
   return (
-    <section className='w-full'>
-      <div className='mb-5 flex items-center gap-2'>
-        <Link
-          to='/registrar/teachers'
-          className='inline-flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary'
-        >
-          <ArrowLeft size={15} /> Back to teachers
-        </Link>
-        <h1 className='text-lg font-medium text-text-primary ml-auto'>
-          Teacher Assignments
-        </h1>
-      </div>
+    <section className='w-full space-y-6'>
+      <PageHeader
+        backTo='/registrar/teachers'
+        backLabel='Back to teachers'
+        eyebrow='Registrar'
+        title={teacherName}
+        description={
+          teacher
+            ? `${teacher.department_name || 'Unassigned department'} · ${teacherAssignments.length} course assignment${
+                teacherAssignments.length === 1 ? '' : 's'
+              }`
+            : 'Review course assignments and create class schedules.'
+        }
+      />
 
       {notification && (
-        <div
-          className={`rounded-lg border p-3 mb-4 text-sm flex items-start gap-3 ${
+        <Alert
+          tone={notification.type === 'success' ? 'success' : 'danger'}
+          title={
             notification.type === 'success'
-              ? 'bg-apple-green-50 border-apple-green-100 text-apple-green-700'
-              : 'bg-red-50 border-red-100 text-red-700'
-          }`}
-          role='alert'
+              ? 'Schedule created'
+              : 'Could not create schedule'
+          }
+          action={
+            <IconButton
+              label='Dismiss notification'
+              size='sm'
+              onClick={clearNotification}
+            >
+              <X size={16} aria-hidden='true' />
+            </IconButton>
+          }
         >
-          <span className='shrink-0 mt-0.5'>
-            {notification.type === 'success' ? '✓' : '✕'}
-          </span>
-          <p className='text-text-primary'>{notification.message}</p>
-          <button
-            type='button'
-            onClick={clearNotification}
-            className='ml-auto text-text-tertiary hover:text-text-primary'
-          >
-            ✕
-          </button>
-        </div>
+          {notification.message}
+        </Alert>
       )}
 
-      {id === undefined ? (
-        <p className='text-sm text-text-secondary'>No teacher selected.</p>
-      ) : teacherAssignments.length === 0 ? (
-        <div className='rounded-card border border-border bg-surface p-8 text-center'>
-          <p className='text-sm text-text-secondary'>
-            No assignments found for {teacher?.full_name ?? 'this teacher'}.
-          </p>
-        </div>
+      {teacherAssignments.length === 0 ? (
+        <EmptyState
+          icon={CheckCircle2}
+          title='No assignments yet'
+          description={`No course assignments found for ${
+            teacher?.full_name ?? 'this teacher'
+          }.`}
+        />
       ) : (
-        <div className='overflow-hidden rounded-card border border-border bg-surface'>
-          <table className='w-full text-sm'>
-            <thead>
-              <tr className='border-b border-border text-left text-text-secondary'>
-                <th scope='col' className='px-4 py-2.5 font-normal'>
-                  Teacher
-                </th>
-                <th scope='col' className='px-4 py-2.5 font-normal'>
-                  Course
-                </th>
-                <th scope='col' className='px-4 py-2.5 font-normal'>
-                  Section
-                </th>
-                <th scope='col' className='px-4 py-2.5 font-normal'>
-                  Program
-                </th>
-                <th scope='col' className='px-4 py-2.5 font-normal'>
-                  Type
-                </th>
-                <th scope='col' className='px-4 py-2.5 font-normal'>
-                  Status
-                </th>
-                <th scope='col' className='px-4 py-2.5 font-normal text-right'>
-                  Action
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {teacherAssignments.map((a: CourseAssignmentDetail) => {
-                return (
-                  <tr
-                    key={a.id}
-                    className='border-t border-border cursor-pointer hover:bg-surface-secondary transition'
-                  >
-                    <td
-                      className='px-4 py-3 text-text-primary'
-                      onClick={() => openModal(a)}
+        <>
+          <div className='hidden lg:block'>
+            <TableContainer>
+              <Table className='min-w-[760px]'>
+                <THead>
+                  <TR className='hover:bg-transparent'>
+                    <TH>Teacher</TH>
+                    <TH>Course</TH>
+                    <TH>Section</TH>
+                    <TH>Meeting</TH>
+                    <TH>Status</TH>
+                    <TH className='text-right'>Action</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {teacherAssignments.map((assignment) => {
+                    const isScheduled = Boolean(assignment.meetings?.length);
+                    return (
+                      <TR key={assignment.id}>
+                        <TD className='font-medium'>
+                          {assignment.prof_name}
+                        </TD>
+                        <TD>{assignment.subject_label}</TD>
+                        <TD className='text-text-secondary'>
+                          {assignment.section_name}
+                        </TD>
+                        <TD className='text-text-secondary'>
+                          {assignment.meetings?.[0]?.mode_display ?? '—'}
+                        </TD>
+                        <TD>
+                          <Badge tone={isScheduled ? 'success' : 'neutral'}>
+                            {isScheduled ? 'Scheduled' : 'Unscheduled'}
+                          </Badge>
+                        </TD>
+                        <TD className='text-right'>
+                          <Button
+                            variant='secondary'
+                            size='sm'
+                            icon={<CalendarPlus size={15} aria-hidden='true' />}
+                            onClick={() => openModal(assignment)}
+                          >
+                            {isScheduled ? 'Reschedule' : 'Schedule'}
+                          </Button>
+                        </TD>
+                      </TR>
+                    );
+                  })}
+                </TBody>
+              </Table>
+            </TableContainer>
+          </div>
+
+          <ul className='space-y-3 lg:hidden'>
+            {teacherAssignments.map((assignment) => {
+              const isScheduled = Boolean(assignment.meetings?.length);
+              return (
+                <li key={assignment.id}>
+                  <Card className='p-4'>
+                    <div className='flex items-start justify-between gap-3'>
+                      <div className='min-w-0'>
+                        <p className='text-h3 text-text-primary'>
+                          {assignment.subject_label}
+                        </p>
+                        <p className='mt-0.5 text-body-sm text-text-secondary'>
+                          Section {assignment.section_name} ·{' '}
+                          {assignment.meetings?.[0]?.mode_display ?? 'No meeting'}
+                        </p>
+                      </div>
+                      <Badge tone={isScheduled ? 'success' : 'neutral'}>
+                        {isScheduled ? 'Scheduled' : 'Unscheduled'}
+                      </Badge>
+                    </div>
+                    <p className='mt-3 text-body-sm text-text-secondary'>
+                      {assignment.prof_name}
+                    </p>
+                    <Button
+                      variant='secondary'
+                      className='mt-4 w-full'
+                      icon={<CalendarPlus size={16} aria-hidden='true' />}
+                      onClick={() => openModal(assignment)}
                     >
-                      {a.prof_name}
-                    </td>
-                    <td
-                      className='px-4 py-3 text-text-primary'
-                      onClick={() => openModal(a)}
-                    >
-                      {a.subject_label}
-                    </td>
-                    <td
-                      className='px-4 py-3 text-text-secondary'
-                      onClick={() => openModal(a)}
-                    >
-                      {a.section_name}
-                    </td>
-                    <td
-                      className='px-4 py-3 text-text-secondary'
-                      onClick={() => openModal(a)}
-                    >
-                      {a.section_name}
-                    </td>
-                    <td
-                      className='px-4 py-3 text-text-secondary'
-                      onClick={() => openModal(a)}
-                    >
-                      {a.meetings?.[0]?.mode_display || '—'}
-                    </td>
-                    <td
-                      className='px-4 py-3 text-text-secondary'
-                      onClick={() => openModal(a)}
-                    >
-                      {a.meetings?.[0]
-                        ? 'Scheduled'
-                        : 'Unscheduled'}
-                    </td>
-                    <td
-                      className='px-4 py-3 text-right'
-                      onClick={() => openModal(a)}
-                    >
-                      <button
-                        type='button'
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openModal(a);
-                        }}
-                        className='inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-border bg-surface text-xs font-medium text-text-primary transition hover:bg-surface-secondary disabled:opacity-50 disabled:cursor-not-allowed'
-                      >
-                        {a.meetings?.[0] ? 'Reschedule' : 'Schedule'}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                      {isScheduled ? 'Reschedule' : 'Schedule'}
+                    </Button>
+                  </Card>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
 
       {isModalOpen && selectedAssignment && (
         <ScheduleModal
           teacherId={selectedAssignment.prof}
-          component={
-            selectedAssignment.meetings?.[0]?.mode_display
-              ? exampleComponents[0]
-              : exampleComponents[0]
-          }
+          component={exampleComponents[0]}
           assignment={selectedAssignment}
           rooms={exampleRooms}
           onSchedule={handleSchedule}

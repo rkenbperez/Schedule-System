@@ -1,9 +1,14 @@
-// pages/teacher/TeacherRoomPage.tsx
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Building2, Search } from 'lucide-react';
+import { Building2 } from 'lucide-react';
+import { useParams } from 'react-router-dom';
 import { useRooms } from '../../hooks/Schedule.hooks';
 import RoomCard from './components/RoomCard';
+import {
+  EmptyState,
+  LoadingState,
+  PageHeader,
+  TextField,
+} from '../../components/ui';
 import type { Room } from '../../types/Types';
 
 // Mock example data for testing without backend.
@@ -51,7 +56,8 @@ const exampleRooms: Room[] = [
 ];
 
 export default function TeacherRoomPage() {
-  const navigate = useNavigate();
+  const { name } = useParams<{ name: string }>();
+  const teacher = name ?? 'juan';
   const { data: rooms, isLoading } = useRooms({ enabled: true });
   const [filter, setFilter] = useState('');
 
@@ -62,54 +68,53 @@ export default function TeacherRoomPage() {
   const filteredRooms = useMemo(() => {
     const query = filter.trim().toLowerCase();
     if (!query) return resolvedRooms;
+
     return resolvedRooms.filter(
-      (r) =>
-        r.name.toLowerCase().includes(query) ||
-        r.building.toLowerCase().includes(query) ||
-        r.department_name?.toLowerCase().includes(query)
+      (room) =>
+        room.name.toLowerCase().includes(query) ||
+        room.building.toLowerCase().includes(query) ||
+        room.department_name?.toLowerCase().includes(query)
     );
   }, [resolvedRooms, filter]);
 
   return (
-    <section className='w-full'>
-      <div className='mb-5 flex items-center gap-2'>
-        <Link
-          to='/teacher/juan'
-          className='inline-flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary'
-        >
-          <Building2 size={15} /> Back to dashboard
-        </Link>
-        <h1 className='text-lg font-medium text-text-primary ml-auto'>Rooms</h1>
-      </div>
+    <section className='w-full space-y-6'>
+      <PageHeader
+        eyebrow='Teacher'
+        title='Rooms'
+        description='Browse rooms and view their weekly schedules.'
+        backTo={`/teacher/${teacher}`}
+        backLabel='Back to dashboard'
+      />
 
-      <div className='mb-5 flex gap-3'>
-        <div className='relative flex-1 max-w-md'>
-          <Search
-            size={16}
-            className='pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary'
-          />
-          <input
-            type='search'
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder='Search room, building, or department…'
-            className='h-10 w-full rounded-lg border border-border bg-surface pl-9 pr-3 text-sm text-text-primary placeholder-text-tertiary outline-none transition focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100'
-          />
-        </div>
+      <div className='max-w-md'>
+        <TextField
+          id='room-search'
+          label='Search rooms'
+          type='search'
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          placeholder='Search room, building, or department…'
+          hint='Results update as you type.'
+        />
       </div>
 
       {isLoading ? (
-        <p className='text-sm text-text-secondary'>Loading rooms...</p>
+        <LoadingState label='Loading rooms…' />
       ) : filteredRooms.length === 0 ? (
-        <p className='text-sm text-text-secondary'>No rooms found.</p>
+        <EmptyState
+          icon={Building2}
+          title='No rooms found'
+          description={
+            filter
+              ? 'Try a different room name, building, or department.'
+              : 'Rooms will appear here once they are added.'
+          }
+        />
       ) : (
-        <div className='grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'>
+        <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
           {filteredRooms.map((room) => (
-            <RoomCard
-              key={room.id}
-              room={room}
-              onClick={(roomId) => navigate(`/teacher/juan/rooms/${roomId}`)}
-            />
+            <RoomCard key={room.id} room={room} />
           ))}
         </div>
       )}

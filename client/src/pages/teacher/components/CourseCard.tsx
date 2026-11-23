@@ -1,4 +1,6 @@
+import { ArrowRight } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
+import { Badge } from '../../../components/ui';
 
 export interface CourseCardProps {
   id: number;
@@ -21,63 +23,51 @@ export default function CourseCard({
 }: CourseCardProps) {
   const { name: teacherName } = useParams<{ name: string }>();
   const teacher = teacherName ?? 'juan';
+
   return (
-    <div
-      className='
-        flex h-full flex-col gap-3
-        rounded-2xl border border-border bg-surface
-        px-3 py-3
-        sm:px-4 sm:py-4
-        md:px-5 md:py-4
-        transition
-        hover:border-apple-green-200
-      '
+    <Link
+      to={`/teacher/${teacher}/assignments/${id}`}
+      className='group flex h-full flex-col gap-4 rounded-card border border-border bg-surface p-5 transition hover:border-apple-green-300 hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-apple-green-600'
     >
-      {/* Course info */}
-      <div className='flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1'>
-        <span className='text-sm font-medium tracking-tight text-text-primary sm:text-base'>
-          {code}
-        </span>
-        <span className='text-xs text-text-tertiary sm:text-sm'>
-          section {section}
-        </span>
-        <span
-          className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium capitalize ${
-            scheduled
-              ? 'bg-apple-green-50 text-apple-green-700'
-              : 'bg-amber-50 text-amber-700'
-          }`}
-        >
-          {label}
-          {scheduled ? ' · scheduled' : ' · pending'}
-        </span>
+      <div className='flex flex-wrap items-start justify-between gap-2'>
+        <div className='min-w-0'>
+          <h3 className='text-h3 text-text-primary'>{code}</h3>
+          {title !== code && (
+            <p className='mt-0.5 text-body-sm text-text-secondary'>{title}</p>
+          )}
+        </div>
+        <Badge tone={scheduled ? 'success' : 'warning'}>
+          {label} · {scheduled ? 'Scheduled' : 'Pending'}
+        </Badge>
       </div>
 
-      <p className='text-sm text-text-secondary'>{title}</p>
-
-      {/* Course meta */}
-      <div className='grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:text-sm'>
-        <div className='flex flex-col gap-px'>
-          <span className='text-[10px] uppercase tracking-wide text-text-tertiary'>
+      <dl className='grid grid-cols-2 gap-4 border-t border-border-light pt-4'>
+        <div>
+          <dt className='text-caption uppercase tracking-wide text-text-tertiary'>
             Section
-          </span>
-          <span className='text-text-primary'>{section}</span>
+          </dt>
+          <dd className='mt-0.5 text-body-sm font-medium text-text-primary'>
+            {section}
+          </dd>
         </div>
-        <div className='flex flex-col gap-px'>
-          <span className='text-[10px] uppercase tracking-wide text-text-tertiary'>
+        <div>
+          <dt className='text-caption uppercase tracking-wide text-text-tertiary'>
             Students
-          </span>
-          <span className='text-text-primary'>{studentCount}</span>
+          </dt>
+          <dd className='mt-0.5 text-body-sm font-medium text-text-primary tabular-nums'>
+            {studentCount || '—'}
+          </dd>
         </div>
-      </div>
+      </dl>
 
-      {/* View details */}
-      <Link
-        to={`/teacher/${teacher}/assignments/${id}`}
-        className='mt-auto flex w-full items-center justify-center rounded-md border border-apple-green-200 px-4 py-1.5 text-xs font-medium text-apple-green-700 transition hover:border-apple-green-500 hover:bg-apple-green-50 sm:text-sm'
-      >
-        View details →
-      </Link>
-    </div>
+      <span className='mt-auto inline-flex min-h-11 items-center gap-1.5 text-body-sm font-medium text-apple-green-700'>
+        View details
+        <ArrowRight
+          size={15}
+          className='transition-transform group-hover:translate-x-0.5'
+          aria-hidden='true'
+        />
+      </span>
+    </Link>
   );
 }

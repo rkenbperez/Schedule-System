@@ -1,8 +1,18 @@
 // pages/teacher/TeacherAssingmentDetailPage.tsx
-import { ArrowLeft, Check, Clock } from 'lucide-react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { BookOpen, CheckCircle2, Clock3 } from 'lucide-react';
+import { useParams } from 'react-router-dom';
 import { useCourseComponents } from '../../hooks/Schedule.hooks';
-import type { CourseAssignmentDetail, CourseComponent } from '../../types/Types';
+import {
+  Badge,
+  Card,
+  CardBody,
+  EmptyState,
+  PageHeader,
+} from '../../components/ui';
+import type {
+  CourseAssignmentDetail,
+  CourseComponent,
+} from '../../types/Types';
 
 // Mock example data for testing without backend.
 const exampleAssignments: CourseAssignmentDetail[] = [
@@ -44,105 +54,139 @@ const exampleAssignments: CourseAssignmentDetail[] = [
 export default function TeacherAssingmentDetailPage() {
   const { name: teacherName, 'assignment-id': assignmentIdStr } = useParams();
   const assignmentId = assignmentIdStr ? Number(assignmentIdStr) : NaN;
-  const navigate = useNavigate();
   const teacher = teacherName ?? 'juan';
 
-  const assignment = exampleAssignments.find((a) => a.id === assignmentId);
+  const assignment = exampleAssignments.find(
+    (candidate) => candidate.id === assignmentId
+  );
 
   const { data: components } = useCourseComponents({
     enabled: !!assignment?.subject,
   });
 
-  const resolvedComponents = components?.filter(
-    (c: CourseComponent) => c.course.id === assignment?.subject
-  ) ?? [];
+  const resolvedComponents =
+    components?.filter(
+      (component: CourseComponent) =>
+        component.course.id === assignment?.subject
+    ) ?? [];
 
   if (!assignment) {
     return (
-      <section className='w-full max-w-2xl'>
-        <p className='text-sm text-text-secondary'>Course not found.</p>
+      <section className='w-full max-w-3xl space-y-6'>
+        <PageHeader
+          eyebrow='Teacher'
+          title='Course not found'
+          backTo={`/teacher/${teacher}/assignments`}
+          backLabel='Back to my assignments'
+        />
+        <EmptyState
+          icon={BookOpen}
+          title='This assignment is unavailable'
+          description='It may have been removed or is no longer assigned to you.'
+        />
       </section>
     );
   }
 
   return (
-    <section className='w-full max-w-2xl'>
-      <Link
-        to={`/teacher/${teacher}/assignments`}
-        className='mb-4 flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary'
-      >
-        <ArrowLeft size={15} />
-        Back to my assignments
-      </Link>
+    <section className='w-full max-w-3xl space-y-6'>
+      <PageHeader
+        eyebrow='Teacher'
+        title={assignment.subject_label}
+        description={`Section ${assignment.section_name}`}
+        backTo={`/teacher/${teacher}/assignments`}
+        backLabel='Back to my assignments'
+      />
 
-      <h1 className='text-lg font-medium text-text-primary'>
-        {assignment.subject_label}
-      </h1>
-      <p className='mb-6 text-sm text-text-secondary'>
-        {assignment.subject_label}
-      </p>
-
-      <div className='mb-6 rounded-card border border-border bg-surface p-4'>
-        <dl className='grid grid-cols-2 gap-y-3 text-sm'>
-          <dt className='text-text-tertiary'>Section</dt>
-          <dd className='text-text-primary'>{assignment.section_name}</dd>
-
-          <dt className='text-text-tertiary'>Students</dt>
-          <dd className='text-text-primary'>—</dd>
-        </dl>
-      </div>
-
-      <h2 className='mb-3 text-sm font-medium text-text-primary'>Components</h2>
-      <div className='flex flex-col gap-3'>
-        {resolvedComponents.map((component) => {
-          const isScheduled = Boolean(component.is_active);
-          return (
-            <div
-              key={component.id}
-              className='flex items-center justify-between rounded-card border border-border bg-surface p-4'
-            >
-              <div className='flex items-center gap-3'>
-                {isScheduled ? (
-                  <Check size={18} className='text-apple-green-600' />
-                ) : (
-                  <Clock size={18} className='text-amber-600' />
-                )}
-                <div>
-                  <p className='text-sm font-medium text-text-primary'>
-                    {component.label}
-                  </p>
-                  {isScheduled ? (
-                    <p className='text-xs text-text-secondary sm:text-sm'>
-                      Scheduled
-                    </p>
-                  ) : (
-                    <p className='text-xs text-text-secondary sm:text-sm'>
-                      Not scheduled yet
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {isScheduled ? (
-                <span className='rounded-full bg-apple-green-50 px-2.5 py-1 text-[10px] font-medium text-apple-green-700 sm:text-xs'>
-                  Scheduled
-                </span>
-              ) : (
-                <button
-                  onClick={() =>
-                    navigate(
-                      `/teacher/${teacher}/assignments/${assignment.id}/create-schedule?component=${component.id}`
-                    )
-                  }
-                  className='rounded-md bg-apple-green-400 px-3.5 py-1.5 text-[13px] font-medium text-white transition hover:bg-apple-green-600'
-                >
-                  Select schedule
-                </button>
-              )}
+      <Card>
+        <CardBody>
+          <dl className='grid gap-4 sm:grid-cols-3'>
+            <div>
+              <dt className='text-caption uppercase tracking-wide text-text-tertiary'>
+                Section
+              </dt>
+              <dd className='mt-1 text-body font-medium text-text-primary'>
+                {assignment.section_name}
+              </dd>
             </div>
-          );
-        })}
-      </div>
+            <div>
+              <dt className='text-caption uppercase tracking-wide text-text-tertiary'>
+                Students
+              </dt>
+              <dd className='mt-1 text-body font-medium text-text-primary'>
+                —
+              </dd>
+            </div>
+            <div>
+              <dt className='text-caption uppercase tracking-wide text-text-tertiary'>
+                Components
+              </dt>
+              <dd className='mt-1 text-body font-medium text-text-primary tabular-nums'>
+                {resolvedComponents.length}
+              </dd>
+            </div>
+          </dl>
+        </CardBody>
+      </Card>
+
+      <section className='space-y-3'>
+        <div>
+          <h2 className='text-h2 text-text-primary'>Components</h2>
+          <p className='text-body-sm text-text-secondary'>
+            Lecture and laboratory requirements for this course.
+          </p>
+        </div>
+
+        {resolvedComponents.length === 0 ? (
+          <EmptyState
+            icon={BookOpen}
+            title='No components yet'
+            description='Course components will appear here once they are configured.'
+          />
+        ) : (
+          <div className='space-y-3'>
+            {resolvedComponents.map((component) => {
+              const isScheduled = Boolean(component.is_active);
+
+              return (
+                <Card key={component.id}>
+                  <CardBody className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+                    <div className='flex min-w-0 items-start gap-3'>
+                      <span className='grid h-10 w-10 shrink-0 place-items-center rounded-control bg-apple-green-50 text-apple-green-700'>
+                        {isScheduled ? (
+                          <CheckCircle2 size={19} aria-hidden='true' />
+                        ) : (
+                          <Clock3 size={19} aria-hidden='true' />
+                        )}
+                      </span>
+                      <div className='min-w-0'>
+                        <p className='text-body font-semibold capitalize text-text-primary'>
+                          {component.label}
+                        </p>
+                        <p className='text-body-sm text-text-secondary'>
+                          {component.duration} hours
+                          {component.room_type?.name
+                            ? ` · ${component.room_type.name}`
+                            : ''}
+                        </p>
+                        {!isScheduled && (
+                          <p className='mt-1 text-caption text-text-tertiary'>
+                            Schedules are managed by the registrar.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <Badge tone={isScheduled ? 'success' : 'warning'}>
+                      {isScheduled ? 'Scheduled' : 'Pending'}
+                    </Badge>
+                  </CardBody>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </section>
     </section>
   );
 }

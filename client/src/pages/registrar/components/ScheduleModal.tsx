@@ -1,7 +1,13 @@
 // pages/registrar/components/ScheduleModal.tsx
-import { useState } from 'react';
-import { X, Calendar, MapPin, Building2 } from 'lucide-react';
-import type { CourseComponent, CourseAssignmentDetail, Room } from '../../../types/Types';
+import { useId, useState, type ReactNode } from 'react';
+import { Building2, CalendarDays, Clock3, MapPin } from 'lucide-react';
+import { Button, Modal } from '../../../components/ui';
+import { cn } from '../../../lib/cn';
+import type {
+  CourseComponent,
+  CourseAssignmentDetail,
+  Room,
+} from '../../../types/Types';
 
 export interface ScheduleModalProps {
   teacherId: number;
@@ -26,6 +32,31 @@ const TIME_SLOTS = [
   { id: 4, label: '3:00 PM - 6:00 PM', start_time: '15:00' },
 ];
 
+type OptionProps = {
+  name: string;
+  checked: boolean;
+  onChange: () => void;
+  children: ReactNode;
+  className?: string;
+};
+
+function Option({ name, checked, onChange, children, className }: OptionProps) {
+  return (
+    <label className={cn('relative block cursor-pointer', className)}>
+      <input
+        type='radio'
+        name={name}
+        checked={checked}
+        onChange={onChange}
+        className='peer sr-only'
+      />
+      <span className='flex min-h-11 items-center justify-center gap-2 rounded-control border border-border-control bg-surface px-3.5 py-2 text-body text-text-secondary transition-colors peer-checked:border-apple-green-600 peer-checked:bg-apple-green-50 peer-checked:font-medium peer-checked:text-apple-green-800 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-apple-green-600'>
+        {children}
+      </span>
+    </label>
+  );
+}
+
 export default function ScheduleModal({
   teacherId,
   component,
@@ -34,6 +65,7 @@ export default function ScheduleModal({
   onSchedule,
   onClose,
 }: ScheduleModalProps) {
+  const formId = useId();
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<{
     id: number;
@@ -42,8 +74,14 @@ export default function ScheduleModal({
   } | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
 
+  const canSubmit =
+    selectedDay !== null && selectedTimeSlot !== null && selectedRoom !== null;
+
   const handleSubmit = () => {
-    if (!selectedDay || !selectedTimeSlot || !selectedRoom) return;
+    if (!canSubmit || selectedDay === null || !selectedTimeSlot || !selectedRoom) {
+      return;
+    }
+
     onSchedule({
       course_assignment: assignment.id,
       course_component: component.id,
@@ -54,155 +92,114 @@ export default function ScheduleModal({
   };
 
   return (
-    <div
-      role='dialog'
-      aria-modal='true'
-      aria-label='Schedule Component'
-      className='fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4'
-      onClick={onClose}
+    <Modal
+      open
+      onClose={onClose}
+      title='Schedule component'
+      description={`${assignment.subject_label} · Section ${assignment.section_name} · Teacher #${teacherId}`}
+      size='md'
+      footer={
+        <>
+          <Button variant='secondary' onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type='submit' form={formId} disabled={!canSubmit}>
+            Schedule
+          </Button>
+        </>
+      }
     >
-      <div
-        className='flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xl'
-        onClick={(e) => e.stopPropagation()}
+      <form
+        id={formId}
+        onSubmit={(event) => {
+          event.preventDefault();
+          handleSubmit();
+        }}
+        className='space-y-5'
       >
-        {/* Header */}
-        <div className='flex items-start justify-between gap-3 border-b border-border px-5 py-4'>
-          <div>
-            <h2 className='text-sm font-medium text-text-primary'>
-              Schedule Component
-            </h2>
-            <p className='text-xs text-text-tertiary'>
-              Teacher #{teacherId} · {assignment.subject_label} →{' '}
-              {assignment.section_name}
+        <div className='flex items-start gap-3 rounded-control border border-border bg-surface-secondary p-4'>
+          <span className='grid h-10 w-10 shrink-0 place-items-center rounded-control bg-apple-green-50 text-apple-green-700'>
+            {component.label === 'laboratory' ? (
+              <MapPin size={18} aria-hidden='true' />
+            ) : (
+              <CalendarDays size={18} aria-hidden='true' />
+            )}
+          </span>
+          <div className='min-w-0'>
+            <p className='text-body font-medium capitalize text-text-primary'>
+              {component.label}
+            </p>
+            <p className='mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-body-sm text-text-secondary'>
+              <span>{component.duration} hours</span>
+              <span aria-hidden='true'>·</span>
+              <span>{component.room_type.name} room</span>
             </p>
           </div>
-          <button
-            type='button'
-            onClick={onClose}
-            aria-label='Close'
-            className='grid h-7 w-7 shrink-0 place-items-center rounded-md text-text-tertiary transition hover:bg-surface-secondary hover:text-text-primary'
-          >
-            <X size={16} />
-          </button>
         </div>
 
-        {/* Body */}
-        <div className='flex-1 overflow-y-auto px-5 py-4'>
-          {/* Component Info */}
-          <div className='mb-6 rounded-lg border border-border bg-surface-secondary p-4'>
-            <div className='flex items-start gap-3'>
-              <div className='flex shrink-0 items-center justify-center rounded-lg bg-apple-green-50 text-[11px] font-medium text-apple-green-700 p-2'>
-                {component.label === 'laboratory' ? (
-                  <MapPin size={14} />
-                ) : (
-                  <Calendar size={14} />
-                )}
-              </div>
-              <div className='flex-1'>
-                <h3 className='text-sm font-medium text-text-primary'>
-                  {component.label}
-                </h3>
-                <p className='text-xs text-text-secondary'>
-                  {component.duration} hours
-                </p>
-              </div>
-            </div>
+        <fieldset>
+          <legend className='mb-2 text-body-sm font-medium text-text-secondary'>
+            Day
+          </legend>
+          <div className='grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5'>
+            {DAY_LABELS.map((day, index) => (
+              <Option
+                key={day}
+                name={`${formId}-day`}
+                checked={selectedDay === index}
+                onChange={() => setSelectedDay(index)}
+              >
+                {day}
+              </Option>
+            ))}
           </div>
+        </fieldset>
 
-          {/* Day Selection */}
-          <div className='mb-4'>
-            <label className='text-xs font-medium text-text-secondary block mb-2'>
-              Day
-            </label>
-            <div className='flex flex-wrap gap-2'>
-              {DAY_LABELS.map((day, index) => (
-                <button
-                  key={index}
-                  type='button'
-                  onClick={() => setSelectedDay(index)}
-                  className={`px-3 py-2 rounded-md border text-sm transition ${
-                    selectedDay === index
-                      ? 'bg-apple-green-100 border-apple-green-500 text-apple-green-700 font-medium'
-                      : 'bg-surface border-border text-text-secondary hover:border-apple-green-300'
-                  }`}
-                >
-                  {day}
-                </button>
-              ))}
-            </div>
+        <fieldset>
+          <legend className='mb-2 text-body-sm font-medium text-text-secondary'>
+            Time slot
+          </legend>
+          <div className='grid gap-2 sm:grid-cols-2'>
+            {TIME_SLOTS.map((slot) => (
+              <Option
+                key={slot.id}
+                name={`${formId}-time`}
+                checked={selectedTimeSlot?.id === slot.id}
+                onChange={() => setSelectedTimeSlot(slot)}
+              >
+                <Clock3 size={15} aria-hidden='true' />
+                {slot.label}
+              </Option>
+            ))}
           </div>
+        </fieldset>
 
-          {/* Time Slot Selection */}
-          <div className='mb-4'>
-            <label className='text-xs font-medium text-text-secondary block mb-2'>
-              Time Slot
-            </label>
-            <div className='flex flex-wrap gap-2'>
-              {TIME_SLOTS.map((slot) => (
-                <button
-                  key={slot.id}
-                  type='button'
-                  onClick={() => setSelectedTimeSlot(slot)}
-                  className={`px-3 py-2 rounded-md border text-sm transition ${
-                    selectedTimeSlot?.id === slot.id
-                      ? 'bg-apple-green-100 border-apple-green-500 text-apple-green-700 font-medium'
-                      : 'bg-surface border-border text-text-secondary hover:border-apple-green-300'
-                  }`}
-                >
-                  {slot.label}
-                </button>
-              ))}
-            </div>
+        <fieldset>
+          <legend className='mb-2 text-body-sm font-medium text-text-secondary'>
+            Room
+          </legend>
+          <div className='grid gap-2 sm:grid-cols-2'>
+            {rooms.map((room) => (
+              <Option
+                key={room.id}
+                name={`${formId}-room`}
+                checked={selectedRoom?.id === room.id}
+                onChange={() => setSelectedRoom(room)}
+                className='text-left'
+              >
+                <Building2 size={15} aria-hidden='true' />
+                <span className='flex min-w-0 flex-col'>
+                  <span className='truncate font-medium'>{room.name}</span>
+                  <span className='truncate text-caption text-text-tertiary'>
+                    {room.capacity} seats
+                    {room.building ? ` · ${room.building}` : ''}
+                  </span>
+                </span>
+              </Option>
+            ))}
           </div>
-
-          {/* Room Selection */}
-          <div className='mb-6'>
-            <label className='text-xs font-medium text-text-secondary block mb-2'>
-              Room
-            </label>
-            <div className='flex flex-wrap gap-2'>
-              {rooms.map((room) => (
-                <button
-                  key={room.id}
-                  type='button'
-                  onClick={() => setSelectedRoom(room)}
-                  className={`px-3 py-2 rounded-md border text-sm transition ${
-                    selectedRoom?.id === room.id
-                      ? 'bg-apple-green-100 border-apple-green-500 text-apple-green-700 font-medium'
-                      : 'bg-surface border-border text-text-secondary hover:border-apple-green-300'
-                  }`}
-                >
-                  <Building2 size={12} className='mr-1.5' />
-                  {room.name} ({room.capacity})
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className='border-t border-border px-5 py-4 flex justify-end gap-2'>
-          <button
-            type='button'
-            onClick={onClose}
-            className='rounded-md border border-border bg-surface px-4 py-2 text-[13px] font-medium text-text-primary transition hover:bg-surface-secondary'
-          >
-            Cancel
-          </button>
-          <button
-            type='button'
-            onClick={handleSubmit}
-            disabled={
-              !selectedDay ||
-              !selectedTimeSlot ||
-              !selectedRoom
-            }
-            className='rounded-md bg-apple-green-600 px-4 py-2 text-[13px] font-medium text-white shadow-sm transition hover:bg-apple-green-700 disabled:cursor-not-allowed disabled:opacity-60'
-          >
-            Schedule
-          </button>
-        </div>
-      </div>
-    </div>
+        </fieldset>
+      </form>
+    </Modal>
   );
 }

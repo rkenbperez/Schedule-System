@@ -1,10 +1,17 @@
 // pages/registrar/RegistrarScheduleManagementPage.tsx
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import {
-  ArrowLeft,
-  Download,
-  RefreshCw,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+} from 'react';
+import {
+  FileSpreadsheet,
+  Loader2,
+  Sparkles,
+  UploadCloud,
+  X,
 } from 'lucide-react';
 import {
   useImportPreview,
@@ -14,6 +21,26 @@ import {
 } from '../../hooks/GenerateManagement.hooks';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMe } from '../../hooks/useAuth';
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  CardTitle,
+  IconButton,
+  PageHeader,
+  SelectField,
+  Table,
+  TableContainer,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+} from '../../components/ui';
+import { cn } from '../../lib/cn';
 import type {
   GenerateSchedulePayload,
   GenerateScheduleResponse,
@@ -21,14 +48,34 @@ import type {
   ImportRecord,
 } from '../../types/Types';
 
+const ALLOWED_EXTENSIONS = ['.xlsx', '.xls', '.csv'];
+
+function validateFile(file: File) {
+  const extension = `.${file.name.split('.').pop()?.toLowerCase()}`;
+  if (!ALLOWED_EXTENSIONS.includes(extension)) {
+    return 'Please upload a valid Excel or CSV file (.xlsx, .xls, .csv).';
+  }
+  return null;
+}
+
+function formatElapsed(totalSeconds: number) {
+  return `${Math.floor(totalSeconds / 60)}:${String(
+    totalSeconds % 60
+  ).padStart(2, '0')}`;
+}
+
 export default function RegistrarScheduleManagementPage() {
   const importPreview = useImportPreview();
   const importCommit = useImportCommit();
   const generateSchedule = useGenerateSchedule();
   const publishRun = usePublishRun();
   const queryClient = useQueryClient();
+  const { data: me } = useMe();
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [previewResult, setPreviewResult] =
     useState<ImportPreviewResponse | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -47,68 +94,66 @@ export default function RegistrarScheduleManagementPage() {
     useState<GenerateScheduleResponse | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-
-  const { data: me } = useMe();
+  const [published, setPublished] = useState(false);
 
   const isRegistrar = !!me?.is_staff;
 
   useEffect(() => {
+    if (!isGenerating) return;
+
     const interval = setInterval(() => {
-      setElapsedSeconds((s) => s + 1);
+      setElapsedSeconds((seconds) => seconds + 1);
     }, 1000);
+
     return () => clearInterval(interval);
   }, [isGenerating]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const validTypes = ['.xlsx', '.xls', '.csv'];
-    const fileExt = '.' + file.name.split('.').pop()?.toLowerCase();
-    if (!validTypes.includes(fileExt)) {
-      setPreviewError(
-        'Please upload a valid Excel or CSV file (.xlsx, .xls, .csv)'
-      );
+  const selectFile = (nextFile: File) => {
+    const error = validateFile(nextFile);
+    if (error) {
+      setPreviewError(error);
       return;
     }
 
-    setFile(file);
+    setFile(nextFile);
     setPreviewError(null);
     setPreviewResult(null);
+    setImportResult(null);
   };
 
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.currentTarget.classList.add('bg-apple-green-50', 'border-apple-green-300');
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0];
+    if (selectedFile) selectFile(selectedFile);
   };
 
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.currentTarget.classList.remove(
-      'bg-apple-green-50',
-      'border-apple-green-300'
-    );
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragging(true);
   };
 
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.currentTarget.classList.remove(
-      'bg-apple-green-50',
-      'border-apple-green-300'
-    );
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      setFile(file);
-      setPreviewError(null);
-      setPreviewResult(null);
-    }
+  const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+    const droppedFile = event.dataTransfer.files?.[0];
+    if (droppedFile) selectFile(droppedFile);
+  };
+
+  const handleRemoveFile = () => {
+    setFile(null);
+    setPreviewResult(null);
+    setPreviewError(null);
+    setImportResult(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handlePreview = () => {
     if (!file) return;
 
-    // Ensure the user is authenticated as a registrar before calling the API.
-    // The backend ImportPreviewView requires IsRegistrar permission.
     if (!isRegistrar) {
       setPreviewError(
         'Please sign in with a registrar account to preview imports.'
@@ -117,29 +162,52 @@ export default function RegistrarScheduleManagementPage() {
     }
 
     setPreviewError(null);
+    setImportResult(null);
     importPreview.mutate(file, {
       onSuccess: (data: ImportPreviewResponse) => {
         setPreviewResult(data);
       },
-      onError: (err: Error) => {
+      onError: (error: Error) => {
         setPreviewError(
-          err.message.includes('403') || err.message.includes('Forbidden')
+          error.message.includes('403') || error.message.includes('Forbidden')
             ? 'Access denied: please sign in with a registrar account to preview imports.'
-            : err.message
+            : error.message
         );
       },
     });
   };
 
-  const handleRemoveFile = () => {
-    setFile(null);
-    setPreviewResult(null);
-    setPreviewError(null);
+  const handleCommitImport = () => {
+    importCommit.mutate(previewResult?.preview_token ?? '', {
+      onSuccess: () => {
+        setImportResult({
+          type: 'success',
+          message: 'Import committed successfully.',
+        });
+        queryClient.invalidateQueries({ queryKey: ['all-assignments'] });
+        queryClient.invalidateQueries({
+          queryKey: ['registrar-all-assignments'],
+        });
+        queryClient.invalidateQueries({
+          queryKey: ['registrar-all-schedules'],
+        });
+        setPreviewResult(null);
+        setFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      },
+      onError: (error: Error) => {
+        setImportResult({
+          type: 'error',
+          message: error.message || 'Import commit failed.',
+        });
+      },
+    });
   };
 
   const handleGenerate = () => {
     setGenerateError(null);
     setGenerateResult(null);
+    setPublished(false);
     setElapsedSeconds(0);
     setIsGenerating(true);
 
@@ -155,8 +223,8 @@ export default function RegistrarScheduleManagementPage() {
         setGenerateResult(data);
         setIsGenerating(false);
       },
-      onError: (err: Error) => {
-        setGenerateError(err.message);
+      onError: (error: Error) => {
+        setGenerateError(error.message);
         setIsGenerating(false);
       },
     });
@@ -165,446 +233,530 @@ export default function RegistrarScheduleManagementPage() {
   const handlePublish = () => {
     if (!generateResult?.run_id) return;
     publishRun.mutate(generateResult.run_id, {
-      onSuccess: () => {
-        setGenerateResult((prev) =>
-          prev ? { ...prev, published: true } : prev
-        );
-      },
-      onError: () => {
-        setGenerateError('Unable to publish schedule');
-      },
+      onSuccess: () => setPublished(true),
+      onError: () => setGenerateError('Unable to publish schedule.'),
     });
   };
-
-  const handleCommitImport = () => {
-    importCommit.mutate(previewResult?.preview_token ?? '', {
-      onSuccess: () => {
-        setImportResult({
-          type: 'success',
-          message: 'Import committed successfully.',
-        });
-        queryClient.invalidateQueries({
-          queryKey: ['all-assignments'],
-        });
-        queryClient.invalidateQueries({
-          queryKey: ['registrar-all-assignments'],
-        });
-        queryClient.invalidateQueries({
-          queryKey: ['registrar-all-schedules'],
-        });
-        setPreviewResult(null);
-      },
-      onError: (err: Error) => {
-        setImportResult({
-          type: 'error',
-          message: err.message || 'Import commit failed.',
-        });
-      },
-    });
-  };
-
 
   if (isGenerating) {
     return (
-      <section className='w-full max-w-7xl px-6 py-6'>
-        <Link
-          to='/registrar/dashboard'
-          className='mb-4 inline-flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary'
-        >
-          <ArrowLeft size={15} />
-          Back to dashboard
-        </Link>
+      <section className='w-full space-y-6'>
+        <PageHeader
+          backTo='/registrar/dashboard'
+          backLabel='Back to dashboard'
+          eyebrow='Registrar'
+          title='Schedule management'
+          description='Import academic data and generate schedules for the active term.'
+        />
 
-        <div className='rounded-card border border-apple-green-200 bg-apple-green-50 p-6'>
-          <div className='flex items-center gap-3 mb-4'>
-            <RefreshCw size={20} className='text-apple-green-600 animate-spin' />
-            <h2 className='text-lg font-medium text-text-primary'>
-              Generating Academic Schedule
-            </h2>
-          </div>
-          <p className='text-sm text-text-secondary mb-4'>
-            Processing all assignments for the active academic term.
-          </p>
+        <Card>
+          <CardBody className='space-y-5'>
+            <div className='flex items-center gap-3' role='status'>
+              <Loader2
+                size={20}
+                className='animate-spin text-apple-green-600'
+                aria-hidden='true'
+              />
+              <div>
+                <h2 className='text-h3 text-text-primary'>
+                  Generating academic schedule
+                </h2>
+                <p className='text-body-sm text-text-secondary'>
+                  Processing all assignments for the active academic term.
+                </p>
+              </div>
+            </div>
 
-          <div className='grid grid-cols-3 gap-6'>
-            <div className='flex items-center gap-3'>
-              <span className='text-sm font-medium text-text-secondary'>
-                Algorithm:
-              </span>
-              <span className='text-sm font-medium text-apple-green-700'>
-                {algorithm}
-              </span>
-            </div>
-            <div className='flex items-center gap-3'>
-              <span className='text-sm font-medium text-text-secondary'>
-                Time limit:
-              </span>
-              <span className='text-sm font-medium text-apple-green-700'>
-                {timeLimitS} seconds
-              </span>
-            </div>
-            <div className='flex items-center gap-3'>
-              <span className='text-sm font-medium text-text-secondary'>
-                Elapsed time:
-              </span>
-              <span className='text-sm font-medium text-apple-green-700'>
-                {Math.floor(elapsedSeconds / 60)}:
-                {String(elapsedSeconds % 60).padStart(2, '0')}
-              </span>
-            </div>
-          </div>
+            <dl className='grid gap-3 sm:grid-cols-3'>
+              <div className='rounded-control border border-border bg-surface-secondary p-3'>
+                <dt className='text-caption text-text-secondary'>Algorithm</dt>
+                <dd className='mt-0.5 text-body font-medium text-apple-green-700'>
+                  {algorithm}
+                </dd>
+              </div>
+              <div className='rounded-control border border-border bg-surface-secondary p-3'>
+                <dt className='text-caption text-text-secondary'>Time limit</dt>
+                <dd className='mt-0.5 text-body font-medium text-apple-green-700'>
+                  {timeLimitS} seconds
+                </dd>
+              </div>
+              <div className='rounded-control border border-border bg-surface-secondary p-3'>
+                <dt className='text-caption text-text-secondary'>
+                  Elapsed time
+                </dt>
+                <dd
+                  className='mt-0.5 text-body font-medium tabular-nums text-apple-green-700'
+                  aria-live='polite'
+                >
+                  {formatElapsed(elapsedSeconds)}
+                </dd>
+              </div>
+            </dl>
 
-          <p className='text-sm text-text-secondary mt-4'>
-            Please wait while the scheduling engine calculates the timetable.
-          </p>
-        </div>
+            <p className='text-body-sm text-text-secondary'>
+              Please wait while the scheduling engine calculates the timetable.
+            </p>
+          </CardBody>
+        </Card>
       </section>
     );
   }
 
+  const previewRecords = previewResult?.records ?? [];
+  const previewErrors = previewResult?.errors ?? [];
+  const previewWarnings = previewResult?.warnings ?? [];
+
   return (
-    <section className='w-full max-w-7xl px-6 py-6'>
-      <div className='flex items-center justify-between mb-6'>
-        <div>
-          <Link
-            to='/registrar/dashboard'
-            className='mb-2 inline-flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary'
-          >
-            <ArrowLeft size={15} />
-            Back to dashboard
-          </Link>
-          <h1 className='text-lg font-medium text-text-primary mt-1'>
-            Registrar: Schedule Management
-          </h1>
-        </div>
-      </div>
-      <p className='mb-6 text-sm text-text-secondary'>
-        Import academic data and generate schedules for the active term.
-      </p>
+    <section className='w-full space-y-6'>
+      <PageHeader
+        backTo='/registrar/dashboard'
+        backLabel='Back to dashboard'
+        eyebrow='Registrar'
+        title='Schedule management'
+        description='Import academic data and generate schedules for the active term.'
+      />
 
-      {/* Import Section */}
-      <div className='rounded-card border border-border bg-surface p-6 mb-8'>
-        <h2 className='text-sm font-medium text-text-primary mb-4'>
-          Import Academic Data
-        </h2>
-        <div
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onClick={() => {
-            const input = document.querySelector(
-              'input[type="file"]'
-            ) as HTMLInputElement | null;
-            input?.click();
-          }}
-          className='relative rounded-lg border border-dashed border-border bg-surface-secondary p-8 text-center cursor-pointer hover:bg-apple-green-50 hover:border-apple-green-300 transition'
+      {importResult && (
+        <Alert
+          tone={importResult.type === 'success' ? 'success' : 'danger'}
+          title={
+            importResult.type === 'success'
+              ? 'Import complete'
+              : 'Import failed'
+          }
+          action={
+            <IconButton
+              label='Dismiss import message'
+              size='sm'
+              onClick={() => setImportResult(null)}
+            >
+              <X size={16} aria-hidden='true' />
+            </IconButton>
+          }
         >
-          <Download size={32} className='mx-auto mb-3 text-apple-green-400' />
-          <p className='text-sm font-medium text-text-primary mb-1'>
-            Drag &amp; drop a file here
-          </p>
-          <p className='text-xs text-text-secondary mb-4'>or click to browse</p>
-          <input
-            type='file'
-            accept='.xlsx,.xls,.csv'
-            onChange={handleFileChange}
-            className='sr-only'
-          />
-        </div>
+          {importResult.message}
+        </Alert>
+      )}
 
-        {file && (
-          <div className='mt-4 rounded-lg border border-border bg-surface p-4 flex items-center gap-3'>
-            <Download size={16} className='text-text-secondary' />
-            <div className='flex-1'>
-              <p className='text-sm font-medium text-text-primary'>
-                {file.name}
-              </p>
-              <p className='text-xs text-text-secondary'>
-                {(file.size / 1024).toFixed(1)} KB
-              </p>
-            </div>
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>Import academic data</CardTitle>
+            <p className='mt-1 text-body-sm text-text-secondary'>
+              Upload a spreadsheet to create or update courses, sections,
+              teachers, and assignments.
+            </p>
+          </div>
+        </CardHeader>
+        <CardBody className='space-y-4'>
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={cn(
+              'rounded-card border border-dashed p-5 text-center transition-colors sm:p-6',
+              isDragging
+                ? 'border-apple-green-500 bg-apple-green-50'
+                : 'border-border-control bg-surface-secondary'
+            )}
+          >
             <button
               type='button'
-              onClick={handleRemoveFile}
-              className='text-xs text-apple-green-600 hover:text-apple-green-700 underline'
+              onClick={() => fileInputRef.current?.click()}
+              aria-describedby='import-file-hint'
+              className='flex w-full flex-col items-center gap-2 rounded-control py-2 text-center'
             >
-              Remove
+              <span className='grid h-12 w-12 place-items-center rounded-full bg-apple-green-50 text-apple-green-700'>
+                <UploadCloud size={24} aria-hidden='true' />
+              </span>
+              <span className='text-body font-medium text-text-primary'>
+                Choose a file or drag and drop
+              </span>
+              <span
+                id='import-file-hint'
+                className='text-body-sm text-text-secondary'
+              >
+                Excel or CSV (.xlsx, .xls, .csv)
+              </span>
             </button>
+            <input
+              ref={fileInputRef}
+              type='file'
+              accept='.xlsx,.xls,.csv'
+              onChange={handleFileChange}
+              className='sr-only'
+              tabIndex={-1}
+            />
           </div>
-        )}
 
-        {file && (
-          <button
-            type='button'
-            onClick={handlePreview}
-            disabled={importPreview.isPending}
-            className='mt-4 flex w-full h-10 items-center justify-center gap-2 rounded-lg bg-apple-green-600 text-sm font-medium text-white transition hover:bg-apple-green-700 disabled:opacity-60'
-          >
-            {importPreview.isPending ? 'Previewing…' : 'Preview Import'}
-          </button>
-        )}
-
-        {previewError && (
-          <div className='mt-3 rounded-lg border border-red-200 bg-red-50 p-3'>
-            <p className='text-sm text-red-700'>{previewError}</p>
-          </div>
-        )}
-
-        {previewResult && (
-          <div className='mt-4 rounded-lg border border-border bg-surface p-4'>
-            <h3 className='text-sm font-medium text-text-primary mb-3'>
-              Preview Results
-            </h3>
-            <div className='flex gap-4 text-xs mb-3'>
-              <span className='text-apple-green-600'>
-                {previewResult.created_count ?? 0} new
-              </span>
-              <span className='text-amber-600'>
-                {previewResult.updated_count ?? 0} updated
-              </span>
-              <span className='text-red-600'>
-                {(previewResult.errors ?? []).length} errors
-              </span>
-              <span className='text-amber-500'>
-                {(previewResult.warnings ?? []).length} warnings
-              </span>
-            </div>
-            {(previewResult.errors ?? []).length > 0 && (
-              <div className='mb-3 rounded-lg border border-red-200 bg-red-50 p-3'>
-                <p className='text-xs font-medium text-red-700 mb-2'>
-                  Errors:
+          {file && (
+            <div className='flex items-center gap-3 rounded-control border border-border bg-surface p-3'>
+              <FileSpreadsheet
+                size={20}
+                className='shrink-0 text-apple-green-700'
+                aria-hidden='true'
+              />
+              <div className='min-w-0 flex-1'>
+                <p className='truncate text-body font-medium text-text-primary'>
+                  {file.name}
                 </p>
-                <ul className='text-xs text-red-600 list-disc pl-4'>
-                  {previewResult.errors.slice(0, 5).map((e: string, i: number) => (
-                    <li key={i}>{e}</li>
-                  ))}
-                </ul>
+                <p className='text-caption text-text-secondary'>
+                  {(file.size / 1024).toFixed(1)} KB
+                </p>
               </div>
-            )}
-            {(previewResult.records ?? []).length > 0 && (
-              <div className='overflow-x-auto mb-3'>
-                <table className='w-full text-xs'>
-                  <thead>
-                    <tr className='border-b border-border text-left text-[10px] text-text-secondary'>
-                      <th className='px-3 py-1'>Course</th>
-                      <th className='px-3 py-1'>Section</th>
-                      <th className='px-3 py-1'>Teacher</th>
-                      <th className='px-3 py-1'>Term</th>
-                      <th className='px-3 py-1'>Type</th>
-                      <th className='px-3 py-1'>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(previewResult.records ?? []).map((r: ImportRecord) => (
-                      <tr key={r.id} className='border-b border-border-light'>
-                        <td className='px-3 py-1 text-[10px] text-text-primary'>
-                          {r.course_code}
-                        </td>
-                        <td className='px-3 py-1 text-[10px] text-text-secondary'>
-                          {r.section_code}
-                        </td>
-                        <td className='px-3 py-1 text-[10px] text-text-secondary'>
-                          {r.teacher_employee_no}
-                        </td>
-                        <td className='px-3 py-1 text-[10px] text-text-secondary'>
-                          {r.term_name}
-                        </td>
-                        <td className='px-3 py-1 text-[10px] text-text-secondary'>
-                          {r.component_type}
-                        </td>
-                        <td className='px-3 py-1 text-[10px]'>
-                          <span
-                            className={`rounded-full px-1.5 py-0 ${r.is_valid ? 'bg-apple-green-50 text-apple-green-700' : 'bg-red-50 text-red-700'}`}
-                          >
-                            {r.is_valid ? 'Valid' : 'Error'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <div className='flex gap-2'>
-              <button
-                type='button'
-                onClick={handleCommitImport}
-                disabled={
-                  !previewResult?.preview_token ||
-                  importCommit.isPending
-                }
-                className='flex h-8 items-center justify-center gap-2 rounded-md bg-apple-green-600 px-3 py-1 text-xs font-medium text-white transition hover:bg-apple-green-700 disabled:opacity-60'
+              <IconButton
+                label='Remove selected file'
+                size='sm'
+                onClick={handleRemoveFile}
               >
-                {importCommit.isPending ? 'Committing…' : 'Save Import'}
-              </button>
+                <X size={16} aria-hidden='true' />
+              </IconButton>
             </div>
-            {importResult && (
-              <p
-                className={`mt-3 text-xs ${importResult.type === 'success' ? 'text-apple-green-700' : 'text-red-700'}`}
-              >
-                {importResult.message}
-              </p>
-            )}
+          )}
+
+          {file && (
+            <Button
+              onClick={handlePreview}
+              loading={importPreview.isPending}
+              icon={<FileSpreadsheet size={16} aria-hidden='true' />}
+              className='w-full sm:w-auto'
+            >
+              {importPreview.isPending ? 'Previewing…' : 'Preview import'}
+            </Button>
+          )}
+
+          {previewError && <Alert tone='danger'>{previewError}</Alert>}
+
+          {previewResult && (
+            <div className='space-y-4 rounded-card border border-border bg-surface p-4 sm:p-5'>
+              <div className='flex flex-wrap items-center justify-between gap-3'>
+                <h3 className='text-h3 text-text-primary'>Preview results</h3>
+                <div className='flex flex-wrap gap-2'>
+                  <Badge tone='success'>
+                    {previewResult.created_count ?? 0} new
+                  </Badge>
+                  <Badge tone='warning'>
+                    {previewResult.updated_count ?? 0} updated
+                  </Badge>
+                  <Badge tone={previewErrors.length > 0 ? 'danger' : 'neutral'}>
+                    {previewErrors.length} errors
+                  </Badge>
+                  <Badge
+                    tone={previewWarnings.length > 0 ? 'warning' : 'neutral'}
+                  >
+                    {previewWarnings.length} warnings
+                  </Badge>
+                </div>
+              </div>
+
+              {previewErrors.length > 0 && (
+                <Alert tone='danger' title='Import errors'>
+                  <ul className='list-disc space-y-1 pl-4'>
+                    {previewErrors.slice(0, 5).map((error, index) => (
+                      <li key={index}>{error}</li>
+                    ))}
+                  </ul>
+                  {previewErrors.length > 5 && (
+                    <p className='mt-1'>
+                      and {previewErrors.length - 5} more error
+                      {previewErrors.length - 5 === 1 ? '' : 's'}.
+                    </p>
+                  )}
+                </Alert>
+              )}
+
+              {previewWarnings.length > 0 && (
+                <Alert tone='warning' title='Warnings'>
+                  <ul className='list-disc space-y-1 pl-4'>
+                    {previewWarnings.slice(0, 5).map((warning, index) => (
+                      <li key={index}>{warning}</li>
+                    ))}
+                  </ul>
+                  {previewWarnings.length > 5 && (
+                    <p className='mt-1'>
+                      and {previewWarnings.length - 5} more warning
+                      {previewWarnings.length - 5 === 1 ? '' : 's'}.
+                    </p>
+                  )}
+                </Alert>
+              )}
+
+              {previewRecords.length > 0 && (
+                <>
+                  <div className='hidden md:block'>
+                    <TableContainer>
+                      <Table className='min-w-[720px]'>
+                        <THead>
+                          <TR className='hover:bg-transparent'>
+                            <TH>Course</TH>
+                            <TH>Section</TH>
+                            <TH>Teacher</TH>
+                            <TH>Term</TH>
+                            <TH>Type</TH>
+                            <TH>Status</TH>
+                          </TR>
+                        </THead>
+                        <TBody>
+                          {previewRecords.map((record: ImportRecord) => (
+                            <TR key={record.id}>
+                              <TD className='font-medium'>
+                                {record.course_code}
+                              </TD>
+                              <TD className='text-text-secondary'>
+                                {record.section_code}
+                              </TD>
+                              <TD className='text-text-secondary'>
+                                {record.teacher_employee_no}
+                              </TD>
+                              <TD className='text-text-secondary'>
+                                {record.term_name}
+                              </TD>
+                              <TD className='capitalize text-text-secondary'>
+                                {record.component_type}
+                              </TD>
+                              <TD>
+                                <Badge
+                                  tone={record.is_valid ? 'success' : 'danger'}
+                                >
+                                  {record.is_valid ? 'Valid' : 'Error'}
+                                </Badge>
+                              </TD>
+                            </TR>
+                          ))}
+                        </TBody>
+                      </Table>
+                    </TableContainer>
+                  </div>
+
+                  <ul className='space-y-2 md:hidden'>
+                    {previewRecords.map((record: ImportRecord) => (
+                      <li
+                        key={record.id}
+                        className='rounded-control border border-border p-3'
+                      >
+                        <div className='flex items-start justify-between gap-2'>
+                          <div className='min-w-0'>
+                            <p className='text-body font-medium text-text-primary'>
+                              {record.course_code}
+                            </p>
+                            <p className='text-body-sm text-text-secondary'>
+                              Section {record.section_code} ·{' '}
+                              {record.term_name}
+                            </p>
+                          </div>
+                          <Badge
+                            tone={record.is_valid ? 'success' : 'danger'}
+                          >
+                            {record.is_valid ? 'Valid' : 'Error'}
+                          </Badge>
+                        </div>
+                        <p className='mt-2 text-caption text-text-secondary'>
+                          Teacher {record.teacher_employee_no} ·{' '}
+                          {record.component_type}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+
+              <div className='flex flex-wrap gap-2'>
+                <Button
+                  onClick={handleCommitImport}
+                  disabled={!previewResult.preview_token}
+                  loading={importCommit.isPending}
+                >
+                  {importCommit.isPending ? 'Committing…' : 'Save import'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>Generate schedule</CardTitle>
+            <p className='mt-1 text-body-sm text-text-secondary'>
+              Run the scheduling engine for all assignments in the active term.
+            </p>
           </div>
-        )}
-      </div>
-
-      {/* Schedule Generation Section */}
-      <div className='rounded-card border border-border bg-surface p-6 mb-8'>
-        <h2 className='text-sm font-medium text-text-primary mb-4'>
-          Generate Schedule
-        </h2>
-        <p className='text-sm text-text-secondary mb-4'>
-          Generate schedules for the active term.
-        </p>
-
-        <div className='grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-4'>
-          <div className='flex flex-col gap-2'>
-            <label className='text-xs font-medium text-text-secondary'>
-              Algorithm
-            </label>
-            <select
+        </CardHeader>
+        <CardBody className='space-y-4'>
+          <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-3'>
+            <SelectField
+              id='schedule-algorithm'
+              label='Algorithm'
               value={algorithm}
-              onChange={(e) => setAlgorithm(e.target.value as typeof algorithm)}
-              className='h-10 rounded-lg border border-border bg-surface px-3 text-sm text-text-primary outline-none transition focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100'
+              onChange={(event) =>
+                setAlgorithm(event.target.value as typeof algorithm)
+              }
             >
               <option value='greedy'>Greedy</option>
-              <option value='min_conflicts'>Min Conflicts</option>
+              <option value='min_conflicts'>Min conflicts</option>
               <option value='backtracking'>Backtracking</option>
-            </select>
-          </div>
+            </SelectField>
 
-          <div className='flex flex-col gap-2'>
-            <label className='text-xs font-medium text-text-secondary'>
-              Time limit (s)
-            </label>
-            <select
+            <SelectField
+              id='schedule-time-limit'
+              label='Time limit'
               value={timeLimitS ?? ''}
-              onChange={(e) =>
-                setTimeLimitS(e.target.value ? Number(e.target.value) : null)}
-              className='h-10 rounded-lg border border-border bg-surface px-3 text-sm text-text-primary outline-none transition focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100'
+              onChange={(event) =>
+                setTimeLimitS(event.target.value ? Number(event.target.value) : null)
+              }
             >
-              <option value='30'>30s</option>
-              <option value='60'>60s</option>
-              <option value='120'>120s</option>
-              <option value='300'>300s</option>
-              <option value='600'>600s</option>
-            </select>
-          </div>
+              <option value='30'>30 seconds</option>
+              <option value='60'>60 seconds</option>
+              <option value='120'>120 seconds</option>
+              <option value='300'>300 seconds</option>
+              <option value='600'>600 seconds</option>
+            </SelectField>
 
-          <div className='flex flex-col gap-2 justify-end'>
-            <button
-              type='button'
-              onClick={handleGenerate}
-              disabled={generateSchedule.isPending}
-              className='flex h-10 items-center justify-center gap-2 rounded-lg bg-apple-green-600 text-sm font-medium text-white shadow-sm transition hover:bg-apple-green-700 disabled:opacity-60'
-            >
-              {generateSchedule.isPending ? 'Generating…' : 'Generate Schedule'}
-            </button>
-          </div>
-        </div>
-
-        {generateError && (
-          <div className='mt-3 rounded-lg border border-red-200 bg-red-50 p-3'>
-            <p className='text-sm text-red-700'>{generateError}</p>
-          </div>
-        )}
-
-        {generateResult && (
-          <div className='mt-4 rounded-lg border border-border bg-surface p-4'>
-            <h3 className='text-sm font-medium text-text-primary mb-3'>
-              Generation Results
-            </h3>
-            <div className='grid grid-cols-2 gap-3 text-sm mb-3'>
-              <div className='flex items-center gap-2'>
-                <span className='text-text-secondary'>Run ID:</span>
-                <span className='font-medium text-text-primary'>
-                  {generateResult.run_id}
-                </span>
-              </div>
-              <div className='flex items-center gap-2'>
-                <span className='text-text-secondary'>Algorithm:</span>
-                <span className='font-medium text-text-primary'>
-                  {generateResult.algorithm}
-                </span>
-              </div>
-              <div className='flex items-center gap-2'>
-                <span className='text-text-secondary'>Classes:</span>
-                <span className='font-medium text-text-primary'>
-                  {generateResult.class_count}
-                </span>
-              </div>
-              <div className='flex items-center gap-2'>
-                <span className='text-text-secondary'>Violations:</span>
-                <span className='text-red-600'>
-                  {generateResult.violations.length}
-                </span>
-              </div>
-              <div className='flex items-center gap-2'>
-                <span className='text-text-secondary'>Unplaced:</span>
-                <span className='text-red-600'>
-                  {generateResult.unplaced.length}
-                </span>
-              </div>
-              <div className='flex items-center gap-2'>
-                <span className='text-text-secondary'>Runtime:</span>
-                <span className='font-medium text-text-primary'>
-                  {generateResult.runtime_ms}ms
-                </span>
-              </div>
-            </div>
-
-            <div className='flex items-center gap-3 mb-3'>
-              <span
-                className={`px-2 py-0.5 rounded-full text-xs font-medium ${generateResult.feasible ? 'bg-apple-green-50 text-apple-green-700' : 'bg-red-50 text-red-700'}`}
+            <div className='flex items-end'>
+              <Button
+                onClick={handleGenerate}
+                loading={generateSchedule.isPending}
+                icon={<Sparkles size={16} aria-hidden='true' />}
+                className='w-full'
               >
-                {generateResult.feasible ? 'Feasible' : 'Infeasible'}
-              </span>
-              {generateResult.soft_score && (
-                <span className='text-text-secondary'>
-                  Soft score: {generateResult.soft_score}
-                </span>
+                {generateSchedule.isPending
+                  ? 'Generating…'
+                  : 'Generate schedule'}
+              </Button>
+            </div>
+          </div>
+
+          {generateError && <Alert tone='danger'>{generateError}</Alert>}
+
+          {generateResult && (
+            <div className='space-y-4 rounded-card border border-border bg-surface p-4 sm:p-5'>
+              <div className='flex flex-wrap items-center gap-2'>
+                <h3 className='mr-auto text-h3 text-text-primary'>
+                  Generation results
+                </h3>
+                <Badge
+                  tone={generateResult.feasible ? 'success' : 'danger'}
+                  size='md'
+                >
+                  {generateResult.feasible ? 'Feasible' : 'Infeasible'}
+                </Badge>
+              </div>
+
+              <dl className='grid grid-cols-2 gap-3 sm:grid-cols-3'>
+                <div className='rounded-control border border-border bg-surface-secondary p-3'>
+                  <dt className='text-caption text-text-secondary'>Run ID</dt>
+                  <dd className='mt-0.5 text-body font-medium text-text-primary'>
+                    {generateResult.run_id}
+                  </dd>
+                </div>
+                <div className='rounded-control border border-border bg-surface-secondary p-3'>
+                  <dt className='text-caption text-text-secondary'>
+                    Algorithm
+                  </dt>
+                  <dd className='mt-0.5 text-body font-medium capitalize text-text-primary'>
+                    {generateResult.algorithm}
+                  </dd>
+                </div>
+                <div className='rounded-control border border-border bg-surface-secondary p-3'>
+                  <dt className='text-caption text-text-secondary'>Classes</dt>
+                  <dd className='mt-0.5 text-body font-medium text-text-primary'>
+                    {generateResult.class_count}
+                  </dd>
+                </div>
+                <div className='rounded-control border border-border bg-surface-secondary p-3'>
+                  <dt className='text-caption text-text-secondary'>
+                    Violations
+                  </dt>
+                  <dd
+                    className={cn(
+                      'mt-0.5 text-body font-medium',
+                      generateResult.violations.length > 0
+                        ? 'text-danger'
+                        : 'text-text-primary'
+                    )}
+                  >
+                    {generateResult.violations.length}
+                  </dd>
+                </div>
+                <div className='rounded-control border border-border bg-surface-secondary p-3'>
+                  <dt className='text-caption text-text-secondary'>Unplaced</dt>
+                  <dd
+                    className={cn(
+                      'mt-0.5 text-body font-medium',
+                      generateResult.unplaced.length > 0
+                        ? 'text-danger'
+                        : 'text-text-primary'
+                    )}
+                  >
+                    {generateResult.unplaced.length}
+                  </dd>
+                </div>
+                <div className='rounded-control border border-border bg-surface-secondary p-3'>
+                  <dt className='text-caption text-text-secondary'>Runtime</dt>
+                  <dd className='mt-0.5 text-body font-medium tabular-nums text-text-primary'>
+                    {generateResult.runtime_ms} ms
+                  </dd>
+                </div>
+              </dl>
+
+              {generateResult.soft_score !== undefined && (
+                <p className='text-body-sm text-text-secondary'>
+                  Soft score:{' '}
+                  <span className='font-medium text-text-primary'>
+                    {generateResult.soft_score}
+                  </span>
+                </p>
+              )}
+
+              {generateResult.violations.length > 0 && (
+                <Alert tone='danger' title='Violations'>
+                  <ul className='list-disc space-y-1 pl-4'>
+                    {generateResult.violations.slice(0, 10).map((violation, index) => (
+                      <li key={index}>{violation}</li>
+                    ))}
+                  </ul>
+                  {generateResult.violations.length > 10 && (
+                    <p className='mt-1'>
+                      and {generateResult.violations.length - 10} more.
+                    </p>
+                  )}
+                </Alert>
+              )}
+
+              {generateResult.unplaced.length > 0 && (
+                <Alert tone='warning' title='Unplaced meetings'>
+                  <ul className='list-disc space-y-1 pl-4'>
+                    {generateResult.unplaced.slice(0, 10).map((meeting, index) => (
+                      <li key={index}>{meeting}</li>
+                    ))}
+                  </ul>
+                  {generateResult.unplaced.length > 10 && (
+                    <p className='mt-1'>
+                      and {generateResult.unplaced.length - 10} more.
+                    </p>
+                  )}
+                </Alert>
+              )}
+
+              {generateResult.feasible && (
+                <Button
+                  onClick={handlePublish}
+                  loading={publishRun.isPending}
+                  disabled={published}
+                  className='w-full sm:w-auto'
+                >
+                  {published
+                    ? 'Published'
+                    : publishRun.isPending
+                      ? 'Publishing…'
+                      : 'Publish schedule'}
+                </Button>
               )}
             </div>
-
-            {generateResult.violations.length > 0 && (
-              <div className='mb-3 rounded-lg border border-red-200 bg-red-50 p-3'>
-                <p className='text-xs font-medium text-red-700 mb-2'>
-                  Violations:
-                </p>
-                <ul className='text-xs text-red-600 list-disc pl-4'>
-                  {generateResult.violations.slice(0, 10).map((v: string, i: number) => (
-                    <li key={i}>{v}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {generateResult.unplaced.length > 0 && (
-              <div className='mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3'>
-                <p className='text-xs font-medium text-amber-700 mb-2'>
-                  Unplaced meetings:
-                </p>
-                <ul className='text-xs text-amber-700 list-disc pl-4'>
-                  {generateResult.unplaced.slice(0, 10).map((u: string, i: number) => (
-                    <li key={i}>{u}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {generateResult.feasible && (
-              <button
-                type='button'
-                onClick={handlePublish}
-                disabled={publishRun.isPending}
-                className='flex h-8 items-center justify-center gap-2 rounded-md bg-apple-green-600 px-3 py-1 text-xs font-medium text-white transition hover:bg-apple-green-700 disabled:opacity-60'
-              >
-                {publishRun.isPending ? 'Publishing…' : 'Publish Schedule'}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-
-      </section>
+          )}
+        </CardBody>
+      </Card>
+    </section>
   );
 }

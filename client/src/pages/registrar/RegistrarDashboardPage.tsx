@@ -1,52 +1,38 @@
-// pages/registrar/RegistrarDashboardPage.tsx
 import { useState } from 'react';
-import type { ReactNode } from 'react';
 import {
   Activity,
   BookOpen,
+  CalendarDays,
+  ChevronRight,
   Clock,
   Download,
   Users,
-  X,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useTeachers, useAllAssignments, useAllSchedules } from '../../hooks/Registrar.hooks';
+import {
+  useTeachers,
+  useAllAssignments,
+  useAllSchedules,
+} from '../../hooks/Registrar.hooks';
 import { useExportSchedule } from '../../hooks/GenerateManagement.hooks';
 import type {
   CourseAssignmentDetail,
   Schedule,
   TeacherListItem,
 } from '../../types/Types';
-
-/* ---------- small local pieces ---------- */
-
-function StatTile({
-  icon,
-  label,
-  value,
-  tone = 'success',
-}: {
-  icon: ReactNode;
-  label: string;
-  value: ReactNode;
-  tone?: 'success' | 'warning';
-}) {
-  return (
-    <div className='rounded-2xl border border-border bg-surface px-4 py-4'>
-      <div className='mb-2 flex items-center gap-2 text-sm text-text-secondary'>
-        <span
-          className={
-            tone === 'warning' ? 'text-amber-600' : 'text-apple-green-600'
-          }
-        >
-          {icon}
-        </span>
-        <span>{label}</span>
-      </div>
-      <div className='text-2xl font-medium text-text-primary'>{value}</div>
-    </div>
-  );
-}
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CardSkeleton,
+  EmptyState,
+  LinkButton,
+  LoadingState,
+  Modal,
+  PageHeader,
+  StatCard,
+} from '../../components/ui';
 
 function initialsOf(name: string) {
   const parts = name.trim().split(/\s+/);
@@ -54,8 +40,6 @@ function initialsOf(name: string) {
     parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')
   ).toUpperCase();
 }
-
-/* ---------- page ---------- */
 
 export default function RegistrarDashboardPage() {
   const {
@@ -81,287 +65,339 @@ export default function RegistrarDashboardPage() {
 
   const exportScheduleMutation = useExportSchedule();
   const [exportPanelOpen, setExportPanelOpen] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const loading = teachersLoading || assignmentsLoading || schedulesLoading;
   const error = teachersError || assignmentsError || schedulesError;
-
-  if (error) {
-    return (
-      <section className='w-full p-6'>
-        <div className='rounded-lg border border-red-200 bg-red-50 p-4 mb-4'>
-          <p className='text-sm font-medium text-red-700 mb-2'>
-            Failed to load registrar data.
-          </p>
-          <p className='text-xs text-red-600 mb-3'>
-            {error.message ?? 'Unable to load data from the API.'}
-          </p>
-          <button
-            type='button'
-            onClick={() => {
-              refetchTeachers();
-              refetchAssignments();
-              refetchSchedules();
-            }}
-            className='h-10 rounded-lg border border-border bg-surface px-3 text-sm text-text-primary transition hover:bg-surface-secondary'
-          >
-            Retry
-          </button>
-        </div>
-      </section>
-    );
-  }
-
-  if (loading) {
-    return (
-      <section className='w-full'>
-        <p className='text-sm text-text-secondary'>Loading registrar data...</p>
-      </section>
-    );
-  }
 
   const teachersList: TeacherListItem[] = teachers ?? [];
   const allAssignments: CourseAssignmentDetail[] = assignments ?? [];
   const allSchedules: Schedule[] = schedules ?? [];
 
-  const assignmentCount = allAssignments.length;
-
-  // Build a Set of scheduled assignment ids for O(1) lookups.
   const scheduledAssignmentIds = new Set(
-    allSchedules.map((s: Schedule) => s.assignment)
+    allSchedules.map((schedule: Schedule) => schedule.assignment)
   );
   const unscheduledCount = allAssignments.filter(
-    (a: CourseAssignmentDetail) => !scheduledAssignmentIds.has(a.id)
+    (assignment: CourseAssignmentDetail) =>
+      !scheduledAssignmentIds.has(assignment.id)
   ).length;
-
   const runId = allSchedules.length > 0 ? allSchedules[0].run : null;
 
-  const handleExport = async (format: string) => {
+  async function handleExport(format: string) {
     if (!runId) {
-      alert('No schedule data available to export.');
+      setExportError('No schedule data is available to export yet.');
       return;
     }
-    setExportPanelOpen(false);
-    setExporting(true);
+
+    setExportError(null);
+    setExportingFormat(format);
+
     try {
       const blob = await exportScheduleMutation.mutateAsync({ runId, format });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `timetable.${format === 'xlsx' ? 'xlsx' : format}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `timetable.${format === 'xlsx' ? 'xlsx' : format}`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
       URL.revokeObjectURL(url);
+      setExportPanelOpen(false);
     } catch {
-      alert('Failed to export timetable.');
+      setExportError('Failed to export the timetable. Please try again.');
     } finally {
-      setExporting(false);
+      setExportingFormat(null);
     }
-  };
+  }
+
+  function retryAll() {
+    refetchTeachers();
+    refetchAssignments();
+    refetchSchedules();
+  }
+
+  if (error) {
+    return (
+      <div className='space-y-6'>
+        <PageHeader
+          title='Registrar dashboard'
+          description='1st semester, 2026–2027'
+        />
+        <Alert
+          tone='danger'
+          title='Failed to load registrar data'
+          action={
+            <Button variant='secondary' size='sm' onClick={retryAll}>
+              Retry
+            </Button>
+          }
+        >
+          {error.message ?? 'Unable to load data from the API.'}
+        </Alert>
+      </div>
+    );
+  }
 
   return (
-    <section className='w-full'>
-      {/* Header */}
-      <div className='mb-6 flex flex-wrap items-center justify-between gap-3'>
-        <p className='text-sm text-text-secondary'>
-          1st semester, 2026 to 2027
-        </p>
+    <div className='space-y-6'>
+      <PageHeader
+        title='Registrar dashboard'
+        description='1st semester, 2026–2027 · A snapshot of teaching load and schedule progress.'
+        actions={
+          <>
+            <LinkButton
+              to='/registrar/timetable'
+              variant='secondary'
+              icon={<CalendarDays size={17} aria-hidden='true' />}
+            >
+              View timetable
+            </LinkButton>
+            <Button
+              variant='primary'
+              icon={<Download size={17} aria-hidden='true' />}
+              onClick={() => {
+                setExportError(null);
+                setExportPanelOpen(true);
+              }}
+              disabled={!runId}
+              title={!runId ? 'No schedule data to export yet' : undefined}
+            >
+              Export
+            </Button>
+          </>
+        }
+      />
 
-        <div className='flex flex-wrap items-center gap-2'>
-          <button
-            type='button'
-            onClick={() => setExportPanelOpen(true)}
-            className='inline-flex items-center gap-2 rounded-md border border-border bg-surface px-4 py-2 text-[13px] font-medium text-text-primary transition hover:bg-surface-secondary'
-          >
-            <Download size={14} />
-            Export
-          </button>
+      {loading ? (
+        <>
+          <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4'>
+            {Array.from({ length: 4 }).map((_, index) => (
+              <CardSkeleton key={index} />
+            ))}
+          </div>
+          <LoadingState label='Loading teachers and assignments…' />
+        </>
+      ) : (
+        <>
+          <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4'>
+            <StatCard
+              icon={Users}
+              label='Teachers'
+              value={teachersList.length}
+              hint='Active teaching staff'
+            />
+            <StatCard
+              icon={BookOpen}
+              label='Assignments'
+              value={allAssignments.length}
+              hint='Course sections this term'
+            />
+            <StatCard
+              icon={Clock}
+              label='Unscheduled meetings'
+              value={unscheduledCount}
+              hint={unscheduledCount > 0 ? 'Needs attention' : 'All scheduled'}
+            />
+            <StatCard
+              icon={Activity}
+              label='Schedules created'
+              value={allSchedules.length}
+              hint='Classes placed in the timetable'
+            />
+          </div>
 
-          {/* Export format panel */}
-          {exportPanelOpen && (
-            <div className='fixed inset-0 z-50 flex items-center justify-center'>
-              <div
-                className='absolute inset-0 bg-black/40 backdrop-blur-sm'
-                onClick={() => setExportPanelOpen(false)}
-              />
-              <div className='relative bg-surface p-6 rounded-xl border border-border shadow-xl w-full max-w-xs z-10'>
-                <div className='flex items-center justify-between mb-4'>
-                  <h3 className='text-sm font-medium text-text-primary'>
-                    Export Timetable
-                  </h3>
-                  <button
-                    type='button'
-                    onClick={() => setExportPanelOpen(false)}
-                    className='text-text-secondary hover:text-text-primary'
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-                <p className='text-xs text-text-secondary mb-6'>
-                  Choose a format to download the current timetable.
+          <section className='space-y-4'>
+            <div className='flex flex-wrap items-end justify-between gap-2'>
+              <div>
+                <h2 className='text-h2 text-text-primary'>
+                  Teachers and assignments
+                </h2>
+                <p className='mt-0.5 text-body-sm text-text-secondary'>
+                  Open a teacher to review or adjust their schedule.
                 </p>
-                <div className='grid grid-cols-1 gap-2'>
-                  <button
-                    type='button'
-                    onClick={() => handleExport('csv')}
-                    disabled={exporting}
-                    className='flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-primary transition hover:bg-surface-secondary disabled:opacity-60'
-                  >
-                    {exporting ? 'Exporting…' : 'CSV'}
-                  </button>
-                  <button
-                    type='button'
-                    onClick={() => handleExport('xlsx')}
-                    disabled={exporting}
-                    className='flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-primary transition hover:bg-surface-secondary disabled:opacity-60'
-                  >
-                    {exporting ? 'Exporting…' : 'Excel (XLSX)'}
-                  </button>
-                  <button
-                    type='button'
-                    onClick={() => handleExport('pdf')}
-                    disabled={exporting}
-                    className='flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text-primary transition hover:bg-surface-secondary disabled:opacity-60'
-                  >
-                    {exporting ? 'Exporting…' : 'PDF'}
-                  </button>
-                </div>
               </div>
+              <Badge tone='neutral' size='md'>
+                {teachersList.length} teachers
+              </Badge>
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* Stat cards */}
-      <div className='grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4'>
-        <StatTile
-          icon={<Users size={16} />}
-          label='Teachers'
-          value={teachersList.length}
-        />
-        <StatTile
-          icon={<BookOpen size={16} />}
-          label='Assignments'
-          value={assignmentCount}
-        />
-        <StatTile
-          icon={<Clock size={16} />}
-          label='Unscheduled meetings'
-          value={unscheduledCount}
-          tone='warning'
-        />
-        <StatTile
-          icon={<Activity size={16} />}
-          label='Schedules Created'
-          value={allSchedules.length}
-        />
-      </div>
+            {teachersList.length === 0 ? (
+              <EmptyState
+                icon={Users}
+                title='No teachers yet'
+                description='Teachers will appear here once they are added to the system.'
+              />
+            ) : (
+              <div className='grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3'>
+                {teachersList.map((teacher: TeacherListItem) => {
+                  const teacherAssignments = allAssignments.filter(
+                    (assignment: CourseAssignmentDetail) =>
+                      assignment.prof === teacher.id
+                  );
+                  const teacherUnscheduled = teacherAssignments.filter(
+                    (assignment: CourseAssignmentDetail) =>
+                      !allSchedules.some(
+                        (schedule: Schedule) =>
+                          schedule.assignment === assignment.id
+                      )
+                  ).length;
+                  const visibleAssignments = teacherAssignments.slice(0, 4);
+                  const remaining = teacherAssignments.length - visibleAssignments.length;
 
-      {/* Teachers as cards */}
-      <div className='mt-6'>
-        <h2 className='mb-3 text-sm font-medium text-text-primary'>
-          Teachers and assignments
-        </h2>
-
-        <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3'>
-          {teachersList.map((teacher: TeacherListItem) => {
-            const teacherAssignments = allAssignments.filter(
-              (a: CourseAssignmentDetail) => a.prof === teacher.id
-            );
-            const teacherUnscheduled = teacherAssignments.filter(
-              (a: CourseAssignmentDetail) =>
-                !allSchedules.some((s: Schedule) => s.assignment === a.id)
-            ).length;
-
-            return (
-              <div
-                key={teacher.id}
-                className='flex max-h-80 min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface'
-              >
-                {/* Teacher header */}
-                <Link
-                  to={`/registrar/teachers/${teacher.id}`}
-                  className='flex shrink-0 cursor-pointer items-center justify-between gap-3 border-b border-border px-4 py-3 transition hover:bg-surface-secondary'
-                >
-                  <div className='flex min-w-0 items-center gap-3'>
-                    <span className='grid h-8 w-8 shrink-0 place-items-center rounded-full bg-apple-green-50 text-[11px] font-medium text-apple-green-700'>
-                      {initialsOf(teacher.full_name)}
-                    </span>
-                    <div className='min-w-0'>
-                      <p className='truncate text-sm font-medium text-text-primary'>
-                        {teacher.full_name}
-                      </p>
-                      <p className='text-xs text-text-tertiary'>
-                        {teacherAssignments.length}{' '}
-                        {teacherAssignments.length === 1
-                          ? 'assignment'
-                          : 'assignments'}
-                      </p>
-                    </div>
-                  </div>
-
-                  {teacherUnscheduled > 0 ? (
-                    <span className='shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-medium text-amber-700'>
-                      {teacherUnscheduled} pending
-                    </span>
-                  ) : (
-                    <span className='shrink-0 rounded-full bg-apple-green-50 px-2.5 py-1 text-[10px] font-medium text-apple-green-700'>
-                      All scheduled
-                    </span>
-                  )}
-                </Link>
-
-                {/* Assignments */}
-                <div className='flex min-h-0 min-w-0 flex-1 flex-col divide-y divide-border overflow-y-auto'>
-                  {teacherAssignments.map(
-                    (assignment: CourseAssignmentDetail) => {
-                      const schedule = allSchedules.find(
-                        (s: Schedule) => s.assignment === assignment.id
-                      );
-                      const isScheduled = Boolean(schedule);
-
-                      return (
-                        <div
-                          key={assignment.id}
-                          className='flex min-w-0 flex-col gap-1 px-4 py-3'
-                        >
-                          <div className='flex min-w-0 items-baseline justify-between gap-2'>
-                            <span className='min-w-0 truncate text-sm font-medium text-text-primary'>
-                              {assignment.subject_label}
-                            </span>
-                            <span className='shrink-0 text-xs text-text-tertiary'>
-                              section {assignment.section_name}
-                            </span>
-                          </div>
-
-                          <span
-                            className={`w-fit rounded-full px-2.5 py-0.5 text-[10px] font-medium capitalize ${
-                              isScheduled
-                                ? 'bg-apple-green-50 text-apple-green-700'
-                                : 'bg-amber-50 text-amber-700'
-                            }`}
-                          >
-                            {assignment.meetings?.[0]?.mode_display}{' '}
-                            {isScheduled ? 'scheduled' : 'pending'}
+                  return (
+                    <Card key={teacher.id} className='flex min-w-0 flex-col'>
+                      <Link
+                        to={`/registrar/teachers/${teacher.id}`}
+                        className='flex items-center justify-between gap-3 border-b border-border px-4 py-3.5 transition-colors hover:bg-surface-secondary'
+                      >
+                        <div className='flex min-w-0 items-center gap-3'>
+                          <span className='grid h-10 w-10 shrink-0 place-items-center rounded-full bg-apple-green-50 text-body-sm font-semibold text-apple-green-700'>
+                            {initialsOf(teacher.full_name)}
                           </span>
-
-                          {isScheduled && schedule ? (
-                            <span className='min-w-0 break-words text-xs text-text-secondary'>
-                              {schedule.day_display}, {schedule.start_time || ''} ·{' '}
-                              {schedule.room_name}
-                            </span>
-                          ) : null}
+                          <div className='min-w-0'>
+                            <p className='truncate text-body font-semibold text-text-primary'>
+                              {teacher.full_name}
+                            </p>
+                            <p className='truncate text-caption text-text-tertiary'>
+                              {teacherAssignments.length}{' '}
+                              {teacherAssignments.length === 1
+                                ? 'assignment'
+                                : 'assignments'}
+                              {teacher.department_name
+                                ? ` · ${teacher.department_name}`
+                                : ''}
+                            </p>
+                          </div>
                         </div>
-                      );
-                    }
-                  )}
-                </div>
+
+                        <div className='flex shrink-0 items-center gap-2'>
+                          {teacherUnscheduled > 0 ? (
+                            <Badge tone='warning'>
+                              {teacherUnscheduled} pending
+                            </Badge>
+                          ) : (
+                            <Badge tone='success'>All scheduled</Badge>
+                          )}
+                          <ChevronRight
+                            size={17}
+                            className='text-text-tertiary'
+                            aria-hidden='true'
+                          />
+                        </div>
+                      </Link>
+
+                      {visibleAssignments.length === 0 ? (
+                        <p className='px-4 py-6 text-center text-body-sm text-text-tertiary'>
+                          No assignments this term.
+                        </p>
+                      ) : (
+                        <ul className='divide-y divide-border-light'>
+                          {visibleAssignments.map(
+                            (assignment: CourseAssignmentDetail) => {
+                              const schedule = allSchedules.find(
+                                (item: Schedule) =>
+                                  item.assignment === assignment.id
+                              );
+
+                              return (
+                                <li
+                                  key={assignment.id}
+                                  className='flex min-w-0 flex-col gap-1 px-4 py-3'
+                                >
+                                  <div className='flex min-w-0 items-baseline justify-between gap-2'>
+                                    <span className='min-w-0 truncate text-body-sm font-medium text-text-primary'>
+                                      {assignment.subject_label}
+                                    </span>
+                                    <span className='shrink-0 text-caption text-text-tertiary'>
+                                      Sec. {assignment.section_name}
+                                    </span>
+                                  </div>
+
+                                  <div className='flex flex-wrap items-center gap-2'>
+                                    <Badge
+                                      tone={schedule ? 'success' : 'warning'}
+                                    >
+                                      {schedule ? 'Scheduled' : 'Pending'}
+                                    </Badge>
+                                    <span className='text-caption text-text-tertiary'>
+                                      {assignment.meetings?.[0]?.mode_display ??
+                                        'Class'}
+                                    </span>
+                                  </div>
+
+                                  {schedule && (
+                                    <span className='text-caption text-text-secondary'>
+                                      {schedule.day_display},{' '}
+                                      {schedule.start_time}
+                                      {schedule.room_name
+                                        ? ` · ${schedule.room_name}`
+                                        : ''}
+                                    </span>
+                                  )}
+                                </li>
+                              );
+                            }
+                          )}
+                        </ul>
+                      )}
+
+                      {remaining > 0 && (
+                        <Link
+                          to={`/registrar/teachers/${teacher.id}`}
+                          className='mt-auto inline-flex min-h-11 items-center gap-1 border-t border-border px-4 text-body-sm font-medium text-apple-green-700 transition-colors hover:bg-apple-green-50'
+                        >
+                          View {remaining} more assignment
+                          {remaining === 1 ? '' : 's'}
+                          <ChevronRight size={15} aria-hidden='true' />
+                        </Link>
+                      )}
+                    </Card>
+                  );
+                })}
               </div>
-            );
-          })}
+            )}
+          </section>
+        </>
+      )}
+
+      <Modal
+        open={exportPanelOpen}
+        onClose={() => {
+          if (!exportingFormat) setExportPanelOpen(false);
+        }}
+        title='Export timetable'
+        description='Choose a format to download the current timetable.'
+        size='sm'
+      >
+        <div className='space-y-4'>
+          {exportError && <Alert tone='danger'>{exportError}</Alert>}
+
+          <div className='grid gap-2'>
+            {[
+              { format: 'csv', label: 'CSV spreadsheet' },
+              { format: 'xlsx', label: 'Excel workbook (XLSX)' },
+              { format: 'pdf', label: 'PDF document' },
+            ].map((option) => (
+              <Button
+                key={option.format}
+                variant='secondary'
+                className='w-full justify-between'
+                loading={exportingFormat === option.format}
+                disabled={exportingFormat !== null && exportingFormat !== option.format}
+                onClick={() => handleExport(option.format)}
+              >
+                {option.label}
+                <Download size={16} aria-hidden='true' />
+              </Button>
+            ))}
+          </div>
+
+          <p className='text-caption text-text-tertiary'>
+            Exports use the most recently generated schedule.
+          </p>
         </div>
-      </div>
-    </section>
+      </Modal>
+    </div>
   );
 }

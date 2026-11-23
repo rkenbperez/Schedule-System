@@ -1,8 +1,6 @@
-import {
-  CalendarDays,
-  Clock,
-  MapPin,
-} from 'lucide-react';
+import { ArrowUpRight, CalendarDays, Clock, MapPin } from 'lucide-react';
+import { Link, useParams } from 'react-router-dom';
+import { Badge } from '../../../components/ui';
 import type { Schedule } from '../../../types/Types';
 
 export default function DashboardCourseCard({
@@ -10,94 +8,90 @@ export default function DashboardCourseCard({
 }: {
   schedule: Schedule;
 }) {
+  const { name } = useParams<{ name: string }>();
+  const teacher = name ?? 'juan';
 
   return (
-    <div
-      className='
-        flex h-full flex-col gap-4
-        rounded-2xl border border-border bg-surface
-        px-4 py-4
-        transition
-        hover:border-apple-green-200 hover:shadow-sm
-      '
+    <Link
+      to={`/teacher/${teacher}/assignments/${schedule.assignment}`}
+      className='group flex h-full flex-col gap-4 rounded-card border border-border bg-surface p-5 transition hover:border-apple-green-300 hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-apple-green-600'
     >
-      {/* Header */}
-      <div className='flex items-start justify-between gap-2'>
-        <div className='flex min-w-0 flex-col gap-0.5'>
-          <div className='flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1'>
-            <span className='text-base font-semibold tracking-tight text-text-primary'>
+      <div className='flex items-start justify-between gap-3'>
+        <div className='min-w-0'>
+          <div className='flex flex-wrap items-baseline gap-x-2 gap-y-1'>
+            <h3 className='text-h3 text-text-primary'>
               {schedule.subject_label}
-            </span>
-            <span className='text-xs text-text-tertiary sm:text-sm'>
-              section {schedule.section_name}
+            </h3>
+            <span className='text-body-sm text-text-tertiary'>
+              Section {schedule.section_name}
             </span>
           </div>
-          <span className='truncate text-sm text-text-secondary'>
+          <p className='mt-1 truncate text-body-sm text-text-secondary'>
             {schedule.assignment_label}
-          </span>
+          </p>
         </div>
-
-        {/* Type badge */}
-        <span
-          className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-medium capitalize tracking-wide ${
-            schedule.mode_display?.toLowerCase() === 'laboratory'
-              ? 'bg-apple-green-100 text-apple-green-700'
-              : 'bg-apple-green-50 text-apple-green-700'
-          }`}
-        >
-          {schedule.mode_display}
-        </span>
+        <Badge tone='green'>{schedule.mode_display}</Badge>
       </div>
 
-      {/* Divider */}
-      <div className='border-t border-border-light' />
-
-      {/* Schedule meta */}
-      <div className='grid grid-cols-2 gap-x-4 gap-y-3 text-xs sm:text-sm'>
-        <div className='flex items-center gap-2'>
-          <div className='flex flex-col leading-tight'>
-            <div className='flex gap-2'>
-              <CalendarDays size={14} className='shrink-0 text-apple-green-600' />
-              <span className='text-[10px] uppercase tracking-wide text-text-tertiary'>
-                Day
-              </span>
-            </div>
-
-            <span className='text-text-primary'>
+      <div className='grid gap-3 border-t border-border-light pt-4 sm:grid-cols-2'>
+        <div className='flex items-start gap-2'>
+          <CalendarDays
+            size={16}
+            className='mt-0.5 shrink-0 text-apple-green-600'
+            aria-hidden='true'
+          />
+          <div className='min-w-0'>
+            <p className='text-caption uppercase tracking-wide text-text-tertiary'>
+              Day
+            </p>
+            <p className='text-body-sm text-text-primary'>
               {schedule.day_display}
-            </span>
+            </p>
           </div>
         </div>
 
-        <div className='flex items-center gap-2'>
-          <div className='flex flex-col leading-tight'>
-            <div className='flex gap-2'>
-              <Clock size={14} className='shrink-0 text-apple-green-600' />
-              <span className='text-[10px] uppercase tracking-wide text-text-tertiary'>
-                Time
-              </span>
-            </div>
-
-            <span className='text-text-primary'>
+        <div className='flex items-start gap-2'>
+          <Clock
+            size={16}
+            className='mt-0.5 shrink-0 text-apple-green-600'
+            aria-hidden='true'
+          />
+          <div className='min-w-0'>
+            <p className='text-caption uppercase tracking-wide text-text-tertiary'>
+              Time
+            </p>
+            <p className='text-body-sm text-text-primary'>
               {schedule.start_time}
-              {schedule.end_time ? ` - ${schedule.end_time}` : ''}
-            </span>
+              {schedule.end_time ? ` – ${schedule.end_time}` : ''}
+            </p>
           </div>
         </div>
 
-        <div className='flex items-center gap-2'>
-          <div className='flex flex-col leading-tight'>
-            <div className='flex gap-2'>
-              <MapPin size={14} className='shrink-0 text-apple-green-600' />
-              <span className='text-[10px] uppercase tracking-wide text-text-tertiary'>
-                Room
-              </span>
-            </div>
-
-            <span className='text-text-primary'>{schedule.room_name}</span>
+        <div className='flex items-start gap-2 sm:col-span-2'>
+          <MapPin
+            size={16}
+            className='mt-0.5 shrink-0 text-apple-green-600'
+            aria-hidden='true'
+          />
+          <div className='min-w-0'>
+            <p className='text-caption uppercase tracking-wide text-text-tertiary'>
+              Room
+            </p>
+            <p className='text-body-sm text-text-primary'>
+              {schedule.room_name}
+            </p>
           </div>
         </div>
       </div>
-    </div>
+
+      <span className='mt-auto inline-flex items-center gap-1.5 text-body-sm font-medium text-apple-green-700'>
+        View assignment
+        <ArrowUpRight
+          size={15}
+          className='transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5'
+          aria-hidden='true'
+        />
+      </span>
+    </Link>
   );
 }
