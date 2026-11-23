@@ -32,13 +32,6 @@ import {
   IconButton,
   PageHeader,
   SelectField,
-  Table,
-  TableContainer,
-  TBody,
-  TD,
-  TH,
-  THead,
-  TR,
 } from '../../components/ui';
 import { cn } from '../../lib/cn';
 import type {
@@ -301,7 +294,6 @@ export default function RegistrarScheduleManagementPage() {
     );
   }
 
-  const previewRecords: never[] = [];
   const previewErrors = previewResult?.errors ?? [];
   const previewWarnings: never[] = [];
 
@@ -480,85 +472,6 @@ export default function RegistrarScheduleManagementPage() {
                     </p>
                   )}
                 </Alert>
-              )}
-
-              {previewRecords.length > 0 && (
-                <>
-                  <div className='hidden md:block'>
-                    <TableContainer>
-                      <Table className='min-w-[720px]'>
-                        <THead>
-                          <TR className='hover:bg-transparent'>
-                            <TH>Course</TH>
-                            <TH>Section</TH>
-                            <TH>Teacher</TH>
-                            <TH>Term</TH>
-                            <TH>Type</TH>
-                            <TH>Status</TH>
-                          </TR>
-                        </THead>
-                        <TBody>
-                          {previewRecords.map((record) => (
-                            <TR key={record.id}>
-                              <TD className='font-medium'>
-                                {record.course_code}
-                              </TD>
-                              <TD className='text-text-secondary'>
-                                {record.section_code}
-                              </TD>
-                              <TD className='text-text-secondary'>
-                                {record.teacher_employee_no}
-                              </TD>
-                              <TD className='text-text-secondary'>
-                                {record.term_name}
-                              </TD>
-                              <TD className='capitalize text-text-secondary'>
-                                {record.component_type}
-                              </TD>
-                              <TD>
-                                <Badge
-                                  tone={record.is_valid ? 'success' : 'danger'}
-                                >
-                                  {record.is_valid ? 'Valid' : 'Error'}
-                                </Badge>
-                              </TD>
-                            </TR>
-                          ))}
-                        </TBody>
-                      </Table>
-                    </TableContainer>
-                  </div>
-
-                  <ul className='space-y-2 md:hidden'>
-                    {previewRecords.map((record) => (
-                      <li
-                        key={record.id}
-                        className='rounded-control border border-border p-3'
-                      >
-                        <div className='flex items-start justify-between gap-2'>
-                          <div className='min-w-0'>
-                            <p className='text-body font-medium text-text-primary'>
-                              {record.course_code}
-                            </p>
-                            <p className='text-body-sm text-text-secondary'>
-                              Section {record.section_code} ·{' '}
-                              {record.term_name}
-                            </p>
-                          </div>
-                          <Badge
-                            tone={record.is_valid ? 'success' : 'danger'}
-                          >
-                            {record.is_valid ? 'Valid' : 'Error'}
-                          </Badge>
-                        </div>
-                        <p className='mt-2 text-caption text-text-secondary'>
-                          Teacher {record.teacher_employee_no} ·{' '}
-                          {record.component_type}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                </>
               )}
 
               <div className='flex flex-wrap gap-2'>
