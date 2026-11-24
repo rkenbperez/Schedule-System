@@ -1,8 +1,19 @@
 // pages/NotFound.tsx
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Calendar } from 'lucide-react';
+import { useMe } from '../hooks/useAuth';
 
 export default function NotFound() {
+  const { data: user } = useMe({ enabled: true });
+
+  // Send each role to its own dashboard; everyone else lands on login.
+  const dashboardTo =
+    user?.role === 'registrar'
+      ? '/registrar/dashboard'
+      : user?.role === 'professor'
+        ? `/teacher/${user.username}`
+        : '/';
+
   return (
     <section className='flex min-h-screen items-center justify-center bg-surface-secondary px-4'>
       <div className='rounded-2xl border border-border bg-surface p-8 text-center'>
@@ -16,7 +27,7 @@ export default function NotFound() {
         </p>
         <div className='flex flex-col sm:flex-row gap-3 justify-center'>
           <Link
-            to='/dashboard'
+            to={dashboardTo}
             className='flex items-center gap-2 rounded-md bg-apple-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-apple-green-700'
           >
             <ArrowLeft size={14} />

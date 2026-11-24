@@ -6,8 +6,10 @@ import RegistrarLayout from './layouts/RegistrarLayout';
 import StudentLayout from './layouts/StudentLayout';
 import TeacherDashboard from './pages/teacher/TeacherDashboardPage';
 import TeacherAssignmentPage from './pages/teacher/TeacherAssignmentPage';
+import TeacherAssingmentDetailPage from './pages/teacher/TeacherAssingmentDetailPage';
 
 import TeacherRoomPage from './pages/teacher/TeacherRoomPage';
+import TeacherRoomDetailPage from './pages/teacher/TeacherRoomDetailPage';
 import TeacherSchedulesPage from './pages/teacher/TeacherSchedulesPage';
 import TeacherProfilePage from './pages/teacher/TeacherProfilePage';
 import StudentScheduleLookupPage from './pages/student/StudentScheduleLookupPage';
@@ -51,6 +53,14 @@ const Router = createBrowserRouter([
         ),
       },
       {
+        path: 'assignments/:assignment-id',
+        element: (
+          <RequireAuth requiredRole='professor'>
+            <TeacherAssingmentDetailPage />
+          </RequireAuth>
+        ),
+      },
+      {
         path: 'schedules',
         element: (
           <RequireAuth requiredRole='professor'>
@@ -63,6 +73,14 @@ const Router = createBrowserRouter([
         element: (
           <RequireAuth requiredRole='professor'>
             <TeacherRoomPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: 'rooms/:roomId',
+        element: (
+          <RequireAuth requiredRole='professor'>
+            <TeacherRoomDetailPage />
           </RequireAuth>
         ),
       },
