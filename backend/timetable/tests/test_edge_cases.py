@@ -64,7 +64,8 @@ class EdgeCaseTests(TestCase):
         prof = ProfessorFactory(department=self.dept)
         room = RoomFactory(department=self.dept, capacity=50)
         subjects = [SubjectFactory() for _ in range(5)]
-        sections = [SectionFactory(term=self.term, headcount=30) for _ in range(20)]
+        # 21 × 2h = 42h > 5 days × 8h daily cap, so one meeting cannot fit.
+        sections = [SectionFactory(term=self.term, headcount=30) for _ in range(21)]
         
         for i, section in enumerate(sections):
             assignment = AssignmentFactory(
