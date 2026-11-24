@@ -1,5 +1,5 @@
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import SimpleRouter
 
 from .analytics.views import (
     AnalyticsOverviewView,
@@ -43,7 +43,7 @@ from .views import (
     ConflictResolutionIgnoreView,
 )
 
-router = DefaultRouter()
+router = SimpleRouter()
 router.register("professor/availability", ProfessorAvailabilityViewSet, basename="professor-availability")
 router.register("professor/busy-blocks", ProfessorBusyBlockViewSet, basename="professor-busy-blocks")
 

@@ -1,4 +1,12 @@
+import re
+
 from django.db import models
+
+
+def program_from_name(name):
+    """Derive a program code ('BSCS') from a section name ('BSCS 3-A')."""
+    match = re.match(r"^([A-Za-z]+)", name or "")
+    return match.group(1) if match else ""
 
 
 class Subject(models.Model):
@@ -28,6 +36,11 @@ class Section(models.Model):
 
     class Meta:
         ordering = ["name"]
+
+    def save(self, *args, **kwargs):
+        if not self.program:
+            self.program = program_from_name(self.name)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name

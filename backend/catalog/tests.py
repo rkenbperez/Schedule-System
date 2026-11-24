@@ -16,3 +16,9 @@ class CatalogModelTests(TestCase):
         section = Section.objects.create(name="BSIT-3A", headcount=40)
         self.assertEqual(Section.objects.count(), 1)
         self.assertEqual(str(section), "BSIT-3A")
+
+    def test_section_program_derived_from_name(self):
+        section = Section.objects.create(name="BSCS 3-A", headcount=40)
+        self.assertEqual(section.program, "BSCS")
+        explicit = Section.objects.create(name="BSIT-1A", headcount=40, program="CUSTOM")
+        self.assertEqual(explicit.program, "CUSTOM")

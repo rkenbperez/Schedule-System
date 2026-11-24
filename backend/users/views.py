@@ -46,6 +46,7 @@ class JWTLoginView(TokenObtainPairView):
     """Obtain JWT access + refresh tokens using email login."""
 
     serializer_class = LoginSerializer
+    throttle_classes = [LoginRateThrottle]
 
 
 class JWTLogoutView(APIView):

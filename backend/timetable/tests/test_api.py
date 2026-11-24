@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -20,8 +20,10 @@ from users.models import Professors
 User = get_user_model()
 
 
-def make_assignment(prof, subject, section, spec):
-    assignment = Assignment.objects.create(prof=prof, subject=subject, section=section)
+def make_assignment(prof, subject, section, spec, term=None):
+    assignment = Assignment.objects.create(
+        prof=prof, subject=subject, section=section, term=term
+    )
     MeetingSlot.objects.bulk_create(
         [
             MeetingSlot(
@@ -454,10 +456,14 @@ class AssignmentApiTests(ApiTestCase):
 
 class ScheduleViewTests(ApiTestCase):
     def _seed_and_generate(self):
+        term = AcademicTerm.objects.create(
+            year=2026, semester=1, is_active=True,
+            start_date=date(2026, 8, 1), end_date=date(2026, 12, 15),
+        )
         subject = Subject.objects.create(code="CC101", title="Intro", units=3)
         section = Section.objects.create(name="BSIT-3A", headcount=30)
         Room.objects.create(name="R101", capacity=40)
-        make_assignment(self.prof, subject, section, [("sync", 1)])
+        make_assignment(self.prof, subject, section, [("sync", 1)], term=term)
         AvailabilityWindow.objects.create(
             prof=self.prof, day=0, start_time=time(8, 0), end_time=time(17, 0)
         )
