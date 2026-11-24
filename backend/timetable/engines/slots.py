@@ -53,15 +53,28 @@ def legal_time_slots(
 ) -> List[Tuple[int, int]]:
     """Return every (day, start_minute) where this meeting fits the time rules.
 
-    Only checks availability, busy blocks, opening hours and the prof's daily
-    cap. It deliberately ignores prof/section/room overlap, which the engines
-    handle separately so each algorithm can make its own conflict decisions.
+    Only checks availability, busy blocks, opening hours, the prof's daily cap
+    and the prof's consecutive-hours cap. It deliberately ignores
+    prof/section/room overlap, which the engines handle separately so each
+    algorithm can make its own conflict decisions.
     """
     windows = _windows_by_prof_day(scenario)
     busy = _busy_by_prof_day(scenario)
     used = _daily_used(scenario, placed)
     duration = minutes(scenario, meeting.duration_slots)
     max_hours = scenario.max_daily_hours(meeting.prof_id)
+    max_consecutive = scenario.max_consecutive(meeting.prof_id)
+
+    # Hour indices this prof already occupies per day, for run-length checks.
+    meeting_map = scenario.meeting_map()
+    occupied: Dict[int, set] = defaultdict(set)
+    for placement in placed.values():
+        other = meeting_map[placement.meeting_id]
+        if other.prof_id != meeting.prof_id:
+            continue
+        day_start = scenario.day_ranges[placement.day][0]
+        first = (placement.start - day_start) // scenario.slot_minutes
+        occupied[placement.day].update(range(first, first + other.duration_slots))
 
     results = []
     for day, (day_start, day_end) in scenario.day_ranges.items():
@@ -77,6 +90,17 @@ def legal_time_slots(
 
             prof_busy = busy.get((meeting.prof_id, day), [])
             if any(overlaps(start, start + duration, b_start, b_end) for b_start, b_end in prof_busy):
+                start += scenario.slot_minutes
+                continue
+
+            first = (start - day_start) // scenario.slot_minutes
+            left = first - 1
+            while left in occupied[day]:
+                left -= 1
+            right = first + meeting.duration_slots
+            while right in occupied[day]:
+                right += 1
+            if (right - left - 1) * scenario.slot_minutes > max_consecutive * 60:
                 start += scenario.slot_minutes
                 continue
 

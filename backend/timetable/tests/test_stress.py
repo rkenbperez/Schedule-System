@@ -171,6 +171,29 @@ class StressTests(TestCase):
         # This is a genuinely hard case - may be infeasible
         self.assertTrue(result.feasible or result.unplaced or len(result.classes) > 0)
 
+    def test_max_consecutive_not_exceeded_under_dense_load(self):
+        """A prof with a full 8-hour load is spread, never stacked into one run."""
+        rooms = [_room(i, 30, "") for i in range(1, 6)]
+        meetings = [
+            _meeting(i, prof_id=1, duration=2, section_id=i)
+            for i in range(1, 5)
+        ]
+        availability = [
+            Availability(prof_id=1, day=d, start=7 * 60, end=19 * 60)
+            for d in range(5)
+        ]
+        scenario = Scenario(
+            rooms=rooms,
+            meetings=meetings,
+            availability=availability,
+            prof_daily_hours={1: 8},
+            prof_max_consecutive={1: 4},
+        )
+
+        for algorithm in ["greedy", "backtracking", "min_conflicts"]:
+            result = run(algorithm, scenario, time_limit_s=10)
+            self.assertTrue(result.feasible, f"{algorithm}: {result.violations}")
+
     def test_room_capacity_equals_headcount(self):
         """Room capacity exactly matches section headcount - no slack."""
         rooms = [_room(i, 30, "") for i in range(1, 6)]
