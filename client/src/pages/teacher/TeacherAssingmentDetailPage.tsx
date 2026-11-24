@@ -1,7 +1,8 @@
 // pages/teacher/TeacherAssingmentDetailPage.tsx
 import { BookOpen, CheckCircle2, Clock3 } from 'lucide-react';
 import { useParams } from 'react-router-dom';
-import { useCourseComponents } from '../../hooks/Schedule.hooks';
+import { useCourseAssignments, useCourseComponents } from '../../hooks/Schedule.hooks';
+import { useMe } from '../../hooks/useAuth';
 import {
   Badge,
   Card,
@@ -56,7 +57,17 @@ export default function TeacherAssingmentDetailPage() {
   const assignmentId = assignmentIdStr ? Number(assignmentIdStr) : NaN;
   const teacher = teacherName ?? 'juan';
 
-  const assignment = exampleAssignments.find(
+  const { data: user } = useMe({ enabled: true });
+  const teacherId = user?.professor?.id;
+
+  // Mock data used when backend is not available.
+  const { data: assignments } = useCourseAssignments({
+    teacherId,
+    enabled: !!teacherId,
+  });
+  const resolvedAssignments = assignments ?? exampleAssignments;
+
+  const assignment = resolvedAssignments.find(
     (candidate) => candidate.id === assignmentId
   );
 
