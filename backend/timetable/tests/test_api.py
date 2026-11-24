@@ -41,7 +41,7 @@ def make_assignment(prof, subject, section, spec, term=None):
 class ApiTestCase(APITestCase):
     def setUp(self):
         self.registrar = User.objects.create_user(
-            username="reg", password="pass12345", is_staff=True
+            username="reg", email="reg@example.com", password="pass12345", is_staff=True
         )
         self.reg_token = Token.objects.create(user=self.registrar)
 
@@ -220,12 +220,19 @@ class AvailabilityApiTests(ApiTestCase):
 
 
 class ScheduleGenerateTests(ApiTestCase):
+    def setUp(self):
+        super().setUp()
+        self.term = AcademicTerm.objects.create(
+            year=2026, semester=1, is_active=True,
+            start_date=date(2026, 8, 1), end_date=date(2026, 12, 15),
+        )
+
     def _seed(self):
         subject = Subject.objects.create(code="CC101", title="Intro", units=3)
         section = Section.objects.create(name="BSIT-3A", headcount=30)
         Room.objects.create(name="R101", capacity=40)
         make_assignment(
-            self.prof, subject, section, [("sync", 1), ("async", 1)]
+            self.prof, subject, section, [("sync", 1), ("async", 1)], term=self.term
         )
         AvailabilityWindow.objects.create(
             prof=self.prof, day=0, start_time=time(8, 0), end_time=time(17, 0)
@@ -266,7 +273,7 @@ class ScheduleGenerateTests(ApiTestCase):
         subject = Subject.objects.create(code="CC101", title="Intro", units=3)
         section = Section.objects.create(name="BSIT-3A", headcount=30)
         Room.objects.create(name="R101", capacity=40)
-        make_assignment(self.prof, subject, section, [("sync", 1)])
+        make_assignment(self.prof, subject, section, [("sync", 1)], term=self.term)
         # No availability -> infeasible.
         self.auth(self.reg_token)
         response = self.client.post("/api/schedules/generate", {"algorithm": "greedy"})
@@ -289,7 +296,7 @@ class ScheduleGenerateTests(ApiTestCase):
         subject = Subject.objects.create(code="CC101", title="Intro", units=3)
         section = Section.objects.create(name="BSIT-3A", headcount=30)
         Room.objects.create(name="R101", capacity=40)
-        make_assignment(self.prof, subject, section, [("lab", 3), ("sync", 2)])
+        make_assignment(self.prof, subject, section, [("lab", 3), ("sync", 2)], term=self.term)
         AvailabilityWindow.objects.create(
             prof=self.prof, day=0, start_time=time(8, 0), end_time=time(17, 0)
         )
@@ -523,13 +530,21 @@ class ScheduleViewTests(ApiTestCase):
 class FullScheduleFlowTests(ApiTestCase):
     """End-to-end: login -> catalog -> load -> generate -> read, over real HTTP."""
 
+    def setUp(self):
+        super().setUp()
+        self.term = AcademicTerm.objects.create(
+            year=2026, semester=1, is_active=True,
+            start_date=date(2026, 8, 1), end_date=date(2026, 12, 15),
+        )
+
     def _login(self, username, password):
         response = self.client.post(
-            "/api/auth/login/", {"username": username, "password": password}
+            "/api/auth/jwt/login/",
+            {"email": f"{username}@example.com", "password": password},
         )
         self.assertEqual(response.status_code, 200)
-        token = response.data["token"]
-        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+        token = response.data["access"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
         return token
 
     def _post(self, url, payload, expected=201):
@@ -546,15 +561,21 @@ class FullScheduleFlowTests(ApiTestCase):
         subj2 = self._post(
             "/api/subjects/", {"code": "CS102", "title": "Databases", "units": 3}
         )
-        sec1 = self._post("/api/sections/", {"name": "BSIT-3A", "headcount": 30})
-        sec2 = self._post("/api/sections/", {"name": "BSIT-3B", "headcount": 25})
+        sec1 = self._post(
+            "/api/sections/", {"name": "BSIT-3A", "headcount": 30, "term": self.term.id}
+        )
+        sec2 = self._post(
+            "/api/sections/", {"name": "BSIT-3B", "headcount": 25, "term": self.term.id}
+        )
         it_dept = self._post("/api/departments/", {"name": "IT"})
         room1 = self._post("/api/rooms/", {"name": "R201", "capacity": 40})
         room2 = self._post(
             "/api/rooms/", {"name": "R202", "capacity": 40, "department": it_dept["id"]}
         )
 
-        prof2_user = User.objects.create_user(username="e2eprof2", password="pass12345")
+        prof2_user = User.objects.create_user(
+            username="e2eprof2", email="e2eprof2@example.com", password="pass12345"
+        )
         prof2 = self._post(
             "/api/profs/", {"user": prof2_user.id, "department": it_dept["id"]}
         )

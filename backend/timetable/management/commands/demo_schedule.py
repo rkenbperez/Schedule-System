@@ -441,7 +441,7 @@ class Command(BaseCommand):
         # Create or get the active academic term
         term = self._get_or_create_active_term()
 
-        registrar = self._seed_users(options["scale"], term)
+        registrar = self._seed_users(options["scale"])
         self._seed_catalog(options["scale"], term)
         self._seed_load_and_availability(options["scale"], term)
         self._reconcile(options["scale"], term)
@@ -547,7 +547,7 @@ class Command(BaseCommand):
 
     # -- seeding -----------------------------------------------------------
 
-    def _seed_users(self, scale, term):
+    def _seed_users(self, scale):
         registrar, _ = User.objects.get_or_create(username="demoreg")
         update_fields = []
         if not registrar.is_staff:
