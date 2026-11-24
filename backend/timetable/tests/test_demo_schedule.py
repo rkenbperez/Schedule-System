@@ -64,7 +64,7 @@ class DemoScheduleCommandTests(TestCase):
             command, "_reconcile"
         ), patch.object(command, "_http") as http:
             seed_users.return_value.username = "demoreg"
-            http.side_effect = [{"token": "local-token"}] + [result] * 3
+            http.side_effect = [{"access": "local-token"}] + [result] * 3
             command.handle(
                 base="http://example.test/api",
                 reset=False,
