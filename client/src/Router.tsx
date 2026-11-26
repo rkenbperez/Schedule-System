@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 import Login from './pages/login/Login';
 import ResetPasswordPage from './pages/login/ResetPasswordPage';
 import TeacherLayout from './layouts/TeacherLayout';
@@ -108,7 +108,7 @@ const Router = createBrowserRouter([
       },
       {
         path: 'dashboard',
-        element: <RegistrarDashboardPage />,
+        element: <Navigate to='/registrar' replace />,
       },
       {
         path: 'schedule-management',

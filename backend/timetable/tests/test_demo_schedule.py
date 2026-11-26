@@ -6,7 +6,11 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
 from catalog.models import Department
-from timetable.management.commands.demo_schedule import Command, DEMO_PASSWORD
+from timetable.management.commands.demo_schedule import (
+    Command,
+    DEMO_PASSWORD,
+    _dataset,
+)
 from users.models import Professors
 
 
@@ -32,7 +36,9 @@ class DemoScheduleCommandTests(TestCase):
         professor_user.refresh_from_db()
         professor.refresh_from_db()
         self.assertTrue(registrar.is_staff)
+        self.assertEqual(registrar.email, "demoreg@school.edu")
         self.assertTrue(registrar.check_password(DEMO_PASSWORD))
+        self.assertEqual(professor_user.email, "demo_prof1@school.edu")
         self.assertTrue(professor_user.check_password("professor-password"))
         self.assertEqual(professor.department.name, "CS")
 
@@ -64,6 +70,7 @@ class DemoScheduleCommandTests(TestCase):
             command, "_reconcile"
         ), patch.object(command, "_http") as http:
             seed_users.return_value.username = "demoreg"
+            seed_users.return_value.email = "demoreg@school.edu"
             http.side_effect = [{"access": "local-token"}] + [result] * 3
             command.handle(
                 base="http://example.test/api",
@@ -76,4 +83,27 @@ class DemoScheduleCommandTests(TestCase):
             )
 
         self.assertEqual(http.call_count, 4)
+        self.assertEqual(
+            http.call_args_list[0].args[3],
+            {"email": "demoreg@school.edu", "password": DEMO_PASSWORD},
+        )
         self.assertIn("No valid placement", command.stdout.getvalue())
+
+    def test_dataset_lab_rooms_have_enough_capacity_for_every_scale(self):
+        expected_lab_rooms = {"normal": 1, "large": 2, "full": 3}
+        for scale in ("normal", "large", "full"):
+            with self.subTest(scale=scale):
+                data = _dataset(scale)
+                sections = dict(data["sections"])
+                lab_capacities = [
+                    capacity
+                    for name, capacity, _department in data["rooms"]
+                    if "lab" in name.casefold()
+                ]
+                lab_headcounts = [
+                    sections[section]
+                    for _username, _code, section, spec in data["loads"]
+                    if any(mode == "lab" for mode, _duration in spec)
+                ]
+                self.assertGreaterEqual(len(lab_capacities), expected_lab_rooms[scale])
+                self.assertGreaterEqual(max(lab_capacities), max(lab_headcounts))

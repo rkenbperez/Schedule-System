@@ -3,7 +3,15 @@
 from collections import defaultdict
 from typing import Dict, List, Tuple
 
-from .scenario import Meeting, Placement, RoomRef, Scenario
+from .scenario import (
+    ROOM_TYPE_GENERAL,
+    ROOM_TYPE_LABORATORY,
+    ROOM_TYPE_LECTURE,
+    Meeting,
+    Placement,
+    RoomRef,
+    Scenario,
+)
 
 
 def minutes(scenario: Scenario, slots: int) -> int:
@@ -122,11 +130,27 @@ def department_ok(scenario: Scenario, meeting: Meeting, room: RoomRef) -> bool:
     return meeting.department.casefold() == room.department.casefold()
 
 
+def room_type_ok(meeting: Meeting, room: RoomRef) -> bool:
+    """True when the room type can host this meeting's mode.
+
+    Laboratory meetings need a laboratory, synchronous meetings need a
+    lecture or general room, and asynchronous meetings are unrestricted.
+    """
+    mode = (meeting.mode or "").casefold()
+    if mode in ("lab", "laboratory"):
+        return room.room_type == ROOM_TYPE_LABORATORY
+    if mode in ("sync", "synchronous"):
+        return room.room_type in (ROOM_TYPE_LECTURE, ROOM_TYPE_GENERAL)
+    return True
+
+
 def legal_rooms(scenario: Scenario, meeting: Meeting) -> List[RoomRef]:
     return [
         r
         for r in scenario.rooms
-        if r.capacity >= meeting.section_headcount and department_ok(scenario, meeting, r)
+        if r.capacity >= meeting.section_headcount
+        and department_ok(scenario, meeting, r)
+        and room_type_ok(meeting, r)
     ]
 
 
@@ -179,4 +203,5 @@ def free_rooms(
         if r.capacity >= meeting.section_headcount
         and r.id not in busy_room_ids
         and department_ok(scenario, meeting, r)
+        and room_type_ok(meeting, r)
     ]

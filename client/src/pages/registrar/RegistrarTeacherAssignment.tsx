@@ -1,7 +1,7 @@
 // pages/registrar/RegistrarTeacherAssignment.tsx
+import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { CalendarPlus, CheckCircle2, UserRoundX, X } from 'lucide-react';
-import { useState } from 'react';
 import ScheduleModal from './components/ScheduleModal';
 import {
   Alert,
@@ -10,6 +10,7 @@ import {
   Card,
   EmptyState,
   IconButton,
+  LoadingState,
   PageHeader,
   Table,
   TableContainer,
@@ -19,380 +20,107 @@ import {
   THead,
   TR,
 } from '../../components/ui';
-import { scheduleService } from '../../services/Schedule.service';
+import {
+  useAllSchedules,
+  useCourseAssignmentsByTeacher,
+  useCreateRegistrarSchedule,
+  useRooms,
+  useScheduleRuns,
+  useTeachers,
+} from '../../hooks/Schedule.hooks';
 import type {
   CourseAssignmentDetail,
-  Room,
-  RoomType,
-  CourseComponent,
-  Course,
-  TeacherProfile,
+  CourseAssignmentMeeting,
+  ScheduleCreatePayload,
 } from '../../types/Types';
 
-// Example (mock) data matching backend API response structure.
-const exampleCourses: Course[] = [
-  {
-    id: 1,
-    code: 'COSC 7',
-    title: 'Data Structures and Algorithms',
-    units: '3.0',
-    is_active: true,
-    created_at: '2026-07-15T00:00:00Z',
-  },
-  {
-    id: 2,
-    code: 'DCIT 5',
-    title: 'Database Management Systems',
-    units: '3.0',
-    is_active: true,
-    created_at: '2026-07-15T00:00:00Z',
-  },
-  {
-    id: 3,
-    code: 'MATH 10',
-    title: 'Calculus II',
-    units: '4.0',
-    is_active: true,
-    created_at: '2026-07-15T00:00:00Z',
-  },
-];
-
-const exampleRoomTypes: RoomType[] = [
-  { id: 1, name: 'lecture' },
-  { id: 2, name: 'laboratory' },
-];
-
-const exampleRooms: Room[] = [
-  {
-    id: 101,
-    name: 'Room 101',
-    capacity: 40,
-    department: 1,
-    department_name: 'BSIT',
-    building: 'Main Building',
-  },
-  {
-    id: 102,
-    name: 'Room 204',
-    capacity: 35,
-    department: 1,
-    department_name: 'BSIT',
-    building: 'Main Building',
-  },
-  {
-    id: 103,
-    name: 'Lab 202',
-    capacity: 30,
-    department: 1,
-    department_name: 'BSIT',
-    building: 'Engineering Building',
-  },
-  {
-    id: 104,
-    name: 'Room 305',
-    capacity: 45,
-    department: 1,
-    department_name: 'BSIT',
-    building: 'Main Building',
-  },
-  {
-    id: 105,
-    name: 'Lab 301',
-    capacity: 25,
-    department: 1,
-    department_name: 'BSIT',
-    building: 'Engineering Building',
-  },
-];
-
-const exampleTeachers: TeacherProfile[] = [
-  {
-    id: 1,
-    username: 'angel.cruz',
-    full_name: 'Angel Cruz',
-    department: 1,
-    department_name: 'BSIT',
-    max_daily_hours: 8,
-    max_consecutive: 3,
-    user: {
-      id: 1,
-      username: 'angel.cruz',
-      full_name: 'Angel Cruz',
-      email: 'angel.cruz@school.edu',
-    },
-  },
-  {
-    id: 2,
-    username: 'maria.santos',
-    full_name: 'Maria Santos',
-    department: 1,
-    department_name: 'BSIT',
-    max_daily_hours: 8,
-    max_consecutive: 3,
-    user: {
-      id: 2,
-      username: 'maria.santos',
-      full_name: 'Maria Santos',
-      email: 'maria.santos@school.edu',
-    },
-  },
-  {
-    id: 3,
-    username: 'robert.reyes',
-    full_name: 'Robert Reyes',
-    department: 1,
-    department_name: 'BSIT',
-    max_daily_hours: 8,
-    max_consecutive: 3,
-    user: {
-      id: 3,
-      username: 'robert.reyes',
-      full_name: 'Robert Reyes',
-      email: 'robert.reyes@school.edu',
-    },
-  },
-  {
-    id: 4,
-    username: 'elena.garcia',
-    full_name: 'Elena Garcia',
-    department: null,
-    department_name: '',
-    max_daily_hours: 8,
-    max_consecutive: 3,
-    user: {
-      id: 4,
-      username: 'elena.garcia',
-      full_name: 'Elena Garcia',
-      email: 'elena.garcia@school.edu',
-    },
-  },
-];
-
-const exampleComponents: CourseComponent[] = [
-  {
-    id: 1,
-    course: exampleCourses[0],
-    room_type: exampleRoomTypes[0],
-    label: 'lecture',
-    duration: 2,
-    is_active: true,
-    created_at: '2026-07-15T00:00:00Z',
-  },
-  {
-    id: 2,
-    course: exampleCourses[0],
-    room_type: exampleRoomTypes[1],
-    label: 'laboratory',
-    duration: 4,
-    is_active: true,
-    created_at: '2026-07-15T00:00:00Z',
-  },
-  {
-    id: 3,
-    course: exampleCourses[1],
-    room_type: exampleRoomTypes[0],
-    label: 'lecture',
-    duration: 2,
-    is_active: true,
-    created_at: '2026-07-15T00:00:00Z',
-  },
-  {
-    id: 4,
-    course: exampleCourses[1],
-    room_type: exampleRoomTypes[1],
-    label: 'laboratory',
-    duration: 4,
-    is_active: true,
-    created_at: '2026-07-15T00:00:00Z',
-  },
-  {
-    id: 5,
-    course: exampleCourses[2],
-    room_type: exampleRoomTypes[0],
-    label: 'lecture',
-    duration: 2,
-    is_active: true,
-    created_at: '2026-07-15T00:00:00Z',
-  },
-];
-
-const exampleAssignments: CourseAssignmentDetail[] = [
-  {
-    id: 1,
-    prof: 1,
-    subject: 1,
-    section: 1,
-    term: 1,
-    meetings: [
-      {
-        id: 1,
-        order: 1,
-        mode: 'sync',
-        mode_display: 'Synchronous',
-        duration_slots: 2,
-      },
-    ],
-    prof_name: 'Angel Cruz',
-    subject_label: 'COSC 7',
-    section_name: '3-A',
-  },
-  {
-    id: 2,
-    prof: 1,
-    subject: 1,
-    section: 1,
-    term: 1,
-    meetings: [
-      {
-        id: 2,
-        order: 2,
-        mode: 'lab',
-        mode_display: 'Laboratory',
-        duration_slots: 4,
-      },
-    ],
-    prof_name: 'Angel Cruz',
-    subject_label: 'COSC 7',
-    section_name: '3-A',
-  },
-  {
-    id: 3,
-    prof: 1,
-    subject: 2,
-    section: 2,
-    term: 1,
-    meetings: [
-      {
-        id: 3,
-        order: 1,
-        mode: 'sync',
-        mode_display: 'Synchronous',
-        duration_slots: 2,
-      },
-    ],
-    prof_name: 'Angel Cruz',
-    subject_label: 'DCIT 5',
-    section_name: '2-B',
-  },
-  {
-    id: 4,
-    prof: 2,
-    subject: 3,
-    section: 1,
-    term: 1,
-    meetings: [
-      {
-        id: 4,
-        order: 1,
-        mode: 'sync',
-        mode_display: 'Synchronous',
-        duration_slots: 2,
-      },
-    ],
-    prof_name: 'Maria Santos',
-    subject_label: 'MATH 10',
-    section_name: '3-A',
-  },
-  {
-    id: 5,
-    prof: 2,
-    subject: 4,
-    section: 3,
-    term: 1,
-    meetings: [
-      {
-        id: 5,
-        order: 1,
-        mode: 'sync',
-        mode_display: 'Synchronous',
-        duration_slots: 2,
-      },
-    ],
-    prof_name: 'Maria Santos',
-    subject_label: 'GNED 12',
-    section_name: '1-C',
-  },
-  {
-    id: 6,
-    prof: 3,
-    subject: 5,
-    section: 2,
-    term: 1,
-    meetings: [
-      {
-        id: 6,
-        order: 1,
-        mode: 'sync',
-        mode_display: 'Synchronous',
-        duration_slots: 2,
-      },
-    ],
-    prof_name: 'Robert Reyes',
-    subject_label: 'PHYS 3',
-    section_name: '2-B',
-  },
-  {
-    id: 7,
-    prof: 3,
-    subject: 5,
-    section: 2,
-    term: 1,
-    meetings: [
-      {
-        id: 7,
-        order: 2,
-        mode: 'lab',
-        mode_display: 'Laboratory',
-        duration_slots: 4,
-      },
-    ],
-    prof_name: 'Robert Reyes',
-    subject_label: 'PHYS 3',
-    section_name: '2-B',
-  },
-];
+type AssignmentMeetingRow = {
+  assignment: CourseAssignmentDetail;
+  meeting: CourseAssignmentMeeting;
+};
 
 export default function RegistrarTeacherAssignment() {
   const { teacherId } = useParams<{ teacherId: string }>();
   const id = teacherId ? Number(teacherId) : undefined;
 
-  // Mock example data (retained for testing / offline use)
-  const mockAssignments: CourseAssignmentDetail[] = exampleAssignments.filter(
-    (a) => a.prof === id
-  );
-  const mockTeacher = exampleTeachers.find((t) => t.id === id);
-
-  const teacherAssignments: CourseAssignmentDetail[] = mockAssignments;
-  const teacher = mockTeacher;
-
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedAssignment, setSelectedAssignment] =
-    useState<CourseAssignmentDetail | null>(null);
+  const [selectedRow, setSelectedRow] = useState<AssignmentMeetingRow | null>(
+    null
+  );
   const [notification, setNotification] = useState<{
     type: 'success' | 'error';
     message: string;
   } | null>(null);
 
-  const openModal = (assignment: CourseAssignmentDetail) => {
-    setSelectedAssignment(assignment);
+  const {
+    data: teachers = [],
+    isLoading: teachersLoading,
+    isError: teachersError,
+  } = useTeachers({ enabled: true });
+  const {
+    data: assignments = [],
+    isLoading: assignmentsLoading,
+    isError: assignmentsError,
+  } = useCourseAssignmentsByTeacher({
+    teacherId: id,
+    enabled: id !== undefined,
+  });
+  const { data: schedules = [], isLoading: schedulesLoading } = useAllSchedules({
+    enabled: id !== undefined,
+  });
+  const { data: runs = [], isLoading: runsLoading } = useScheduleRuns({
+    enabled: id !== undefined,
+  });
+  const { data: rooms = [] } = useRooms({ enabled: true });
+  const createSchedule = useCreateRegistrarSchedule();
+
+  const teacher = teachers.find((candidate) => candidate.id === id);
+  // Prefer a run for the open assignment's term; the newest run globally may
+  // belong to a different term.
+  const activeRun =
+    runs.find((run) => run.term === selectedRow?.assignment.term) ?? runs[0];
+
+  const rows = useMemo<AssignmentMeetingRow[]>(
+    () =>
+      assignments.flatMap((assignment) =>
+        (assignment.meetings ?? []).map((meeting) => ({
+          assignment,
+          meeting,
+        }))
+      ),
+    [assignments]
+  );
+
+  const isMeetingScheduled = (assignmentId: number, mode: string) =>
+    schedules.some(
+      (schedule) =>
+        schedule.assignment === assignmentId &&
+        (!schedule.mode || schedule.mode === mode)
+    );
+
+  const openModal = (row: AssignmentMeetingRow) => {
+    setSelectedRow(row);
     setIsModalOpen(true);
     setNotification(null);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
-    setSelectedAssignment(null);
+    setSelectedRow(null);
   };
 
-  const handleSchedule = async (payload: {
-    course_assignment: number;
-    course_component: number;
-    room: number;
-    start_time: string;
-    day_of_week: number;
-  }) => {
+  const handleSchedule = async (payload: ScheduleCreatePayload) => {
+    if (!activeRun) {
+      setNotification({
+        type: 'error',
+        message:
+          'No schedule run is available. Generate a schedule before assigning classes.',
+      });
+      return;
+    }
+
     try {
-      await scheduleService.createSchedule(payload);
+      await createSchedule.mutateAsync({ runId: activeRun.id, payload });
       setNotification({
         type: 'success',
         message: 'Schedule created successfully.',
@@ -409,6 +137,9 @@ export default function RegistrarTeacherAssignment() {
 
   const clearNotification = () => setNotification(null);
   const teacherName = teacher?.full_name ?? (id ? `Teacher #${id}` : null);
+  const isLoading =
+    teachersLoading || assignmentsLoading || schedulesLoading || runsLoading;
+  const isError = teachersError || assignmentsError;
 
   if (id === undefined) {
     return (
@@ -434,11 +165,11 @@ export default function RegistrarTeacherAssignment() {
         backTo='/registrar/teachers'
         backLabel='Back to teachers'
         eyebrow='Registrar'
-        title={teacherName}
+        title={teacherName ?? 'Teacher assignments'}
         description={
           teacher
-            ? `${teacher.department_name || 'Unassigned department'} · ${teacherAssignments.length} course assignment${
-                teacherAssignments.length === 1 ? '' : 's'
+            ? `${teacher.department_name || 'Unassigned department'} · ${assignments.length} course assignment${
+                assignments.length === 1 ? '' : 's'
               }`
             : 'Review course assignments and create class schedules.'
         }
@@ -466,13 +197,23 @@ export default function RegistrarTeacherAssignment() {
         </Alert>
       )}
 
-      {teacherAssignments.length === 0 ? (
+      {isLoading ? (
+        <LoadingState label='Loading teacher assignments…' />
+      ) : isError ? (
+        <Alert tone='danger' title='Unable to load teacher assignments'>
+          Please refresh the page or try again later.
+        </Alert>
+      ) : !teacher ? (
+        <EmptyState
+          icon={UserRoundX}
+          title='Teacher not found'
+          description='This teacher may have been removed. Choose another teacher from the list.'
+        />
+      ) : rows.length === 0 ? (
         <EmptyState
           icon={CheckCircle2}
           title='No assignments yet'
-          description={`No course assignments found for ${
-            teacher?.full_name ?? 'this teacher'
-          }.`}
+          description={`No course assignments found for ${teacher.full_name}.`}
         />
       ) : (
         <>
@@ -490,19 +231,20 @@ export default function RegistrarTeacherAssignment() {
                   </TR>
                 </THead>
                 <TBody>
-                  {teacherAssignments.map((assignment) => {
-                    const isScheduled = Boolean(assignment.meetings?.length);
+                  {rows.map(({ assignment, meeting }) => {
+                    const isScheduled = isMeetingScheduled(
+                      assignment.id,
+                      meeting.mode
+                    );
                     return (
-                      <TR key={assignment.id}>
-                        <TD className='font-medium'>
-                          {assignment.prof_name}
-                        </TD>
+                      <TR key={`${assignment.id}-${meeting.id}`}>
+                        <TD className='font-medium'>{assignment.prof_name}</TD>
                         <TD>{assignment.subject_label}</TD>
                         <TD className='text-text-secondary'>
                           {assignment.section_name}
                         </TD>
                         <TD className='text-text-secondary'>
-                          {assignment.meetings?.[0]?.mode_display ?? '—'}
+                          {meeting.mode_display} · {meeting.duration_slots}h
                         </TD>
                         <TD>
                           <Badge tone={isScheduled ? 'success' : 'neutral'}>
@@ -514,7 +256,7 @@ export default function RegistrarTeacherAssignment() {
                             variant='secondary'
                             size='sm'
                             icon={<CalendarPlus size={15} aria-hidden='true' />}
-                            onClick={() => openModal(assignment)}
+                            onClick={() => openModal({ assignment, meeting })}
                           >
                             {isScheduled ? 'Reschedule' : 'Schedule'}
                           </Button>
@@ -528,10 +270,13 @@ export default function RegistrarTeacherAssignment() {
           </div>
 
           <ul className='space-y-3 lg:hidden'>
-            {teacherAssignments.map((assignment) => {
-              const isScheduled = Boolean(assignment.meetings?.length);
+            {rows.map(({ assignment, meeting }) => {
+              const isScheduled = isMeetingScheduled(
+                assignment.id,
+                meeting.mode
+              );
               return (
-                <li key={assignment.id}>
+                <li key={`${assignment.id}-${meeting.id}`}>
                   <Card className='p-4'>
                     <div className='flex items-start justify-between gap-3'>
                       <div className='min-w-0'>
@@ -540,7 +285,7 @@ export default function RegistrarTeacherAssignment() {
                         </p>
                         <p className='mt-0.5 text-body-sm text-text-secondary'>
                           Section {assignment.section_name} ·{' '}
-                          {assignment.meetings?.[0]?.mode_display ?? 'No meeting'}
+                          {meeting.mode_display} · {meeting.duration_slots}h
                         </p>
                       </div>
                       <Badge tone={isScheduled ? 'success' : 'neutral'}>
@@ -554,7 +299,7 @@ export default function RegistrarTeacherAssignment() {
                       variant='secondary'
                       className='mt-4 w-full'
                       icon={<CalendarPlus size={16} aria-hidden='true' />}
-                      onClick={() => openModal(assignment)}
+                      onClick={() => openModal({ assignment, meeting })}
                     >
                       {isScheduled ? 'Reschedule' : 'Schedule'}
                     </Button>
@@ -566,12 +311,14 @@ export default function RegistrarTeacherAssignment() {
         </>
       )}
 
-      {isModalOpen && selectedAssignment && (
+      {isModalOpen && selectedRow && (
         <ScheduleModal
-          teacherId={selectedAssignment.prof}
-          component={exampleComponents[0]}
-          assignment={selectedAssignment}
-          rooms={exampleRooms}
+          teacherName={teacherName ?? `Teacher #${selectedRow.assignment.prof}`}
+          meeting={selectedRow.meeting}
+          assignment={selectedRow.assignment}
+          rooms={rooms}
+          activeRunId={activeRun?.id ?? null}
+          isSubmitting={createSchedule.isPending}
           onSchedule={handleSchedule}
           onClose={closeModal}
         />

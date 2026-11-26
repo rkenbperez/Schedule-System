@@ -98,3 +98,53 @@ class ScenarioBuilderTests(TestCase):
         self.assertEqual(scenario.meetings[1].mode, "async")
         self.assertEqual(scenario.meetings[2].duration_slots, 3)
         self.assertEqual(scenario.meetings[2].mode, "lab")
+
+    def test_room_type_inferred_from_database_name(self):
+        Room.objects.create(name="CS Computer Laboratory 1", capacity=40)
+        Room.objects.create(name="CS Lecture Room 1", capacity=40)
+        Room.objects.create(name="R203", capacity=40)
+
+        scenario = build_scenario()
+        room_types = {room.name: room.room_type for room in scenario.rooms}
+
+        self.assertEqual(room_types["CS Computer Laboratory 1"], "laboratory")
+        self.assertEqual(room_types["CS Lecture Room 1"], "lecture")
+        self.assertEqual(room_types["R203"], "general")
+
+    def test_lab_meeting_without_laboratory_room_is_unplaced(self):
+        from timetable.models import AvailabilityWindow
+
+        self._assignment([("lab", 3)])
+        for day in range(5):
+            AvailabilityWindow.objects.create(
+                prof=self.prof,
+                day=day,
+                start_time=time(8, 0),
+                end_time=time(17, 0),
+            )
+
+        scenario = build_scenario()
+        result = run("greedy", scenario)
+
+        self.assertFalse(result.feasible)
+        self.assertTrue(result.unplaced)
+
+    def test_lab_meeting_is_placed_when_laboratory_room_exists(self):
+        from timetable.models import AvailabilityWindow
+
+        Room.objects.create(name="CS Computer Laboratory 1", capacity=40)
+        self._assignment([("lab", 3)])
+        for day in range(5):
+            AvailabilityWindow.objects.create(
+                prof=self.prof,
+                day=day,
+                start_time=time(8, 0),
+                end_time=time(17, 0),
+            )
+
+        scenario = build_scenario()
+        result = run("greedy", scenario)
+
+        self.assertTrue(result.feasible, result.violations)
+        lab_room = next(r for r in scenario.rooms if r.name == "CS Computer Laboratory 1")
+        self.assertEqual(result.classes[0].room_id, lab_room.id)

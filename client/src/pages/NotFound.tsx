@@ -2,17 +2,12 @@
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Calendar } from 'lucide-react';
 import { useMe } from '../hooks/useAuth';
+import { dashboardPathFor } from '../utils/dashboardRoute';
 
 export default function NotFound() {
   const { data: user } = useMe({ enabled: true });
 
-  // Send each role to its own dashboard; everyone else lands on login.
-  const dashboardTo =
-    user?.role === 'registrar'
-      ? '/registrar/dashboard'
-      : user?.role === 'professor'
-        ? `/teacher/${user.username}`
-        : '/';
+  const dashboardTo = dashboardPathFor(user);
 
   return (
     <section className='flex min-h-screen items-center justify-center bg-surface-secondary px-4'>

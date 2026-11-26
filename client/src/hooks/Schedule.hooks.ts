@@ -140,6 +140,14 @@ export function useAllSchedules(opts?: { termId?: number | null; enabled?: boole
   });
 }
 
+export function useScheduleRuns(opts?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['schedule-runs'],
+    queryFn: () => scheduleService.getScheduleRuns(),
+    enabled: opts?.enabled ?? true,
+  });
+}
+
 export function useProfessorProfile(opts?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['professor-profile'],
@@ -200,6 +208,8 @@ export function useCreateRegistrarSchedule() {
     }) => scheduleService.createSchedule(runId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['all-schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['all-assignments'] });
+      queryClient.invalidateQueries({ queryKey: ['schedule-runs'] });
       queryClient.invalidateQueries({ queryKey: ['schedules'] });
       queryClient.invalidateQueries({ queryKey: ['course-assignments'] });
     },

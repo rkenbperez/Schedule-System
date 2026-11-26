@@ -296,6 +296,7 @@ class ScheduleGenerateTests(ApiTestCase):
         subject = Subject.objects.create(code="CC101", title="Intro", units=3)
         section = Section.objects.create(name="BSIT-3A", headcount=30)
         Room.objects.create(name="R101", capacity=40)
+        Room.objects.create(name="Lab 1", capacity=40)
         make_assignment(self.prof, subject, section, [("lab", 3), ("sync", 2)], term=self.term)
         AvailabilityWindow.objects.create(
             prof=self.prof, day=0, start_time=time(8, 0), end_time=time(17, 0)
@@ -311,6 +312,21 @@ class ScheduleGenerateTests(ApiTestCase):
         modes = sorted(run.classes.values_list("mode", flat=True))
         self.assertEqual(durations, [2, 3])
         self.assertEqual(modes, ["lab", "sync"])
+
+    def test_generate_lab_without_laboratory_room_is_infeasible(self):
+        subject = Subject.objects.create(code="CC101", title="Intro", units=3)
+        section = Section.objects.create(name="BSIT-3A", headcount=30)
+        Room.objects.create(name="R101", capacity=40)
+        make_assignment(self.prof, subject, section, [("lab", 3)], term=self.term)
+        AvailabilityWindow.objects.create(
+            prof=self.prof, day=0, start_time=time(8, 0), end_time=time(17, 0)
+        )
+        self.auth(self.reg_token)
+        response = self.client.post("/api/schedules/generate", {"algorithm": "greedy"})
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(response.data["feasible"])
+        self.assertEqual(response.data["class_count"], 0)
+        self.assertTrue(any("not placed" in v for v in response.data["violations"]))
 
 
 class AssignmentApiTests(ApiTestCase):
@@ -458,6 +474,31 @@ class AssignmentApiTests(ApiTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_assignment_response_includes_section_headcount(self):
+        subject_id, section_id = self._seed_ids()
+        self.auth(self.reg_token)
+        response = self.client.post(
+            "/api/assignments/",
+            self._payload(self.prof.id, subject_id, section_id, [{"mode": "sync"}]),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["section_headcount"], 30)
+
+
+class ProfessorMyAssignmentsTests(ApiTestCase):
+    def test_returns_section_headcount(self):
+        subject = Subject.objects.create(code="CC101", title="Intro", units=3)
+        section = Section.objects.create(name="BSIT-3A", headcount=37)
+        make_assignment(self.prof, subject, section, [("sync", 1)])
+
+        self.auth(self.prof_token)
+        response = self.client.get("/api/professor/me/assignments/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data[0]["section_headcount"], 37)
+        self.assertEqual(response.data[0]["section_name"], "BSIT-3A")
 
 
 class ScheduleViewTests(ApiTestCase):

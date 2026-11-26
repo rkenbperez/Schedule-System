@@ -53,7 +53,7 @@ import type {
   Course,
   Section,
 } from '../../types/Types';
-import { DAY_LABELS } from './registrarData';
+import { DAY_LABELS } from '../../types/Types';
 
 const cleanTeacherName = (name: string) => name.replace(/^demo_/, '');
 

@@ -12,6 +12,13 @@ import {
   SegmentedControl,
 } from '../../components/ui';
 import type { Schedule } from '../../types/Types';
+import {
+  TIMETABLE_START_HOUR,
+  formatHour,
+  formatTime,
+  placementFor,
+  timeToHours,
+} from '../../utils/timetableLayout';
 
 const DAYS = [
   { label: 'Monday', short: 'Mon' },
@@ -22,60 +29,27 @@ const DAYS = [
   { label: 'Saturday', short: 'Sat' },
 ];
 
-const START_HOUR = 7;
-const HOURS = Array.from({ length: 12 }, (_, index) => START_HOUR + index);
+const HOURS = Array.from(
+  { length: 12 },
+  (_, index) => TIMETABLE_START_HOUR + index
+);
 
 type DayFilter = 'all' | '0' | '1' | '2' | '3' | '4' | '5';
-
-function timeToHours(time: string): number {
-  const [hours, minutes = '0'] = time.split(':');
-
-  return Number(hours) + Number(minutes) / 60;
-}
-
-function formatHour(hour: number) {
-  const period = hour < 12 ? 'AM' : 'PM';
-  const whole = Math.floor(hour);
-  const minutes = Math.round((hour - whole) * 60);
-  const display = whole % 12 === 0 ? 12 : whole % 12;
-
-  return `${display}:${String(minutes).padStart(2, '0')} ${period}`;
-}
-
-function formatTime(time: string) {
-  return formatHour(timeToHours(time));
-}
-
-function placementFor(schedule: Schedule): {
-  dayColumn: number;
-  startRow: number;
-  endRow: number;
-} {
-  const startHour = timeToHours(schedule.start_time);
-  const endHour = schedule.end_time
-    ? timeToHours(schedule.end_time)
-    : startHour + 2;
-
-  return {
-    dayColumn: schedule.day + 2,
-    startRow: startHour - START_HOUR + 2,
-    endRow: endHour - START_HOUR + 2,
-  };
-}
 
 export default function TeacherSchedulesPage() {
   const { data: user } = useMe({ enabled: true });
   const teacherId = user?.professor?.id;
   const [dayFilter, setDayFilter] = useState<DayFilter>('all');
 
-  const mockSchedules: Schedule[] = [];
-
   const { data: schedules, isLoading, isError } = useSchedules({
     teacherId,
     enabled: !!teacherId,
   });
 
-  const resolvedSchedules: Schedule[] = schedules ?? mockSchedules;
+  const resolvedSchedules: Schedule[] = useMemo(
+    () => schedules ?? [],
+    [schedules]
+  );
 
   const sortedSchedules = useMemo(
     () =>
@@ -232,7 +206,7 @@ export default function TeacherSchedulesPage() {
                 className='grid gap-px bg-border'
                 style={{
                   gridTemplateColumns: '72px repeat(6, minmax(0, 1fr))',
-                  gridTemplateRows: `2.75rem repeat(${rowCount}, 4.5rem)`,
+                  gridTemplateRows: `2.75rem repeat(${rowCount}, 5rem)`,
                 }}
               >
                 <div className='sticky left-0 top-0 z-30 bg-surface' />
@@ -259,38 +233,40 @@ export default function TeacherSchedulesPage() {
 
                 {resolvedSchedules.map((schedule) => {
                   const placement = placementFor(schedule);
+                  const { isCompact, timeLabel: timeRange } = placement;
 
                   return (
                     <div
                       key={schedule.id}
-                      className='m-1 flex min-h-0 flex-col justify-between gap-1 overflow-hidden rounded-control border border-apple-green-300 bg-apple-green-50 p-2'
+                      className='m-1 flex min-h-0 min-w-0 flex-col justify-between gap-1 overflow-hidden rounded-control border border-apple-green-300 bg-apple-green-50 p-2 leading-tight'
                       style={{
                         gridColumn: placement.dayColumn,
-                        gridRow: `${placement.startRow} / ${placement.endRow}`,
+                        gridRow: `${placement.startRow} / span ${placement.rowSpan}`,
                       }}
-                      title={`${schedule.subject_label} · Section ${schedule.section_name} · ${schedule.room_name}`}
+                      title={`${schedule.subject_label} · Section ${schedule.section_name} · ${timeRange} · ${schedule.room_name}`}
                     >
-                      <div className='min-h-0'>
+                      <div className='min-h-0 min-w-0'>
                         <div className='flex items-start justify-between gap-1'>
-                          <p className='truncate text-caption font-semibold text-apple-green-900'>
+                          <p className='truncate text-caption font-semibold leading-tight text-apple-green-900'>
                             {schedule.subject_label}
                           </p>
-                          <span className='shrink-0 text-caption font-medium text-apple-green-700'>
+                          <span className='shrink-0 text-caption font-medium leading-tight text-apple-green-700'>
                             {schedule.mode_display}
                           </span>
                         </div>
-                        <p className='truncate text-caption text-apple-green-800'>
+                        <p className='truncate text-caption leading-tight text-apple-green-800'>
                           Section {schedule.section_name}
                         </p>
-                        <p className='truncate text-caption text-apple-green-700'>
-                          {schedule.room_name}
-                        </p>
+                        {!isCompact && (
+                          <p className='truncate text-caption leading-tight text-apple-green-700'>
+                            {schedule.room_name}
+                          </p>
+                        )}
                       </div>
-                      <p className='text-caption font-medium text-apple-green-900'>
-                        {formatTime(schedule.start_time)}
-                        {schedule.end_time
-                          ? ` – ${formatTime(schedule.end_time)}`
-                          : ''}
+                      <p className='truncate text-caption font-medium leading-tight text-apple-green-900'>
+                        {isCompact
+                          ? `${timeRange} • ${schedule.room_name}`
+                          : timeRange}
                       </p>
                     </div>
                   );

@@ -12,12 +12,22 @@ from timetable.engines.scenario import (
     Placement,
     RoomRef,
     Scenario,
+    room_type_from_name,
 )
 from timetable.engines.scoring import soft_score
 from timetable.engines.slots import _daily_used
 
 
-def _meeting(mid, prof_id, duration=1, section_id=1, headcount=20, subject="CC101", department=""):
+def _meeting(
+    mid,
+    prof_id,
+    duration=1,
+    section_id=1,
+    headcount=20,
+    subject="CC101",
+    department="",
+    mode="",
+):
     return Meeting(
         meeting_id=mid,
         assignment_id=mid,
@@ -29,11 +39,18 @@ def _meeting(mid, prof_id, duration=1, section_id=1, headcount=20, subject="CC10
         section_headcount=headcount,
         duration_slots=duration,
         department=department,
+        mode=mode,
     )
 
 
-def _room(rid, capacity=30, department=""):
-    return RoomRef(id=rid, name=f"R{rid}", capacity=capacity, department=department)
+def _room(rid, capacity=30, department="", name=None, room_type=""):
+    return RoomRef(
+        id=rid,
+        name=name or f"R{rid}",
+        capacity=capacity,
+        department=department,
+        room_type=room_type,
+    )
 
 
 def _loose_scenario():
@@ -356,3 +373,54 @@ class DepartmentSolverTests(SimpleTestCase):
     def test_department_match_is_case_insensitive(self):
         result = run("greedy", _department_scenario("cs", "CS"))
         self.assertTrue(result.feasible, result.violations)
+
+
+def _room_type_scenario(mode, room_name):
+    rooms = [_room(1, 40, name=room_name)]
+    meetings = [_meeting(1, prof_id=1, mode=mode)]
+    availability = [
+        Availability(prof_id=1, day=day, start=8 * 60, end=17 * 60) for day in range(5)
+    ]
+    return Scenario(rooms=rooms, meetings=meetings, availability=availability)
+
+
+class RoomTypeTests(SimpleTestCase):
+    def test_room_type_inferred_from_name(self):
+        self.assertEqual(room_type_from_name("CS Computer Laboratory 1"), "laboratory")
+        self.assertEqual(room_type_from_name("Lab 202"), "laboratory")
+        self.assertEqual(room_type_from_name("CS Lecture Room 1"), "lecture")
+        self.assertEqual(room_type_from_name("R201"), "general")
+
+    def test_lab_meeting_requires_laboratory_room_for_every_engine(self):
+        for algorithm in ("greedy", "backtracking", "min_conflicts"):
+            with self.subTest(algorithm=algorithm):
+                result = run(algorithm, _room_type_scenario("lab", "R201"), seed=0)
+                self.assertFalse(result.feasible, result.violations)
+                self.assertTrue(result.unplaced)
+
+    def test_lab_meeting_is_placed_in_laboratory(self):
+        for algorithm in ("greedy", "backtracking", "min_conflicts"):
+            with self.subTest(algorithm=algorithm):
+                result = run(algorithm, _room_type_scenario("lab", "Lab 1"), seed=0)
+                self.assertTrue(result.feasible, result.violations)
+                self.assertEqual(len(result.classes), 1)
+                self.assertEqual(result.classes[0].room_id, 1)
+
+    def test_sync_meeting_is_rejected_from_laboratory_only(self):
+        result = run("greedy", _room_type_scenario("sync", "Lab 1"))
+        self.assertFalse(result.feasible)
+        self.assertTrue(result.unplaced)
+
+    def test_async_meeting_may_use_laboratory(self):
+        result = run("greedy", _room_type_scenario("async", "Lab 1"))
+        self.assertTrue(result.feasible, result.violations)
+
+    def test_sync_meeting_may_use_general_room(self):
+        result = run("greedy", _room_type_scenario("sync", "R201"))
+        self.assertTrue(result.feasible, result.violations)
+
+    def test_mismatched_room_type_reported_as_violation(self):
+        scenario = _room_type_scenario("lab", "R201")
+        placed = {1: Placement(meeting_id=1, day=0, start=8 * 60, room_id=1)}
+        violations = hard_violations(scenario, placed)
+        self.assertTrue(any("room type" in v for v in violations), violations)
