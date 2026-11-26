@@ -4,7 +4,7 @@ import time
 from typing import Dict, List
 
 from . import backtracking, greedy, min_conflicts
-from .constraints import hard_violations
+from .constraints import hard_violations, soft_violations
 from .scenario import Placement, PlacedClass, RunResult, Scenario
 from .scoring import soft_score
 
@@ -61,6 +61,8 @@ def run(
 
     unplaced = [m.meeting_id for m in scenario.meetings if m.meeting_id not in placed]
 
+    warnings = soft_violations(scenario, placed)
+
     return RunResult(
         algorithm=algorithm,
         feasible=feasible,
@@ -68,6 +70,7 @@ def run(
         soft_score=soft_score_value,
         classes=classes,
         violations=violations,
+        warnings=warnings,
         unplaced=unplaced,
         breakdown=breakdown,
     )

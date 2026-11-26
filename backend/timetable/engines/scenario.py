@@ -135,7 +135,7 @@ class Placement:
     meeting_id: int
     day: int
     start: int
-    room_id: int
+    room_id: Optional[int] = None
 
 
 @dataclass
@@ -147,7 +147,7 @@ class PlacedClass:
     day: int
     start: int
     duration_slots: int
-    room_id: int
+    room_id: Optional[int] = None
     mode: str = ""
 
 
@@ -159,5 +159,6 @@ class RunResult:
     soft_score: Optional[float] = None
     classes: List[PlacedClass] = field(default_factory=list)
     violations: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
     unplaced: List[int] = field(default_factory=list)
     breakdown: Dict[str, float] = field(default_factory=dict)

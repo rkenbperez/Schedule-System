@@ -63,6 +63,46 @@ def _dataset(scale):
     """
     departments = ["CS", "IT", "MATH", "GE"]
 
+    # Real professor names by department
+    prof_names = {
+        # CS Professors
+        "dr_cruz": "Dr. Maria Cruz",
+        "dr_santos": "Dr. Jose Santos",
+        "dr_reyes": "Dr. Ana Reyes",
+        "dr_garcia": "Dr. Carlos Garcia",
+        "dr_mendoza": "Dr. Luisa Mendoza",
+        "dr_lopez": "Dr. Pedro Lopez",
+        "dr_torres": "Dr. Sofia Torres",
+        "dr_ramos": "Dr. Miguel Ramos",
+        # IT Professors
+        "prof_delacruz": "Prof. Juan Dela Cruz",
+        "prof_fernandez": "Prof. Maria Fernandez",
+        "prof_gonzales": "Prof. Rafael Gonzales",
+        "prof_bautista": "Prof. Carmen Bautista",
+        "prof_villanueva": "Prof. Antonio Villanueva",
+        # MATH Professors
+        "dr_lim": "Dr. Robert Lim",
+        "dr_chua": "Dr. Grace Chua",
+        "dr_ong": "Dr. Michael Ong",
+        "dr_tan": "Dr. Patricia Tan",
+        "dr_sy": "Dr. Edward Sy",
+        # GE Professors
+        "prof_martinez": "Prof. Elena Martinez",
+        "prof_rodriguez": "Prof. Fernando Rodriguez",
+        "prof_hernandez": "Prof. Isabel Hernandez",
+        "prof_castillo": "Prof. Ricardo Castillo",
+    }
+
+    # Map usernames to departments
+    prof_dept = {
+        "dr_cruz": "CS", "dr_santos": "CS", "dr_reyes": "CS", "dr_garcia": "CS",
+        "dr_mendoza": "CS", "dr_lopez": "CS", "dr_torres": "CS", "dr_ramos": "CS",
+        "prof_delacruz": "IT", "prof_fernandez": "IT", "prof_gonzales": "IT",
+        "prof_bautista": "IT", "prof_villanueva": "IT",
+        "dr_lim": "MATH", "dr_chua": "MATH", "dr_ong": "MATH", "dr_tan": "MATH", "dr_sy": "MATH",
+        "prof_martinez": "GE", "prof_rodriguez": "GE", "prof_hernandez": "GE", "prof_castillo": "GE",
+    }
+
     normal = {
         "subjects": [
             ("CC101", "Programming Fundamentals"),
@@ -107,50 +147,65 @@ def _dataset(scale):
             ("GEC2", 45, "GE"),
         ],
         "availability": {
-            "demo_prof1": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
-            "demo_prof2": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
-            "demo_prof3": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
-            "demo_prof4": [(d, "08:00:00", "18:00:00", True) for d in range(5)],
-            "demo_prof5": [(d, "07:00:00", "17:00:00", True) for d in range(5)],
-            "demo_prof6": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
-            "demo_prof10": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "dr_cruz": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "dr_santos": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "dr_reyes": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "dr_garcia": [(d, "08:00:00", "18:00:00", True) for d in range(5)],
+            "dr_mendoza": [(d, "07:00:00", "17:00:00", True) for d in range(5)],
+            "dr_lopez": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "dr_torres": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "dr_ramos": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "prof_delacruz": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "prof_fernandez": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "prof_gonzales": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "prof_bautista": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "prof_villanueva": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "dr_lim": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "dr_chua": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "dr_ong": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "dr_tan": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "dr_sy": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "prof_martinez": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "prof_rodriguez": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "prof_hernandez": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "prof_castillo": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
         },
         "loads": [
-            ("demo_prof1", "CC101", "BSIT-3A", [("sync", 1), ("async", 1)]),
-            ("demo_prof1", "CC102", "BSCS-3A", [("sync", 2)]),
-            ("demo_prof1", "CC104", "BSCS-4A", [("lab", 1), ("async", 1)]),
-            ("demo_prof4", "CS201", "BSCS-2A", [("sync", 1), ("lab", 1)]),
-            ("demo_prof4", "CC103", "BSIT-4A", [("sync", 1), ("async", 1)]),
-            ("demo_prof4", "CC101", "BSIT-2A", [("sync", 1)]),
-            ("demo_prof2", "IT101", "BSIT-3A", [("sync", 1), ("sync", 1)]),
-            ("demo_prof2", "IT102", "BSIT-2B", [("lab", 1)]),
-            ("demo_prof2", "IT103", "BSIT-2A", [("async", 1), ("sync", 1)]),
-            ("demo_prof5", "IT102", "BSIT-4A", [("sync", 2)]),
-            ("demo_prof5", "IT101", "BSIT-3B", [("sync", 1), ("async", 1)]),
-            ("demo_prof5", "IT103", "BSCS-3A", [("sync", 1), ("lab", 1)]),
-            ("demo_prof3", "MATH101", "BSCS-2A", [("sync", 1)]),
-            ("demo_prof3", "MATH201", "BSIT-3A", [("sync", 1), ("lab", 1)]),
-            ("demo_prof3", "MATH202", "BSCS-3A", [("sync", 2), ("async", 1)]),
-            ("demo_prof6", "MATH203", "BSIT-2B", [("sync", 1), ("sync", 1)]),
-            ("demo_prof6", "MATH101", "BSIT-4A", [("lab", 1)]),
-            ("demo_prof6", "MATH201", "BSIT-2A", [("sync", 1), ("async", 1)]),
-            ("demo_prof1", "CC101", "BSIT-1A", [("sync", 1), ("lab", 1)]),
-            ("demo_prof4", "CC102", "BSCS-1A", [("sync", 1), ("async", 1)]),
-            ("demo_prof3", "MATH101", "BSIT-1A", [("sync", 1), ("sync", 1)]),
-            ("demo_prof6", "MATH203", "BSCS-1A", [("sync", 1), ("sync", 1)]),
-            ("demo_prof2", "IT101", "BSIT-1A", [("sync", 1)]),
-            ("demo_prof5", "IT102", "BSCS-1A", [("lab", 1)]),
-            ("demo_prof10", "GEC101", "BSIT-1A", [("sync", 1)]),
-            ("demo_prof10", "GEC101", "BSCS-1A", [("sync", 1)]),
-            ("demo_prof10", "GEC102", "BSIT-1A", [("sync", 1), ("async", 1)]),
-            ("demo_prof10", "GEC102", "BSCS-1A", [("sync", 1), ("async", 1)]),
-            ("demo_prof10", "GEC103", "BSIT-2A", [("sync", 1)]),
-            ("demo_prof10", "GEC103", "BSIT-2B", [("sync", 1)]),
-            ("demo_prof10", "GEC104", "BSCS-2A", [("sync", 1)]),
-            ("demo_prof10", "PE101", "BSIT-1A", [("sync", 1)]),
-            ("demo_prof10", "PE101", "BSCS-1A", [("sync", 1)]),
-            ("demo_prof10", "NSTP101", "BSIT-1A", [("sync", 1)]),
-            ("demo_prof10", "NSTP101", "BSCS-1A", [("sync", 1)]),
+            ("dr_cruz", "CC101", "BSIT-3A", [("sync", 1), ("async", 1)]),
+            ("dr_cruz", "CC102", "BSCS-3A", [("sync", 2)]),
+            ("dr_cruz", "CC104", "BSCS-4A", [("lab", 1), ("async", 1)]),
+            ("dr_garcia", "CS201", "BSCS-2A", [("sync", 1), ("lab", 1)]),
+            ("dr_garcia", "CC103", "BSIT-4A", [("sync", 1), ("async", 1)]),
+            ("dr_garcia", "CC101", "BSIT-2A", [("sync", 1)]),
+            ("dr_santos", "IT101", "BSIT-3A", [("sync", 1), ("sync", 1)]),
+            ("dr_santos", "IT102", "BSIT-2B", [("lab", 1)]),
+            ("dr_santos", "IT103", "BSIT-2A", [("async", 1), ("sync", 1)]),
+            ("dr_mendoza", "IT102", "BSIT-4A", [("sync", 2)]),
+            ("dr_mendoza", "IT101", "BSIT-3B", [("sync", 1), ("async", 1)]),
+            ("dr_mendoza", "IT103", "BSCS-3A", [("sync", 1), ("lab", 1)]),
+            ("dr_reyes", "MATH101", "BSCS-2A", [("sync", 1)]),
+            ("dr_reyes", "MATH201", "BSIT-3A", [("sync", 1), ("lab", 1)]),
+            ("dr_reyes", "MATH202", "BSCS-3A", [("sync", 2), ("async", 1)]),
+            ("dr_lopez", "MATH203", "BSIT-2B", [("sync", 1), ("sync", 1)]),
+            ("dr_lopez", "MATH101", "BSIT-4A", [("lab", 1)]),
+            ("dr_lopez", "MATH201", "BSIT-2A", [("sync", 1), ("async", 1)]),
+            ("dr_cruz", "CC101", "BSIT-1A", [("sync", 1), ("lab", 1)]),
+            ("dr_garcia", "CC102", "BSCS-1A", [("sync", 1), ("async", 1)]),
+            ("dr_reyes", "MATH101", "BSIT-1A", [("sync", 1), ("sync", 1)]),
+            ("dr_lopez", "MATH203", "BSCS-1A", [("sync", 1), ("sync", 1)]),
+            ("dr_santos", "IT101", "BSIT-1A", [("sync", 1)]),
+            ("dr_mendoza", "IT102", "BSCS-1A", [("lab", 1)]),
+            ("prof_martinez", "GEC101", "BSIT-1A", [("sync", 1)]),
+            ("prof_martinez", "GEC101", "BSCS-1A", [("sync", 1)]),
+            ("prof_rodriguez", "GEC102", "BSIT-1A", [("sync", 1), ("async", 1)]),
+            ("prof_rodriguez", "GEC102", "BSCS-1A", [("sync", 1), ("async", 1)]),
+            ("prof_hernandez", "GEC103", "BSIT-2A", [("sync", 1)]),
+            ("prof_hernandez", "GEC103", "BSIT-2B", [("sync", 1)]),
+            ("prof_castillo", "GEC104", "BSCS-2A", [("sync", 1)]),
+            ("prof_martinez", "PE101", "BSIT-1A", [("sync", 1)]),
+            ("prof_martinez", "PE101", "BSCS-1A", [("sync", 1)]),
+            ("prof_rodriguez", "NSTP101", "BSIT-1A", [("sync", 1)]),
+            ("prof_rodriguez", "NSTP101", "BSCS-1A", [("sync", 1)]),
         ],
     }
 
@@ -184,30 +239,30 @@ def _dataset(scale):
         ],
         "availability": {
             **normal["availability"],
-            "demo_prof7": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
-            "demo_prof8": [(d, "09:00:00", "18:00:00", True) for d in range(5)],
-            "demo_prof9": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
-            "demo_prof11": [(d, "07:00:00", "17:00:00", True) for d in range(5)],
+            "dr_torres": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "dr_ramos": [(d, "09:00:00", "18:00:00", True) for d in range(5)],
+            "prof_villanueva": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "prof_castillo": [(d, "07:00:00", "17:00:00", True) for d in range(5)],
         },
         "loads": normal["loads"]
         + [
-            ("demo_prof7", "CC104", "BSIT-3B", [("sync", 2)]),
-            ("demo_prof7", "CS202", "BSCS-2B", [("sync", 1), ("lab", 1), ("async", 1)]),
-            ("demo_prof7", "CS203", "BSCS-4A", [("sync", 1), ("sync", 1)]),
-            ("demo_prof7", "CC102", "BSCS-1B", [("sync", 1), ("async", 1)]),
-            ("demo_prof8", "IT104", "BSIT-1A", [("sync", 1), ("lab", 1)]),
-            ("demo_prof8", "IT105", "BSIT-1B", [("sync", 2), ("async", 1)]),
-            ("demo_prof8", "IT101", "BSIT-4B", [("sync", 1)]),
-            ("demo_prof9", "MATH204", "BSIT-1A", [("sync", 1), ("lab", 1)]),
-            ("demo_prof9", "MATH202", "BSIT-1B", [("sync", 1), ("async", 1)]),
-            ("demo_prof9", "MATH203", "BSIT-4B", [("sync", 2)]),
-            ("demo_prof11", "GEC101", "BSIT-1B", [("sync", 1)]),
-            ("demo_prof11", "GEC101", "BSCS-1B", [("sync", 1)]),
-            ("demo_prof11", "GEC102", "BSIT-1B", [("sync", 1), ("async", 1)]),
-            ("demo_prof11", "GEC103", "BSCS-1B", [("sync", 1)]),
-            ("demo_prof11", "GEC104", "BSCS-2B", [("sync", 1)]),
-            ("demo_prof11", "PE101", "BSIT-1B", [("sync", 1)]),
-            ("demo_prof11", "NSTP101", "BSCS-1B", [("sync", 1)]),
+            ("dr_torres", "CC104", "BSIT-3B", [("sync", 2)]),
+            ("dr_torres", "CS202", "BSCS-2B", [("sync", 1), ("lab", 1), ("async", 1)]),
+            ("dr_torres", "CS203", "BSCS-4A", [("sync", 1), ("sync", 1)]),
+            ("dr_torres", "CC102", "BSCS-1B", [("sync", 1), ("async", 1)]),
+            ("dr_ramos", "IT104", "BSIT-1A", [("sync", 1), ("lab", 1)]),
+            ("dr_ramos", "IT105", "BSIT-1B", [("sync", 2), ("async", 1)]),
+            ("dr_ramos", "IT101", "BSIT-4B", [("sync", 1)]),
+            ("prof_villanueva", "MATH204", "BSIT-1A", [("sync", 1), ("lab", 1)]),
+            ("prof_villanueva", "MATH202", "BSIT-1B", [("sync", 1), ("async", 1)]),
+            ("prof_villanueva", "MATH203", "BSIT-4B", [("sync", 2)]),
+            ("prof_castillo", "GEC101", "BSIT-1B", [("sync", 1)]),
+            ("prof_castillo", "GEC101", "BSCS-1B", [("sync", 1)]),
+            ("prof_hernandez", "GEC102", "BSIT-1B", [("sync", 1), ("async", 1)]),
+            ("prof_hernandez", "GEC103", "BSCS-1B", [("sync", 1)]),
+            ("prof_hernandez", "GEC104", "BSCS-2B", [("sync", 1)]),
+            ("prof_castillo", "PE101", "BSIT-1B", [("sync", 1)]),
+            ("prof_castillo", "NSTP101", "BSCS-1B", [("sync", 1)]),
         ],
     }
 
@@ -253,119 +308,123 @@ def _dataset(scale):
         ],
         "availability": {
             **large["availability"],
-            "demo_prof12": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
-            "demo_prof13": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
-            "demo_prof14": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
-            "demo_prof15": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "dr_reyes": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "dr_garcia": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "prof_bautista": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "prof_fernandez": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "dr_lim": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "dr_chua": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "dr_ong": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
+            "dr_tan": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
         },
         "loads": large["loads"]
         + [
             # BSIT-1C (34 students) - 1st year
-            ("demo_prof1", "CC101", "BSIT-1C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof2", "IT101", "BSIT-1C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof3", "MATH101", "BSIT-1C", [("sync", 2), ("sync", 2)]),
-            ("demo_prof10", "GEC101", "BSIT-1C", [("sync", 2)]),
-            ("demo_prof10", "GEC102", "BSIT-1C", [("sync", 2), ("async", 1)]),
-            ("demo_prof10", "PE101", "BSIT-1C", [("sync", 2)]),
-            ("demo_prof10", "NSTP101", "BSIT-1C", [("sync", 2)]),
-            ("demo_prof12", "CS204", "BSIT-1C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof13", "IT106", "BSIT-1C", [("sync", 2), ("lab", 3)]),
+            ("dr_cruz", "CC101", "BSIT-1C", [("sync", 2), ("lab", 3)]),
+            ("dr_santos", "IT101", "BSIT-1C", [("sync", 2), ("lab", 3)]),
+            ("dr_reyes", "MATH101", "BSIT-1C", [("sync", 2), ("sync", 2)]),
+            ("prof_martinez", "GEC101", "BSIT-1C", [("sync", 2)]),
+            ("prof_rodriguez", "GEC102", "BSIT-1C", [("sync", 2), ("async", 1)]),
+            ("prof_martinez", "PE101", "BSIT-1C", [("sync", 2)]),
+            ("prof_rodriguez", "NSTP101", "BSIT-1C", [("sync", 2)]),
+            ("dr_garcia", "CS204", "BSIT-1C", [("sync", 2), ("lab", 3)]),
+            ("prof_bautista", "IT106", "BSIT-1C", [("sync", 2), ("lab", 3)]),
 
             # BSIT-2C (32 students) - 2nd year
-            ("demo_prof2", "IT102", "BSIT-2C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof2", "IT103", "BSIT-2C", [("async", 1), ("sync", 2)]),
-            ("demo_prof3", "MATH201", "BSIT-2C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof4", "CC103", "BSIT-2C", [("sync", 2), ("async", 1)]),
-            ("demo_prof10", "GEC103", "BSIT-2C", [("sync", 2)]),
-            ("demo_prof10", "GEC104", "BSIT-2C", [("sync", 2)]),
-            ("demo_prof10", "PE101", "BSIT-2C", [("sync", 2)]),
-            ("demo_prof10", "NSTP101", "BSIT-2C", [("sync", 2)]),
-            ("demo_prof13", "IT107", "BSIT-2C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof14", "IT108", "BSIT-2C", [("sync", 2), ("lab", 3)]),
+            ("dr_santos", "IT102", "BSIT-2C", [("sync", 2), ("lab", 3)]),
+            ("dr_santos", "IT103", "BSIT-2C", [("async", 1), ("sync", 2)]),
+            ("dr_reyes", "MATH201", "BSIT-2C", [("sync", 2), ("lab", 3)]),
+            ("dr_garcia", "CC103", "BSIT-2C", [("sync", 2), ("async", 1)]),
+            ("prof_hernandez", "GEC103", "BSIT-2C", [("sync", 2)]),
+            ("prof_castillo", "GEC104", "BSIT-2C", [("sync", 2)]),
+            ("prof_martinez", "PE101", "BSIT-2C", [("sync", 2)]),
+            ("prof_rodriguez", "NSTP101", "BSIT-2C", [("sync", 2)]),
+            ("prof_bautista", "IT107", "BSIT-2C", [("sync", 2), ("lab", 3)]),
+            ("prof_fernandez", "IT108", "BSIT-2C", [("sync", 2), ("lab", 3)]),
 
             # BSIT-3C (31 students) - 3rd year
-            ("demo_prof1", "CC104", "BSIT-3C", [("lab", 3), ("async", 1)]),
-            ("demo_prof2", "IT104", "BSIT-3C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof2", "IT105", "BSIT-3C", [("sync", 2), ("async", 1)]),
-            ("demo_prof3", "MATH301", "BSIT-3C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof4", "CC104", "BSIT-3C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof5", "IT106", "BSIT-3C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof7", "CS205", "BSIT-3C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof14", "IT107", "BSIT-3C", [("sync", 2), ("lab", 3)]),
+            ("dr_cruz", "CC104", "BSIT-3C", [("lab", 3), ("async", 1)]),
+            ("dr_santos", "IT104", "BSIT-3C", [("sync", 2), ("lab", 3)]),
+            ("dr_santos", "IT105", "BSIT-3C", [("sync", 2), ("async", 1)]),
+            ("dr_lim", "MATH301", "BSIT-3C", [("sync", 2), ("lab", 3)]),
+            ("dr_garcia", "CC104", "BSIT-3C", [("sync", 2), ("lab", 3)]),
+            ("dr_mendoza", "IT106", "BSIT-3C", [("sync", 2), ("lab", 3)]),
+            ("dr_torres", "CS205", "BSIT-3C", [("sync", 2), ("lab", 3)]),
+            ("prof_fernandez", "IT107", "BSIT-3C", [("sync", 2), ("lab", 3)]),
 
             # BSIT-4C (29 students) - 4th year
-            ("demo_prof1", "CC107", "BSIT-4C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof2", "IT108", "BSIT-4C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof3", "MATH302", "BSIT-4C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof4", "CC105", "BSIT-4C", [("sync", 2), ("async", 1)]),
-            ("demo_prof5", "IT106", "BSIT-4C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof7", "CS206", "BSIT-4C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof12", "CS207", "BSIT-4C", [("sync", 2), ("lab", 3), ("async", 1)]),
-            ("demo_prof13", "IT108", "BSIT-4C", [("sync", 2), ("lab", 3)]),
+            ("dr_cruz", "CC107", "BSIT-4C", [("sync", 2), ("lab", 3)]),
+            ("dr_santos", "IT108", "BSIT-4C", [("sync", 2), ("lab", 3)]),
+            ("dr_chua", "MATH302", "BSIT-4C", [("sync", 2), ("lab", 3)]),
+            ("dr_garcia", "CC105", "BSIT-4C", [("sync", 2), ("async", 1)]),
+            ("dr_mendoza", "IT106", "BSIT-4C", [("sync", 2), ("lab", 3)]),
+            ("dr_torres", "CS206", "BSIT-4C", [("sync", 2), ("lab", 3)]),
+            ("dr_lim", "CS207", "BSIT-4C", [("sync", 2), ("lab", 3), ("async", 1)]),
+            ("prof_bautista", "IT108", "BSIT-4C", [("sync", 2), ("lab", 3)]),
 
             # BSCS-1C (31 students) - 1st year
-            ("demo_prof1", "CC101", "BSCS-1C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof2", "IT101", "BSCS-1C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof3", "MATH101", "BSCS-1C", [("sync", 2), ("sync", 2)]),
-            ("demo_prof4", "CC102", "BSCS-1C", [("sync", 2), ("async", 1)]),
-            ("demo_prof10", "GEC101", "BSCS-1C", [("sync", 2)]),
-            ("demo_prof10", "GEC102", "BSCS-1C", [("sync", 2), ("async", 1)]),
-            ("demo_prof10", "PE101", "BSCS-1C", [("sync", 2)]),
-            ("demo_prof10", "NSTP101", "BSCS-1C", [("sync", 2)]),
-            ("demo_prof12", "CS204", "BSCS-1C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof13", "IT106", "BSCS-1C", [("sync", 2), ("lab", 3)]),
+            ("dr_cruz", "CC101", "BSCS-1C", [("sync", 2), ("lab", 3)]),
+            ("dr_santos", "IT101", "BSCS-1C", [("sync", 2), ("lab", 3)]),
+            ("dr_reyes", "MATH101", "BSCS-1C", [("sync", 2), ("sync", 2)]),
+            ("dr_garcia", "CC102", "BSCS-1C", [("sync", 2), ("async", 1)]),
+            ("prof_martinez", "GEC101", "BSCS-1C", [("sync", 2)]),
+            ("prof_rodriguez", "GEC102", "BSCS-1C", [("sync", 2), ("async", 1)]),
+            ("prof_martinez", "PE101", "BSCS-1C", [("sync", 2)]),
+            ("prof_rodriguez", "NSTP101", "BSCS-1C", [("sync", 2)]),
+            ("dr_lim", "CS204", "BSCS-1C", [("sync", 2), ("lab", 3)]),
+            ("prof_bautista", "IT106", "BSCS-1C", [("sync", 2), ("lab", 3)]),
 
             # BSCS-2C (29 students) - 2nd year
-            ("demo_prof1", "CC103", "BSCS-2C", [("sync", 2), ("async", 1)]),
-            ("demo_prof2", "IT102", "BSCS-2C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof3", "MATH201", "BSCS-2C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof4", "CS201", "BSCS-2C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof10", "GEC103", "BSCS-2C", [("sync", 2)]),
-            ("demo_prof10", "GEC104", "BSCS-2C", [("sync", 2)]),
-            ("demo_prof10", "PE101", "BSCS-2C", [("sync", 2)]),
-            ("demo_prof10", "NSTP101", "BSCS-2C", [("sync", 2)]),
-            ("demo_prof12", "CS205", "BSCS-2C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof14", "IT107", "BSCS-2C", [("sync", 2), ("lab", 3)]),
+            ("dr_cruz", "CC103", "BSCS-2C", [("sync", 2), ("async", 1)]),
+            ("dr_santos", "IT102", "BSCS-2C", [("sync", 2), ("lab", 3)]),
+            ("dr_reyes", "MATH201", "BSCS-2C", [("sync", 2), ("lab", 3)]),
+            ("dr_garcia", "CS201", "BSCS-2C", [("sync", 2), ("lab", 3)]),
+            ("prof_hernandez", "GEC103", "BSCS-2C", [("sync", 2)]),
+            ("prof_castillo", "GEC104", "BSCS-2C", [("sync", 2)]),
+            ("prof_martinez", "PE101", "BSCS-2C", [("sync", 2)]),
+            ("prof_rodriguez", "NSTP101", "BSCS-2C", [("sync", 2)]),
+            ("dr_lim", "CS205", "BSCS-2C", [("sync", 2), ("lab", 3)]),
+            ("prof_fernandez", "IT107", "BSCS-2C", [("sync", 2), ("lab", 3)]),
 
             # BSCS-3C (30 students) - 3rd year
-            ("demo_prof1", "CC104", "BSCS-3C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof2", "IT104", "BSCS-3C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof3", "MATH301", "BSCS-3C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof4", "CC104", "BSCS-3C", [("sync", 2), ("async", 1)]),
-            ("demo_prof5", "IT105", "BSCS-3C", [("sync", 2), ("async", 1)]),
-            ("demo_prof7", "CS202", "BSCS-3C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof12", "CS206", "BSCS-3C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof14", "IT106", "BSCS-3C", [("sync", 2), ("lab", 3)]),
+            ("dr_cruz", "CC104", "BSCS-3C", [("sync", 2), ("lab", 3)]),
+            ("dr_santos", "IT104", "BSCS-3C", [("sync", 2), ("lab", 3)]),
+            ("dr_chua", "MATH301", "BSCS-3C", [("sync", 2), ("lab", 3)]),
+            ("dr_garcia", "CC104", "BSCS-3C", [("sync", 2), ("async", 1)]),
+            ("dr_mendoza", "IT105", "BSCS-3C", [("sync", 2), ("async", 1)]),
+            ("dr_torres", "CS202", "BSCS-3C", [("sync", 2), ("lab", 3)]),
+            ("dr_lim", "CS206", "BSCS-3C", [("sync", 2), ("lab", 3)]),
+            ("prof_fernandez", "IT106", "BSCS-3C", [("sync", 2), ("lab", 3)]),
 
             # BSCS-4C (22 students) - 4th year
-            ("demo_prof1", "CC107", "BSCS-4C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof2", "IT108", "BSCS-4C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof3", "MATH302", "BSCS-4C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof4", "CC105", "BSCS-4C", [("sync", 2), ("async", 1)]),
-            ("demo_prof5", "IT106", "BSCS-4C", [("sync", 2), ("lab", 3)]),
-            ("demo_prof7", "CS203", "BSCS-4C", [("sync", 2), ("sync", 2)]),
-            ("demo_prof12", "CS207", "BSCS-4C", [("sync", 2), ("lab", 3), ("async", 1)]),
-            ("demo_prof13", "IT107", "BSCS-4C", [("sync", 2), ("lab", 3)]),
+            ("dr_cruz", "CC107", "BSCS-4C", [("sync", 2), ("lab", 3)]),
+            ("dr_santos", "IT108", "BSCS-4C", [("sync", 2), ("lab", 3)]),
+            ("dr_tan", "MATH302", "BSCS-4C", [("sync", 2), ("lab", 3)]),
+            ("dr_garcia", "CC105", "BSCS-4C", [("sync", 2), ("async", 1)]),
+            ("dr_mendoza", "IT106", "BSCS-4C", [("sync", 2), ("lab", 3)]),
+            ("dr_ramos", "CS203", "BSCS-4C", [("sync", 2), ("sync", 2)]),
+            ("dr_lim", "CS207", "BSCS-4C", [("sync", 2), ("lab", 3), ("async", 1)]),
+            ("prof_bautista", "IT107", "BSCS-4C", [("sync", 2), ("lab", 3)]),
 
             # BSCS-3B (30 students)
-            ("demo_prof1", "CC105", "BSCS-3B", [("sync", 2), ("async", 1)]),
-            ("demo_prof2", "IT105", "BSCS-3B", [("sync", 2), ("lab", 3)]),
-            ("demo_prof3", "MATH301", "BSCS-3B", [("sync", 2), ("lab", 3)]),
-            ("demo_prof7", "CS204", "BSCS-3B", [("sync", 2), ("lab", 3)]),
-            ("demo_prof12", "CS205", "BSCS-3B", [("sync", 2), ("lab", 3)]),
-            ("demo_prof13", "IT107", "BSCS-3B", [("sync", 2), ("lab", 3)]),
-            ("demo_prof14", "IT108", "BSCS-3B", [("sync", 2), ("lab", 3)]),
-            ("demo_prof15", "CS206", "BSCS-3B", [("sync", 2), ("lab", 3)]),
+            ("dr_cruz", "CC105", "BSCS-3B", [("sync", 2), ("async", 1)]),
+            ("dr_santos", "IT105", "BSCS-3B", [("sync", 2), ("lab", 3)]),
+            ("dr_ong", "MATH301", "BSCS-3B", [("sync", 2), ("lab", 3)]),
+            ("dr_torres", "CS204", "BSCS-3B", [("sync", 2), ("lab", 3)]),
+            ("dr_lim", "CS205", "BSCS-3B", [("sync", 2), ("lab", 3)]),
+            ("prof_bautista", "IT107", "BSCS-3B", [("sync", 2), ("lab", 3)]),
+            ("prof_fernandez", "IT108", "BSCS-3B", [("sync", 2), ("lab", 3)]),
+            ("dr_sy", "CS206", "BSCS-3B", [("sync", 2), ("lab", 3)]),
 
             # BSCS-4B (22 students)
-            ("demo_prof1", "CC107", "BSCS-4B", [("sync", 2), ("lab", 3)]),
-            ("demo_prof2", "IT108", "BSCS-4B", [("sync", 2), ("lab", 3)]),
-            ("demo_prof3", "MATH302", "BSCS-4B", [("sync", 2), ("lab", 3)]),
-            ("demo_prof7", "CS203", "BSCS-4B", [("sync", 2), ("sync", 2)]),
-            ("demo_prof12", "CS207", "BSCS-4B", [("sync", 2), ("lab", 3), ("async", 1)]),
-            ("demo_prof13", "IT107", "BSCS-4B", [("sync", 2), ("lab", 3)]),
-            ("demo_prof14", "IT106", "BSCS-4B", [("sync", 2), ("lab", 3)]),
-            ("demo_prof15", "CS206", "BSCS-4B", [("sync", 2), ("lab", 3)]),
+            ("dr_cruz", "CC107", "BSCS-4B", [("sync", 2), ("lab", 3)]),
+            ("dr_santos", "IT108", "BSCS-4B", [("sync", 2), ("lab", 3)]),
+            ("dr_sy", "MATH302", "BSCS-4B", [("sync", 2), ("lab", 3)]),
+            ("dr_ramos", "CS203", "BSCS-4B", [("sync", 2), ("sync", 2)]),
+            ("dr_lim", "CS207", "BSCS-4B", [("sync", 2), ("lab", 3), ("async", 1)]),
+            ("prof_bautista", "IT107", "BSCS-4B", [("sync", 2), ("lab", 3)]),
+            ("prof_fernandez", "IT106", "BSCS-4B", [("sync", 2), ("lab", 3)]),
+            ("dr_sy", "CS206", "BSCS-4B", [("sync", 2), ("lab", 3)]),
         ],
     }
 
@@ -567,15 +626,62 @@ class Command(BaseCommand):
             name: Department.objects.get_or_create(name=name)[0]
             for name in data["departments"]
         }
+
+        # Real professor display names
+        prof_names = {
+            "dr_cruz": "Dr. Maria Cruz",
+            "dr_santos": "Dr. Jose Santos",
+            "dr_reyes": "Dr. Ana Reyes",
+            "dr_garcia": "Dr. Carlos Garcia",
+            "dr_mendoza": "Dr. Luisa Mendoza",
+            "dr_lopez": "Dr. Pedro Lopez",
+            "dr_torres": "Dr. Sofia Torres",
+            "dr_ramos": "Dr. Miguel Ramos",
+            "prof_delacruz": "Prof. Juan Dela Cruz",
+            "prof_fernandez": "Prof. Maria Fernandez",
+            "prof_gonzales": "Prof. Rafael Gonzales",
+            "prof_bautista": "Prof. Carmen Bautista",
+            "prof_villanueva": "Prof. Antonio Villanueva",
+            "dr_lim": "Dr. Robert Lim",
+            "dr_chua": "Dr. Grace Chua",
+            "dr_ong": "Dr. Michael Ong",
+            "dr_tan": "Dr. Patricia Tan",
+            "dr_sy": "Dr. Edward Sy",
+            "prof_martinez": "Prof. Elena Martinez",
+            "prof_rodriguez": "Prof. Fernando Rodriguez",
+            "prof_hernandez": "Prof. Isabel Hernandez",
+            "prof_castillo": "Prof. Ricardo Castillo",
+        }
+
+        # Professor department mapping (covers all professors in availability)
+        prof_dept_map = {
+            "dr_cruz": "CS", "dr_santos": "CS", "dr_reyes": "CS", "dr_garcia": "CS",
+            "dr_mendoza": "CS", "dr_lopez": "CS", "dr_torres": "CS", "dr_ramos": "CS",
+            "prof_delacruz": "IT", "prof_fernandez": "IT", "prof_gonzales": "IT",
+            "prof_bautista": "IT", "prof_villanueva": "IT",
+            "dr_lim": "MATH", "dr_chua": "MATH", "dr_ong": "MATH", "dr_tan": "MATH", "dr_sy": "MATH",
+            "prof_martinez": "GE", "prof_rodriguez": "GE", "prof_hernandez": "GE", "prof_castillo": "GE",
+        }
+
         prof_depts = {}
         for username, code, _sec, _spec in data["loads"]:
             if username not in prof_depts:
                 prof_depts[username] = data["dept_by_code"][code]
+        # Add departments for professors in availability but not in loads
+        for username in data["availability"]:
+            if username not in prof_depts and username in prof_dept_map:
+                prof_depts[username] = prof_dept_map[username]
         for username in data["availability"]:
             user, created = User.objects.get_or_create(username=username)
             if created:
                 user.set_password(DEMO_PASSWORD)
                 user.email = f"{username}@school.edu"
+                # Set real name
+                if username in prof_names:
+                    full_name = prof_names[username]
+                    parts = full_name.split(" ", 1)
+                    user.first_name = parts[0]
+                    user.last_name = parts[1] if len(parts) > 1 else ""
                 user.save()
             elif not user.email:
                 user.email = f"{username}@school.edu"
@@ -583,12 +689,12 @@ class Command(BaseCommand):
             professor, _ = Professors.objects.get_or_create(
                 user=user,
                 defaults={
-                    "department": departments[prof_depts[username]],
+                    "department": departments[prof_depts.get(username, prof_dept_map.get(username, "CS"))],
                     "max_daily_hours": 10,
                     "max_consecutive": 6,
                 },
             )
-            department = departments[prof_depts[username]]
+            department = departments[prof_depts.get(username, prof_dept_map.get(username, "CS"))]
             if professor.department_id != department.id:
                 professor.department = department
                 professor.save(update_fields=["department"])
@@ -814,10 +920,11 @@ class Command(BaseCommand):
                 if len(subject) > 20:
                     subject = subject[:17] + "..."
                 mode = c.get("mode") or c.get("mode_display") or ""
+                room_name = c.get("room_name") or "Online"
                 self.stdout.write(
                     f"  {self._time_range(c):<11}  {subject:<20}  "
                     f"{c['section_name']:<10}  {c['prof_name']:<16}  "
-                    f"room {c['room_name']:<10}  {mode}"
+                    f"room {room_name:<10}  {mode}"
                 )
 
     def _get_section_id(self, section_name):
@@ -841,7 +948,7 @@ class Command(BaseCommand):
                 subject = c["subject_label"]
                 mode = c.get("mode") or c.get("mode_display") or ""
                 prof = c["prof_name"]
-                room = c["room_name"]
+                room = c.get("room_name") or "Online"
                 self.stdout.write(
                     f"  {self._time_range(c):<11}  {subject:<35}  "
                     f"room {room:<10}  {mode:<6}  Prof: {prof}"

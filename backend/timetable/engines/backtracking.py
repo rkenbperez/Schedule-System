@@ -13,6 +13,11 @@ from .scenario import Meeting, Placement, Scenario
 from .slots import free_rooms, is_time_free, legal_time_slots
 
 
+def _is_async(meeting: Meeting) -> bool:
+    mode = (meeting.mode or "").casefold()
+    return mode in ("async", "asynchronous")
+
+
 def _candidates(
     scenario: Scenario,
     placed: Dict[int, Placement],
@@ -20,9 +25,12 @@ def _candidates(
 ) -> List[Tuple[int, int]]:
     result = []
     for day, start in legal_time_slots(scenario, meeting, placed):
-        if is_time_free(scenario, placed, meeting, day, start) and free_rooms(
-            scenario, placed, meeting, day, start
-        ):
+        if not is_time_free(scenario, placed, meeting, day, start):
+            continue
+        if _is_async(meeting):
+            # Async meetings don't need rooms
+            result.append((day, start))
+        elif free_rooms(scenario, placed, meeting, day, start):
             result.append((day, start))
     return result
 
@@ -61,11 +69,16 @@ def backtracking(scenario: Scenario, time_limit_s: float = 30.0) -> Dict[int, Pl
         assert best is not None
         _, meeting, candidates = best
         for day, start in candidates:
-            rooms = free_rooms(scenario, placed, meeting, day, start)
-            rooms.sort(key=lambda r: r.capacity)
-            placed[meeting.meeting_id] = Placement(
-                meeting_id=meeting.meeting_id, day=day, start=start, room_id=rooms[0].id
-            )
+            if _is_async(meeting):
+                placed[meeting.meeting_id] = Placement(
+                    meeting_id=meeting.meeting_id, day=day, start=start, room_id=None
+                )
+            else:
+                rooms = free_rooms(scenario, placed, meeting, day, start)
+                rooms.sort(key=lambda r: r.capacity)
+                placed[meeting.meeting_id] = Placement(
+                    meeting_id=meeting.meeting_id, day=day, start=start, room_id=rooms[0].id
+                )
             solution = search(placed)
             if solution is not None:
                 return solution

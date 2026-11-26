@@ -111,7 +111,7 @@ class ScenarioBuilderTests(TestCase):
         self.assertEqual(room_types["CS Lecture Room 1"], "lecture")
         self.assertEqual(room_types["R203"], "general")
 
-    def test_lab_meeting_without_laboratory_room_is_unplaced(self):
+    def test_lab_meeting_falls_back_to_general_room(self):
         from timetable.models import AvailabilityWindow
 
         self._assignment([("lab", 3)])
@@ -126,8 +126,10 @@ class ScenarioBuilderTests(TestCase):
         scenario = build_scenario()
         result = run("greedy", scenario)
 
-        self.assertFalse(result.feasible)
-        self.assertTrue(result.unplaced)
+        self.assertTrue(result.feasible, result.violations)
+        self.assertEqual(len(result.classes), 1)
+        self.assertTrue(result.warnings)
+        self.assertTrue(any("fallback" in w.lower() for w in result.warnings))
 
     def test_lab_meeting_is_placed_when_laboratory_room_exists(self):
         from timetable.models import AvailabilityWindow

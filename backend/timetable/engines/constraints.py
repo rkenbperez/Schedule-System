@@ -13,6 +13,7 @@ from .slots import (
     minutes,
     overlaps,
     room_type_ok,
+    room_type_fallback,
 )
 
 
@@ -122,7 +123,12 @@ def hard_violations(scenario: Scenario, placed: Dict[int, Placement]) -> List[st
                     violations.append(
                         f"section {meeting_a.section_name} double-booked on {_day(day)}"
                     )
-                if a.room_id == b.room_id:
+                # Skip room conflict check for async meetings (no room assigned)
+                mode_a = (meeting_a.mode or "").casefold()
+                mode_b = (meeting_b.mode or "").casefold()
+                is_async_a = mode_a in ("async", "asynchronous")
+                is_async_b = mode_b in ("async", "asynchronous")
+                if not is_async_a and not is_async_b and a.room_id == b.room_id:
                     violations.append(f"room {a.room_id} double-booked on {_day(day)}")
 
     windows = _windows_by_prof_day(scenario)
@@ -151,28 +157,33 @@ def hard_violations(scenario: Scenario, placed: Dict[int, Placement]) -> List[st
             )
 
         room = room_map.get(placement.room_id)
+        mode = (meeting.mode or "").casefold()
+        is_async = mode in ("async", "asynchronous")
+        
         if room is None:
-            violations.append(
-                f"{_label(meeting_map, meeting.meeting_id)} has no assigned room"
-            )
+            if not is_async:
+                violations.append(
+                    f"{_label(meeting_map, meeting.meeting_id)} has no assigned room"
+                )
         else:
-            if not department_ok(scenario, meeting, room):
-                violations.append(
-                    f"{_label(meeting_map, meeting.meeting_id)} room {room.name} is for "
-                    f"{room.department} but {meeting.prof_label} is {meeting.department}"
-                )
-            if room.capacity < meeting.section_headcount:
-                violations.append(
-                    f"{_label(meeting_map, meeting.meeting_id)} room {room.name} "
-                    f"(cap {room.capacity}) too small for section {meeting.section_name} "
-                    f"(headcount {meeting.section_headcount})"
-                )
-            if not room_type_ok(meeting, room):
-                violations.append(
-                    f"{_label(meeting_map, meeting.meeting_id)} room {room.name} "
-                    f"has room type {room.room_type} but the meeting mode is "
-                    f"{meeting.mode or 'unspecified'}"
-                )
+            if not is_async:
+                if not department_ok(scenario, meeting, room):
+                    violations.append(
+                        f"{_label(meeting_map, meeting.meeting_id)} room {room.name} is for "
+                        f"{room.department} but {meeting.prof_label} is {meeting.department}"
+                    )
+                if room.capacity < meeting.section_headcount:
+                    violations.append(
+                        f"{_label(meeting_map, meeting.meeting_id)} room {room.name} "
+                        f"(cap {room.capacity}) too small for section {meeting.section_name} "
+                        f"(headcount {meeting.section_headcount})"
+                    )
+                if not room_type_ok(meeting, room):
+                    violations.append(
+                        f"{_label(meeting_map, meeting.meeting_id)} room {room.name} "
+                        f"has room type {room.room_type} but the meeting mode is "
+                        f"{meeting.mode or 'unspecified'}"
+                    )
 
         prof_windows = windows.get((meeting.prof_id, placement.day), [])
         if not any(
@@ -212,6 +223,26 @@ def hard_violations(scenario: Scenario, placed: Dict[int, Placement]) -> List[st
 
 def is_feasible(scenario: Scenario, placed: Dict[int, Placement]) -> bool:
     return not hard_violations(scenario, placed)
+
+
+def soft_violations(scenario: Scenario, placed: Dict[int, Placement]) -> List[str]:
+    """Return a human-readable list of soft-rule violations (warnings)."""
+    from .slots import room_type_fallback
+    
+    meeting_map = scenario.meeting_map()
+    room_map = scenario.room_map()
+    warnings: List[str] = []
+    
+    for placement in placed.values():
+        meeting = meeting_map[placement.meeting_id]
+        room = room_map.get(placement.room_id)
+        if room and room_type_fallback(meeting, room):
+            warnings.append(
+                f"{_label(meeting_map, meeting.meeting_id)} room {room.name} "
+                f"is a general room used for lab meeting (fallback)"
+            )
+    
+    return warnings
 
 
 def count_conflicts(

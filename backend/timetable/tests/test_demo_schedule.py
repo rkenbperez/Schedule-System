@@ -23,7 +23,7 @@ class DemoScheduleCommandTests(TestCase):
             username="demoreg", password="wrong-password", is_staff=False
         )
         professor_user = User.objects.create_user(
-            username="demo_prof1", password="professor-password"
+            username="dr_cruz", password="professor-password"
         )
         old_department = Department.objects.create(name="OLD")
         professor = Professors.objects.create(
@@ -38,7 +38,7 @@ class DemoScheduleCommandTests(TestCase):
         self.assertTrue(registrar.is_staff)
         self.assertEqual(registrar.email, "demoreg@school.edu")
         self.assertTrue(registrar.check_password(DEMO_PASSWORD))
-        self.assertEqual(professor_user.email, "demo_prof1@school.edu")
+        self.assertEqual(professor_user.email, "dr_cruz@school.edu")
         self.assertTrue(professor_user.check_password("professor-password"))
         self.assertEqual(professor.department.name, "CS")
 
