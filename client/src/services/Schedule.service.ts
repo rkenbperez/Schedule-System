@@ -13,6 +13,7 @@ import type {
   RoomType,
   Schedule,
   ScheduleCreatePayload,
+  ScheduleRun,
   Section,
   TeacherListItem,
 } from '../types/Types';
@@ -161,6 +162,15 @@ class ScheduleService {
     // (registrar sees all classes). Filter by term via query param.
     const query = termId ? `?term=${termId}` : '';
     const data: Schedule[] = await apiJson(`${BASE_URL}/api/schedules/my${query}`);
+
+    return data;
+  }
+
+  async getScheduleRuns(): Promise<ScheduleRun[]> {
+    // /api/schedules/runs is paginated; fetch all pages.
+    const data: ScheduleRun[] = await apiAllPages(
+      `${BASE_URL}/api/schedules/runs`
+    );
 
     return data;
   }

@@ -1,6 +1,7 @@
 // components/shared/RequireAuth.tsx
 import { Navigate } from 'react-router-dom';
 import { useMe } from '../../hooks/useAuth';
+import { dashboardPathFor } from '../../utils/dashboardRoute';
 
 export function RequireAuth({
   children,
@@ -20,13 +21,7 @@ export function RequireAuth({
   }
 
   if (requiredRole && user.role !== requiredRole) {
-    if (user.role === 'registrar') {
-      return <Navigate to='/registrar' replace />;
-    }
-    if (user.role === 'professor') {
-      return <Navigate to='/teacher' replace />;
-    }
-    return <Navigate to='/student' replace />;
+    return <Navigate to={dashboardPathFor(user)} replace />;
   }
 
   return <>{children}</>;

@@ -102,7 +102,7 @@ def _dataset(scale):
             ("R301", 45, "CS"),
             ("R302", 45, "IT"),
             ("MATH1", 35, "MATH"),
-            ("LAB1", 30, None),
+            ("LAB1", 40, None),
             ("GEC1", 45, "GE"),
             ("GEC2", 45, "GE"),
         ],
@@ -183,6 +183,7 @@ def _dataset(scale):
             ("R304", 45, "IT"),
             ("MATH2", 40, "MATH"),
             ("GEC3", 45, "GE"),
+            ("LAB2", 40, None),
         ],
         "availability": {
             **normal["availability"],
@@ -248,8 +249,7 @@ def _dataset(scale):
         + [
             ("R305", 45, "CS"),
             ("R306", 45, "IT"),
-            ("LAB2", 30, None),
-            ("LAB3", 30, None),
+            ("LAB3", 40, None),
         ],
         "availability": {
             **large["availability"],
@@ -447,14 +447,14 @@ class Command(BaseCommand):
         self._reconcile(options["scale"], term)
 
         self.stdout.write(f"Scale: {options['scale']}")
-        self.stdout.write(f"Registrar: {registrar.username} / {DEMO_PASSWORD}")
+        self.stdout.write(f"Registrar: {registrar.email} / {DEMO_PASSWORD}")
 
         try:
             login_result = self._http(
                 base,
                 "POST",
                 "/auth/jwt/login/",
-                {"username": registrar.username, "password": DEMO_PASSWORD},
+                {"email": registrar.email, "password": DEMO_PASSWORD},
             )
             token = login_result["access"]
         except urllib.error.URLError:
@@ -553,6 +553,9 @@ class Command(BaseCommand):
         if not registrar.is_staff:
             registrar.is_staff = True
             update_fields.append("is_staff")
+        if not registrar.email:
+            registrar.email = "demoreg@school.edu"
+            update_fields.append("email")
         if not registrar.check_password(DEMO_PASSWORD):
             registrar.set_password(DEMO_PASSWORD)
             update_fields.append("password")
@@ -572,7 +575,11 @@ class Command(BaseCommand):
             user, created = User.objects.get_or_create(username=username)
             if created:
                 user.set_password(DEMO_PASSWORD)
+                user.email = f"{username}@school.edu"
                 user.save()
+            elif not user.email:
+                user.email = f"{username}@school.edu"
+                user.save(update_fields=["email"])
             professor, _ = Professors.objects.get_or_create(
                 user=user, defaults={"department": departments[prof_depts[username]]}
             )

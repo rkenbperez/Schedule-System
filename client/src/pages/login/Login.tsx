@@ -14,6 +14,7 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { useSignIn } from '../../hooks/useAuth';
 import { accountService } from '../../services/Account.service';
+import { dashboardPathFor } from '../../utils/dashboardRoute';
 import {
   Alert,
   Button,
@@ -67,11 +68,7 @@ export default function Login() {
     setError(null);
     try {
       const data = await signIn.mutateAsync({ email, password });
-      if (data.user?.is_staff) {
-        navigate('/registrar');
-      } else {
-        navigate(`/teacher/${data.user?.username}/assignments`);
-      }
+      navigate(dashboardPathFor(data.user));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to sign in');
     }

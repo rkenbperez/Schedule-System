@@ -325,6 +325,10 @@ class ImportCommitTests(ImportTestCase):
         self.assertTrue(Room.objects.filter(name="M101").exists())
         self.assertTrue(Subject.objects.filter(code="MATH101").exists())
         self.assertTrue(Section.objects.filter(name="MATH-1A").exists())
+        self.assertEqual(
+            Section.objects.get(name="MATH-1A").headcount,
+            25,
+        )
         self.assertTrue(Professors.objects.filter(user=new_user).exists())
 
     def test_commit_updates_records(self):
@@ -354,6 +358,8 @@ class ImportCommitTests(ImportTestCase):
         self.room.refresh_from_db()
         self.assertEqual(self.room.name, "R101 Updated")
         self.assertEqual(self.room.capacity, 50)
+        self.section.refresh_from_db()
+        self.assertEqual(self.section.headcount, 35)
 
     def test_commit_uses_configured_default_duration(self):
         GlobalSettings.set("sync_duration_default", 4, user=self.registrar)
@@ -540,6 +546,16 @@ class ImportProcessorUnitTests(ImportTestCase):
             "Departments", "Rooms", "Subjects", "Sections", "Professors",
             "Assignments", "Meetings", "Availability", "BusyBlocks", "Instructions"
         ]))
+
+        sections_ws = wb["Sections"]
+        headers = [cell.value for cell in sections_ws[1]]
+        self.assertIn("headcount", headers)
+        sample_headcount = [
+            row[headers.index("headcount")]
+            for row in sections_ws.iter_rows(min_row=2, values_only=True)
+            if row[headers.index("headcount")] not in (None, "")
+        ]
+        self.assertTrue(sample_headcount)
 
     def test_generate_template_csv_zip(self):
         content = processor.generate_template_csv_zip()

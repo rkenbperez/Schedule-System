@@ -1,6 +1,7 @@
 import { ArrowUpRight, CalendarDays, Clock, MapPin } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import { Badge } from '../../../components/ui';
+import { useMe } from '../../../hooks/useAuth';
 import type { Schedule } from '../../../types/Types';
 
 export default function DashboardCourseCard({
@@ -9,7 +10,8 @@ export default function DashboardCourseCard({
   schedule: Schedule;
 }) {
   const { name } = useParams<{ name: string }>();
-  const teacher = name ?? 'juan';
+  const { data: user } = useMe({ enabled: true });
+  const teacher = name ?? user?.username ?? '';
 
   return (
     <Link

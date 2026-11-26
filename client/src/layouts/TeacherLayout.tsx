@@ -7,10 +7,9 @@ import {
   LayoutDashboard,
 } from 'lucide-react';
 import { AppShell, type AppNavItem } from '../components/layout/AppShell';
+import { useMe } from '../hooks/useAuth';
 
 function formatTeacherName(value: string) {
-  if (value.toLowerCase() === 'juan') return 'Juan Dela Cruz';
-
   return value
     .split(/[-_]/)
     .filter(Boolean)
@@ -29,8 +28,13 @@ function getInitials(name: string) {
 
 export default function TeacherLayout() {
   const { name } = useParams<{ name: string }>();
-  const teacher = name ?? 'juan';
-  const teacherName = formatTeacherName(teacher);
+  const { data: user } = useMe({ enabled: true });
+  const teacher = name ?? user?.username ?? '';
+  const userFullName = [user?.first_name, user?.last_name]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+  const teacherName = userFullName || formatTeacherName(teacher);
 
   const navItems: AppNavItem[] = [
     {

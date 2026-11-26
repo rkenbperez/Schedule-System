@@ -1,6 +1,7 @@
 import { CalendarDays, Clock3 } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { useRoomSchedule, useRooms } from '../../hooks/Schedule.hooks';
+import { useMe } from '../../hooks/useAuth';
 import {
   Badge,
   Card,
@@ -15,53 +16,6 @@ import {
   THead,
   TR,
 } from '../../components/ui';
-import type { Schedule } from '../../types/Types';
-
-// Mock example data for testing without backend.
-const exampleSchedules: Schedule[] = [
-  {
-    id: 1,
-    run: 1,
-    assignment: 1,
-    assignment_label: 'COSC 7 - 3-A',
-    prof_id: 1,
-    prof_name: 'Juan Dela Cruz',
-    section_id: 1,
-    section_name: '3-A',
-    subject_label: 'COSC 7 - Data Structures and Algorithms',
-    room: 101,
-    room_name: 'Room 101',
-    day: 0,
-    day_display: 'Monday',
-    start_time: '07:00',
-    end_time: '09:00',
-    duration_slots: 2,
-    mode: 'sync',
-    mode_display: 'Synchronous',
-    term: 1,
-  },
-  {
-    id: 2,
-    run: 1,
-    assignment: 2,
-    assignment_label: 'COSC 7 - Lab 202',
-    prof_id: 1,
-    prof_name: 'Juan Dela Cruz',
-    section_id: 1,
-    section_name: '3-A',
-    subject_label: 'COSC 7 - Data Structures and Algorithms',
-    room: 103,
-    room_name: 'Lab 202',
-    day: 2,
-    day_display: 'Wednesday',
-    start_time: '13:00',
-    end_time: '17:00',
-    duration_slots: 4,
-    mode: 'lab',
-    mode_display: 'Laboratory',
-    term: 1,
-  },
-];
 
 function formatTime(time: string) {
   const [rawHours, rawMinutes = '0'] = time.split(':');
@@ -79,7 +33,8 @@ export default function TeacherRoomDetailPage() {
     name: string;
   }>();
   const id = roomId ? Number(roomId) : undefined;
-  const teacher = teacherName ?? 'juan';
+  const { data: user } = useMe({ enabled: true });
+  const teacher = teacherName ?? user?.username ?? '';
 
   const { data: rooms } = useRooms({ enabled: true });
   const room = rooms?.find((candidate) => candidate.id === id);
@@ -89,8 +44,7 @@ export default function TeacherRoomDetailPage() {
     enabled: !!id,
   });
 
-  const resolvedSchedules: Schedule[] =
-    schedules ?? exampleSchedules.filter((schedule) => schedule.room === id);
+  const resolvedSchedules = schedules ?? [];
 
   return (
     <section className='w-full space-y-6'>

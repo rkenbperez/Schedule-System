@@ -12,6 +12,7 @@ from .slots import (
     department_ok,
     minutes,
     overlaps,
+    room_type_ok,
 )
 
 
@@ -165,6 +166,12 @@ def hard_violations(scenario: Scenario, placed: Dict[int, Placement]) -> List[st
                     f"{_label(meeting_map, meeting.meeting_id)} room {room.name} "
                     f"(cap {room.capacity}) too small for section {meeting.section_name} "
                     f"(headcount {meeting.section_headcount})"
+                )
+            if not room_type_ok(meeting, room):
+                violations.append(
+                    f"{_label(meeting_map, meeting.meeting_id)} room {room.name} "
+                    f"has room type {room.room_type} but the meeting mode is "
+                    f"{meeting.mode or 'unspecified'}"
                 )
 
         prof_windows = windows.get((meeting.prof_id, placement.day), [])

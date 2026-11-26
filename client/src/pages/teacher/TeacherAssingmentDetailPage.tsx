@@ -8,64 +8,24 @@ import {
   Card,
   CardBody,
   EmptyState,
+  LoadingState,
   PageHeader,
 } from '../../components/ui';
-import type {
-  CourseAssignmentDetail,
-  CourseComponent,
-} from '../../types/Types';
-
-// Mock example data for testing without backend.
-const exampleAssignments: CourseAssignmentDetail[] = [
-  {
-    id: 1,
-    prof: 1,
-    subject: 1,
-    section: 1,
-    term: 1,
-    meetings: [{ id: 1, order: 1, mode: 'sync', mode_display: 'Synchronous', duration_slots: 2 }],
-    prof_name: 'Juan Dela Cruz',
-    subject_label: 'COSC 7',
-    section_name: '3-A',
-  },
-  {
-    id: 2,
-    prof: 1,
-    subject: 1,
-    section: 1,
-    term: 1,
-    meetings: [{ id: 2, order: 2, mode: 'lab', mode_display: 'Laboratory', duration_slots: 4 }],
-    prof_name: 'Juan Dela Cruz',
-    subject_label: 'COSC 7',
-    section_name: '3-A',
-  },
-  {
-    id: 3,
-    prof: 1,
-    subject: 2,
-    section: 2,
-    term: 1,
-    meetings: [{ id: 3, order: 1, mode: 'sync', mode_display: 'Synchronous', duration_slots: 2 }],
-    prof_name: 'Juan Dela Cruz',
-    subject_label: 'DCIT 5',
-    section_name: '2-B',
-  },
-];
+import type { CourseComponent } from '../../types/Types';
 
 export default function TeacherAssingmentDetailPage() {
   const { name: teacherName, 'assignment-id': assignmentIdStr } = useParams();
   const assignmentId = assignmentIdStr ? Number(assignmentIdStr) : NaN;
-  const teacher = teacherName ?? 'juan';
 
   const { data: user } = useMe({ enabled: true });
+  const teacher = teacherName ?? user?.username ?? '';
   const teacherId = user?.professor?.id;
 
-  // Mock data used when backend is not available.
-  const { data: assignments } = useCourseAssignments({
+  const { data: assignments, isLoading } = useCourseAssignments({
     teacherId,
     enabled: !!teacherId,
   });
-  const resolvedAssignments = assignments ?? exampleAssignments;
+  const resolvedAssignments = assignments ?? [];
 
   const assignment = resolvedAssignments.find(
     (candidate) => candidate.id === assignmentId
@@ -80,6 +40,20 @@ export default function TeacherAssingmentDetailPage() {
       (component: CourseComponent) =>
         component.course.id === assignment?.subject
     ) ?? [];
+
+  if (isLoading) {
+    return (
+      <section className='w-full max-w-3xl space-y-6'>
+        <PageHeader
+          eyebrow='Teacher'
+          title='Loading assignment…'
+          backTo={`/teacher/${teacher}/assignments`}
+          backLabel='Back to my assignments'
+        />
+        <LoadingState label='Loading assignment…' />
+      </section>
+    );
+  }
 
   if (!assignment) {
     return (
@@ -124,8 +98,10 @@ export default function TeacherAssingmentDetailPage() {
               <dt className='text-caption uppercase tracking-wide text-text-tertiary'>
                 Students
               </dt>
-              <dd className='mt-1 text-body font-medium text-text-primary'>
-                —
+              <dd className='mt-1 text-body font-medium text-text-primary tabular-nums'>
+                {assignment.section_headcount == null
+                  ? '—'
+                  : assignment.section_headcount}
               </dd>
             </div>
             <div>

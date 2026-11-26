@@ -1,6 +1,7 @@
 import { ArrowRight, Building2, MapPin } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import { Badge } from '../../../components/ui';
+import { useMe } from '../../../hooks/useAuth';
 import type { Room } from '../../../types/Types';
 
 export interface RoomCardProps {
@@ -9,7 +10,8 @@ export interface RoomCardProps {
 
 export default function RoomCard({ room }: RoomCardProps) {
   const { name: teacherName } = useParams<{ name: string }>();
-  const teacher = teacherName ?? 'juan';
+  const { data: user } = useMe({ enabled: true });
+  const teacher = teacherName ?? user?.username ?? '';
 
   return (
     <Link

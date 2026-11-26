@@ -61,3 +61,8 @@ coverage.xml
 .DS_Store
 node_modules/
 dist/
+
+# OpenCode
+.opencode/
+opencode.local.json
+opencode.local.jsonc

@@ -22,10 +22,29 @@ SLOT_MINUTES = 60
 
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
+ROOM_TYPE_LABORATORY = "laboratory"
+ROOM_TYPE_LECTURE = "lecture"
+ROOM_TYPE_GENERAL = "general"
+
 
 def minutes_to_clock(minutes: int) -> str:
     hour, minute = divmod(minutes, 60)
     return f"{hour:02d}:{minute:02d}"
+
+
+def room_type_from_name(name: str) -> str:
+    """Infer a room type from its name.
+
+    The catalog has no room-type column, so the importer contract is to encode
+    the type in the name (for example "CS Lecture Room 1" or
+    "CS Computer Laboratory 1").
+    """
+    normalized = (name or "").casefold()
+    if "laboratory" in normalized or "lab" in normalized:
+        return ROOM_TYPE_LABORATORY
+    if "lecture" in normalized:
+        return ROOM_TYPE_LECTURE
+    return ROOM_TYPE_GENERAL
 
 
 @dataclass(frozen=True)
@@ -35,6 +54,11 @@ class RoomRef:
     capacity: int
     department: str = ""
     building: str = ""
+    room_type: str = ""
+
+    def __post_init__(self):
+        if not self.room_type:
+            object.__setattr__(self, "room_type", room_type_from_name(self.name))
 
 
 @dataclass(frozen=True)

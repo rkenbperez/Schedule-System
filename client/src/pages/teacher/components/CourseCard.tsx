@@ -1,13 +1,14 @@
 import { ArrowRight } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import { Badge } from '../../../components/ui';
+import { useMe } from '../../../hooks/useAuth';
 
 export interface CourseCardProps {
   id: number;
   code: string;
   title: string;
   section: string;
-  studentCount: number;
+  studentCount: number | null;
   label: string;
   scheduled: boolean;
 }
@@ -22,7 +23,8 @@ export default function CourseCard({
   scheduled,
 }: CourseCardProps) {
   const { name: teacherName } = useParams<{ name: string }>();
-  const teacher = teacherName ?? 'juan';
+  const { data: user } = useMe({ enabled: true });
+  const teacher = teacherName ?? user?.username ?? '';
 
   return (
     <Link
@@ -55,7 +57,7 @@ export default function CourseCard({
             Students
           </dt>
           <dd className='mt-0.5 text-body-sm font-medium text-text-primary tabular-nums'>
-            {studentCount || '—'}
+            {studentCount == null ? '—' : studentCount}
           </dd>
         </div>
       </dl>

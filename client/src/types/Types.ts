@@ -1,4 +1,4 @@
-export type UserRole = 'registrar' | 'professor' | 'user';
+export type UserRole = 'registrar' | 'professor' | 'student' | 'user';
 
 export interface TeacherProfile {
   id: number;
@@ -167,16 +167,25 @@ export interface CourseComponent {
   created_at: string;
 }
 
+export interface CourseAssignmentMeeting {
+  id: number;
+  order: number;
+  mode: string;
+  mode_display: string;
+  duration_slots: number;
+}
+
 export interface CourseAssignmentDetail {
   id: number;
   prof: number;
   subject: number;
   section: number;
   term: number;
-  meetings: Array<{ id: number; order: number; mode: string; mode_display: string; duration_slots: number }>;
+  meetings: CourseAssignmentMeeting[];
   prof_name: string;
   subject_label: string;
   section_name: string;
+  section_headcount: number;
 }
 
 export interface Schedule {
@@ -200,6 +209,19 @@ export interface Schedule {
   mode: string | null;
   mode_display: string | null;
   term: number | null;
+}
+
+export interface ScheduleRun {
+  id: number;
+  algorithm: string;
+  status: 'feasible' | 'infeasible';
+  runtime_ms: number;
+  soft_score: number | null;
+  created_by: number | null;
+  created_at: string;
+  term: number | null;
+  published: boolean;
+  class_count: number;
 }
 
 export interface TeacherListItem {

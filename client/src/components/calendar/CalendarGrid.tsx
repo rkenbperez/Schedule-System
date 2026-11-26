@@ -22,7 +22,7 @@ export function CalendarGrid({ classes, viewBySection }: CalendarGridProps) {
           className='grid gap-px rounded-card border border-border bg-surface'
           style={{
             gridTemplateColumns: '4.5rem repeat(6, minmax(160px, 1fr))',
-            gridTemplateRows: `2.5rem repeat(${ROW_COUNT}, 58px)`,
+            gridTemplateRows: `2.5rem repeat(${ROW_COUNT}, 64px)`,
           }}
         >
           {/* Top-left corner */}

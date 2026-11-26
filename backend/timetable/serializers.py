@@ -42,6 +42,9 @@ class AssignmentSerializer(serializers.ModelSerializer):
     prof_name = serializers.SerializerMethodField()
     subject_label = serializers.SerializerMethodField()
     section_name = serializers.SerializerMethodField()
+    section_headcount = serializers.IntegerField(
+        source="section.headcount", read_only=True
+    )
     meetings = MeetingSlotSerializer(many=True)
 
     class Meta:
@@ -56,6 +59,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "prof_name",
             "subject_label",
             "section_name",
+            "section_headcount",
         ]
         read_only_fields = ["term"]
 

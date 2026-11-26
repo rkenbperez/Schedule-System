@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Building2 } from 'lucide-react';
 import { useParams } from 'react-router-dom';
+import { useMe } from '../../hooks/useAuth';
 import { useRooms } from '../../hooks/Schedule.hooks';
 import RoomCard from './components/RoomCard';
 import {
@@ -9,61 +10,15 @@ import {
   PageHeader,
   TextField,
 } from '../../components/ui';
-import type { Room } from '../../types/Types';
-
-// Mock example data for testing without backend.
-const exampleRooms: Room[] = [
-  {
-    id: 101,
-    name: 'Room 101',
-    capacity: 40,
-    department: 1,
-    department_name: 'BSIT',
-    building: 'Main Building',
-  },
-  {
-    id: 102,
-    name: 'Room 204',
-    capacity: 35,
-    department: 1,
-    department_name: 'BSIT',
-    building: 'Main Building',
-  },
-  {
-    id: 103,
-    name: 'Lab 202',
-    capacity: 30,
-    department: 1,
-    department_name: 'BSIT',
-    building: 'Engineering Building',
-  },
-  {
-    id: 104,
-    name: 'Room 305',
-    capacity: 45,
-    department: 1,
-    department_name: 'BSIT',
-    building: 'Main Building',
-  },
-  {
-    id: 105,
-    name: 'Lab 301',
-    capacity: 25,
-    department: 1,
-    department_name: 'BSIT',
-    building: 'Engineering Building',
-  },
-];
 
 export default function TeacherRoomPage() {
   const { name } = useParams<{ name: string }>();
-  const teacher = name ?? 'juan';
+  const { data: user } = useMe({ enabled: true });
+  const teacher = name ?? user?.username ?? '';
   const { data: rooms, isLoading } = useRooms({ enabled: true });
   const [filter, setFilter] = useState('');
 
-  // Mock data used when backend is not available.
-  const mockRooms: Room[] = exampleRooms;
-  const resolvedRooms: Room[] = rooms ?? mockRooms;
+  const resolvedRooms = useMemo(() => rooms ?? [], [rooms]);
 
   const filteredRooms = useMemo(() => {
     const query = filter.trim().toLowerCase();

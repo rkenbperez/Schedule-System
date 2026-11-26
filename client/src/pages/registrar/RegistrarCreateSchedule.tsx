@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Search, Users } from 'lucide-react';
-import type { TeacherListItem, CourseAssignmentDetail } from '../../types/Types';
+import { useAllAssignments, useTeachers } from '../../hooks/Schedule.hooks';
 import { cn } from '../../lib/cn';
 import {
+  Alert,
   Badge,
   EmptyState,
+  LoadingState,
   PageHeader,
   Table,
   TableContainer,
@@ -17,99 +19,16 @@ import {
   inputClasses,
 } from '../../components/ui';
 
-const exampleTeachers: TeacherListItem[] = [
-  { id: 1, username: 'angel.cruz', full_name: 'Angel Cruz', department: 1, department_name: 'BSIT' },
-  { id: 2, username: 'maria.santos', full_name: 'Maria Santos', department: 1, department_name: 'BSIT' },
-  { id: 3, username: 'robert.reyes', full_name: 'Robert Reyes', department: 1, department_name: 'BSIT' },
-  { id: 4, username: 'elena.garcia', full_name: 'Elena Garcia', department: null, department_name: '' },
-];
-
-const exampleAssignments: CourseAssignmentDetail[] = [
-  {
-    id: 1,
-    prof: 1,
-    subject: 1,
-    section: 1,
-    term: 1,
-    meetings: [{ id: 1, order: 1, mode: 'sync', mode_display: 'Synchronous', duration_slots: 2 }],
-    prof_name: 'Angel Cruz',
-    subject_label: 'COSC 7',
-    section_name: '3-A',
-  },
-  {
-    id: 2,
-    prof: 1,
-    subject: 1,
-    section: 1,
-    term: 1,
-    meetings: [{ id: 2, order: 2, mode: 'lab', mode_display: 'Laboratory', duration_slots: 4 }],
-    prof_name: 'Angel Cruz',
-    subject_label: 'COSC 7',
-    section_name: '3-A',
-  },
-  {
-    id: 3,
-    prof: 1,
-    subject: 2,
-    section: 2,
-    term: 1,
-    meetings: [{ id: 3, order: 1, mode: 'sync', mode_display: 'Synchronous', duration_slots: 2 }],
-    prof_name: 'Angel Cruz',
-    subject_label: 'DCIT 5',
-    section_name: '2-B',
-  },
-  {
-    id: 4,
-    prof: 2,
-    subject: 3,
-    section: 1,
-    term: 1,
-    meetings: [{ id: 4, order: 1, mode: 'sync', mode_display: 'Synchronous', duration_slots: 2 }],
-    prof_name: 'Maria Santos',
-    subject_label: 'MATH 10',
-    section_name: '3-A',
-  },
-  {
-    id: 5,
-    prof: 2,
-    subject: 4,
-    section: 3,
-    term: 1,
-    meetings: [{ id: 5, order: 1, mode: 'sync', mode_display: 'Synchronous', duration_slots: 2 }],
-    prof_name: 'Maria Santos',
-    subject_label: 'GNED 12',
-    section_name: '1-C',
-  },
-  {
-    id: 6,
-    prof: 3,
-    subject: 5,
-    section: 2,
-    term: 1,
-    meetings: [{ id: 6, order: 1, mode: 'sync', mode_display: 'Synchronous', duration_slots: 2 }],
-    prof_name: 'Robert Reyes',
-    subject_label: 'PHYS 3',
-    section_name: '2-B',
-  },
-  {
-    id: 7,
-    prof: 3,
-    subject: 5,
-    section: 2,
-    term: 1,
-    meetings: [{ id: 7, order: 2, mode: 'lab', mode_display: 'Laboratory', duration_slots: 4 }],
-    prof_name: 'Robert Reyes',
-    subject_label: 'PHYS 3',
-    section_name: '2-B',
-  },
-];
-
 export default function RegistrarTeacherList() {
-  const teachers: TeacherListItem[] = exampleTeachers;
-  const assignments: CourseAssignmentDetail[] = exampleAssignments;
-
   const [search, setSearch] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('all');
+
+  const {
+    data: teachers = [],
+    isLoading,
+    isError,
+  } = useTeachers({ enabled: true });
+  const { data: assignments = [] } = useAllAssignments({ enabled: true });
 
   const departments = useMemo(
     () => [
@@ -138,15 +57,18 @@ export default function RegistrarTeacherList() {
     });
   }, [teachers, search, departmentFilter]);
 
-  const teacherAssignmentsMap = new Map<number, typeof assignments>();
-  assignments.forEach((assignment) => {
-    const existing = teacherAssignmentsMap.get(assignment.prof);
-    if (existing) {
-      existing.push(assignment);
-    } else {
-      teacherAssignmentsMap.set(assignment.prof, [assignment]);
-    }
-  });
+  const teacherAssignmentsMap = useMemo(() => {
+    const map = new Map<number, typeof assignments>();
+    assignments.forEach((assignment) => {
+      const existing = map.get(assignment.prof);
+      if (existing) {
+        existing.push(assignment);
+      } else {
+        map.set(assignment.prof, [assignment]);
+      }
+    });
+    return map;
+  }, [assignments]);
 
   return (
     <div className='space-y-6'>
@@ -205,11 +127,25 @@ export default function RegistrarTeacherList() {
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {isLoading ? (
+        <LoadingState label='Loading teachers…' />
+      ) : isError ? (
+        <Alert tone='danger' title='Unable to load teachers'>
+          Please refresh the page or try again later.
+        </Alert>
+      ) : filtered.length === 0 ? (
         <EmptyState
           icon={Users}
-          title='No teachers match your filters'
-          description='Try a different name, username, or department.'
+          title={
+            teachers.length === 0
+              ? 'No teachers yet'
+              : 'No teachers match your filters'
+          }
+          description={
+            teachers.length === 0
+              ? 'Teachers will appear here once professor accounts are added.'
+              : 'Try a different name, username, or department.'
+          }
         />
       ) : (
         <>
