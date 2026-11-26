@@ -5,7 +5,9 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from catalog.models import Department
+from catalog.models import Department, Section, Subject
+from timetable.models import AcademicTerm, Assignment
+
 from .models import Professors
 from .services import provision_professor
 
@@ -214,3 +216,144 @@ class ProvisionProfessorServiceTests(TestCase):
         self.assertEqual(
             User.objects.filter(username=result.user.username).count(), 1
         )
+
+
+class UserRoleTests(APITestCase):
+    """Role derivation shared by login and /api/auth/jwt/me/."""
+
+    def setUp(self):
+        cache.clear()
+        self.head = User.objects.create_user(
+            username="head1",
+            email="head1@example.com",
+            password="pass12345",
+            first_name="Hedy",
+            last_name="Head",
+        )
+        self.dept = Department.objects.create(name="Head Dept", head=self.head)
+        Professors.objects.create(user=self.head, department=self.dept)
+
+    def tearDown(self):
+        cache.clear()
+
+    def test_me_returns_department_head_role_and_department(self):
+        self.client.force_authenticate(user=self.head)
+        response = self.client.get(reverse("jwt-me"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["role"], "department_head")
+        self.assertEqual(
+            response.data["department"], {"id": self.dept.id, "name": "Head Dept"}
+        )
+
+    def test_login_returns_department_head_role(self):
+        response = self.client.post(
+            reverse("jwt-login"),
+            {"email": "head1@example.com", "password": "pass12345"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["user"]["role"], "department_head")
+        self.assertEqual(
+            response.data["user"]["department"]["id"], self.dept.id
+        )
+
+    def test_staff_head_of_department_stays_registrar(self):
+        staff = User.objects.create_user(
+            username="staffhead",
+            email="staffhead@example.com",
+            password="pass12345",
+            is_staff=True,
+        )
+        Department.objects.create(name="Staff Dept", head=staff)
+        self.client.force_authenticate(user=staff)
+        response = self.client.get(reverse("jwt-me"))
+        self.assertEqual(response.data["role"], "registrar")
+        self.assertIsNone(response.data["department"])
+
+    def test_plain_professor_role_unchanged(self):
+        other = Department.objects.create(name="Other Dept")
+        prof = User.objects.create_user(
+            username="plainprof",
+            email="plainprof@example.com",
+            password="pass12345",
+        )
+        Professors.objects.create(user=prof, department=other)
+        self.client.force_authenticate(user=prof)
+        response = self.client.get(reverse("jwt-me"))
+        self.assertEqual(response.data["role"], "professor")
+        self.assertIsNone(response.data["department"])
+
+
+class ProfessorsViewSetFilterTests(APITestCase):
+    def setUp(self):
+        self.dept_a = Department.objects.create(name="Dept A")
+        self.dept_b = Department.objects.create(name="Dept B")
+        self.prof_a1 = self._make_professor("profa1", self.dept_a)
+        self.prof_a2 = self._make_professor("profa2", self.dept_a)
+        self.prof_b1 = self._make_professor("profb1", self.dept_b)
+        self.client.force_authenticate(user=self.prof_a1.user)
+
+    @staticmethod
+    def _make_professor(username, department):
+        user = User.objects.create_user(
+            username=username,
+            email=f"{username}@example.com",
+            password="pass12345",
+            first_name="Test",
+            last_name=username.upper(),
+        )
+        return Professors.objects.create(user=user, department=department)
+
+    def _assign_active_term(self):
+        term = AcademicTerm.objects.create(
+            year=2026,
+            semester=1,
+            start_date="2026-01-05",
+            end_date="2026-05-20",
+            is_active=True,
+        )
+        subject = Subject.objects.create(code="UA101", title="Filter Subject")
+        section = Section.objects.create(name="BSIT-1A", headcount=10, term=term)
+        Assignment.objects.create(
+            prof=self.prof_a1, subject=subject, section=section, term=term
+        )
+        return term
+
+    def _listed_ids(self, query=None):
+        response = self.client.get(reverse("prof-list"), query or {})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return {row["id"] for row in response.data["results"]}
+
+    def test_department_filter_returns_only_that_department(self):
+        ids = self._listed_ids({"department": self.dept_a.id})
+        self.assertEqual(ids, {self.prof_a1.id, self.prof_a2.id})
+
+    def test_department_filter_includes_professors_without_active_term_assignments(self):
+        # Active term exists but only prof_a1 has an assignment in it; the
+        # department filter must bypass the active-term default so prof_a2 is
+        # still assignable by the department head.
+        self._assign_active_term()
+        ids = self._listed_ids({"department": self.dept_a.id})
+        self.assertEqual(ids, {self.prof_a1.id, self.prof_a2.id})
+
+    def test_department_and_term_filters_combine(self):
+        term = self._assign_active_term()
+        ids = self._listed_ids({"department": self.dept_a.id, "term": term.id})
+        self.assertEqual(ids, {self.prof_a1.id})
+
+    def test_default_list_still_scopes_to_active_term_assignments(self):
+        self._assign_active_term()
+        ids = self._listed_ids()
+        self.assertEqual(ids, {self.prof_a1.id})
+
+    def test_term_filter_alone_still_works(self):
+        term = self._assign_active_term()
+        ids = self._listed_ids({"term": term.id})
+        self.assertEqual(ids, {self.prof_a1.id})
+
+    def test_invalid_department_value_behaves_as_absent(self):
+        # Malformed department must fall back to the default active-term
+        # scoping, not leak the full unscoped professors table.
+        self._assign_active_term()
+        ids = self._listed_ids({"department": "not-a-number"})
+        self.assertEqual(ids, {self.prof_a1.id})

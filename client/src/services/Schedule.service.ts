@@ -81,9 +81,11 @@ class ScheduleService {
     return data;
   }
 
-  async getCourses() {
-    // /api/subjects/ is paginated; fetch all pages.
-    const data: Course[] = await apiAllPages(`${BASE_URL}/api/subjects/`);
+  async getCourses(departmentId?: number) {
+    // /api/subjects/ is paginated; fetch all pages. An optional departmentId
+    // scopes the list to subjects qualified by that department's professors.
+    const query = departmentId ? `?department=${departmentId}` : '';
+    const data: Course[] = await apiAllPages(`${BASE_URL}/api/subjects/${query}`);
 
     return data;
   }
@@ -133,9 +135,13 @@ class ScheduleService {
     return data;
   }
 
-  async getTeachers(termId?: number) {
-    // /api/profs/ is paginated; fetch all pages.
-    const query = termId ? `?term=${termId}` : '';
+  async getTeachers(termId?: number, departmentId?: number) {
+    // /api/profs/ is paginated; fetch all pages. An optional departmentId
+    // scopes the list to that department's professors.
+    const params = new URLSearchParams();
+    if (termId) params.set('term', String(termId));
+    if (departmentId) params.set('department', String(departmentId));
+    const query = params.toString() ? `?${params.toString()}` : '';
     const data: TeacherListItem[] = await apiAllPages(`${BASE_URL}/api/profs/${query}`);
 
     return data;

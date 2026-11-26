@@ -9,6 +9,7 @@ import type { User } from '../types/Types';
 export function dashboardPathFor(user: User | null | undefined): string {
   if (!user) return '/';
   if (user.role === 'registrar') return '/registrar';
+  if (user.role === 'department_head') return '/department-head';
   if (user.role === 'professor') {
     return `/teacher/${encodeURIComponent(user.username)}`;
   }

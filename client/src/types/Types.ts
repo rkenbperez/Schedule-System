@@ -1,4 +1,9 @@
-export type UserRole = 'registrar' | 'professor' | 'student' | 'user';
+export type UserRole =
+  | 'registrar'
+  | 'department_head'
+  | 'professor'
+  | 'student'
+  | 'user';
 
 export interface TeacherProfile {
   id: number;
@@ -25,6 +30,7 @@ export interface User {
     max_daily_hours: number;
     max_consecutive: number;
   } | null;
+  department?: { id: number; name: string } | null;
 }
 
 export interface AuthCredentials {

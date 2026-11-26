@@ -66,3 +66,4 @@ dist/
 .opencode/
 opencode.local.json
 opencode.local.jsonc
+.venv-win/
