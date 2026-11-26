@@ -277,7 +277,8 @@ class ScheduleGenerateTests(ApiTestCase):
         make_assignment(self.prof, subject, section, [("sync", 1)], term=self.term)
         # No availability -> infeasible.
         self.auth(self.reg_token)
-        response = self.client.post("/api/schedules/generate", {"algorithm": "greedy"})
+        # With force=true, should proceed despite infeasibility
+        response = self.client.post("/api/schedules/generate", {"algorithm": "greedy", "force": True})
         self.assertEqual(response.status_code, 201)
         self.assertFalse(response.data["feasible"])
         self.assertEqual(response.data["status"], "infeasible")
@@ -297,13 +298,13 @@ class ScheduleGenerateTests(ApiTestCase):
         subject = Subject.objects.create(code="CC101", title="Intro", units=3)
         section = Section.objects.create(name="BSIT-3A", headcount=30)
         Room.objects.create(name="R101", capacity=40)
-        Room.objects.create(name="Lab 1", capacity=40)
+        Room.objects.create(name="LAB1", capacity=40)
         make_assignment(self.prof, subject, section, [("lab", 3), ("sync", 2)], term=self.term)
         AvailabilityWindow.objects.create(
             prof=self.prof, day=0, start_time=time(8, 0), end_time=time(17, 0)
         )
         self.auth(self.reg_token)
-        response = self.client.post("/api/schedules/generate", {"algorithm": "greedy"})
+        response = self.client.post("/api/schedules/generate", {"algorithm": "greedy", "force": True})
         self.assertEqual(response.status_code, 201)
         self.assertTrue(response.data["feasible"])
         self.assertEqual(response.data["class_count"], 2)
@@ -323,7 +324,8 @@ class ScheduleGenerateTests(ApiTestCase):
             prof=self.prof, day=0, start_time=time(8, 0), end_time=time(17, 0)
         )
         self.auth(self.reg_token)
-        response = self.client.post("/api/schedules/generate", {"algorithm": "greedy"})
+        # With force=true, should proceed despite infeasibility
+        response = self.client.post("/api/schedules/generate", {"algorithm": "greedy", "force": True})
         self.assertEqual(response.status_code, 201)
         self.assertFalse(response.data["feasible"])
         self.assertEqual(response.data["class_count"], 0)
