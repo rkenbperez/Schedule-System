@@ -10,7 +10,11 @@ import {
   useRooms,
   useSections,
   useTeachers,
+  useTerms,
   useUsers,
+  useCreateDepartment,
+  useUpdateDepartment,
+  useDeleteDepartment,
   useCreateRoom,
   useUpdateRoom,
   useDeleteRoom,
@@ -29,15 +33,20 @@ import { ConfirmDialog } from '../../components/shared/ConfirmDialog';
 import { useToast } from '../../hooks/useToast';
 import type {
   Course,
+  Department,
   Room,
   Section,
   TeacherListItem,
 } from '../../types/Types';
 
-type Tab = 'Professors' | 'Rooms' | 'Courses' | 'Sections';
+type Tab =
+  | 'Departments'
+  | 'Professors'
+  | 'Rooms'
+  | 'Subjects'
+  | 'Sections';
 
 type SimpleUser = { id: number; username: string; email: string };
-type SimpleDept = { id: number; name: string };
 
 export default function RegistrarMasterDataPage() {
   const [tab, setTab] = useState<Tab>('Professors');
@@ -61,7 +70,11 @@ export default function RegistrarMasterDataPage() {
   const rooms = useRooms();
   const courses = useCourses();
   const sections = useSections();
+  const terms = useTerms();
 
+  const createDepartment = useCreateDepartment();
+  const updateDepartment = useUpdateDepartment();
+  const deleteDepartment = useDeleteDepartment();
   const createRoom = useCreateRoom();
   const updateRoom = useUpdateRoom();
   const deleteRoom = useDeleteRoom();
@@ -80,31 +93,38 @@ export default function RegistrarMasterDataPage() {
   const roomList: Room[] = rooms.data ?? [];
   const courseList: Course[] = courses.data ?? [];
   const sectionList: Section[] = sections.data ?? [];
-  const deptList: SimpleDept[] = departments.data ?? [];
+  const deptList: Department[] = departments.data ?? [];
   const userList: SimpleUser[] = users.data ?? [];
+  const termList = terms.data ?? [];
 
   const rows = (
-    tab === 'Professors'
-      ? profList.filter((p) =>
-          (p.full_name || p.username || '')
+    tab === 'Departments'
+      ? deptList.filter((department) =>
+          (department.name || '')
             .toLowerCase()
             .includes(search.toLowerCase())
         )
-      : tab === 'Rooms'
-        ? roomList.filter((r) =>
-            (r.name || '').toLowerCase().includes(search.toLowerCase())
+      : tab === 'Professors'
+        ? profList.filter((p) =>
+            (p.full_name || p.username || '')
+              .toLowerCase()
+              .includes(search.toLowerCase())
           )
-        : tab === 'Courses'
-          ? courseList.filter(
-              (c) =>
-                (c.code || '')
-                  .toLowerCase()
-                  .includes(search.toLowerCase()) ||
-                (c.title || '').toLowerCase().includes(search.toLowerCase())
+        : tab === 'Rooms'
+          ? roomList.filter((r) =>
+              (r.name || '').toLowerCase().includes(search.toLowerCase())
             )
-          : sectionList.filter((s) =>
-              (s.name || '').toLowerCase().includes(search.toLowerCase())
-            )
+          : tab === 'Subjects'
+            ? courseList.filter(
+                (c) =>
+                  (c.code || '')
+                    .toLowerCase()
+                    .includes(search.toLowerCase()) ||
+                  (c.title || '').toLowerCase().includes(search.toLowerCase())
+              )
+            : sectionList.filter((s) =>
+                (s.name || '').toLowerCase().includes(search.toLowerCase())
+              )
   ) as unknown as Record<string, unknown>[];
 
   // ---------- handlers ----------
@@ -120,7 +140,26 @@ export default function RegistrarMasterDataPage() {
 
   const handleDrawerSave = async (payload: Record<string, unknown>) => {
     try {
-      if (tab === 'Professors') {
+      if (tab === 'Departments') {
+        const head = payload.head ? Number(payload.head) : null;
+        if (drawer.mode === 'add') {
+          await createDepartment.mutateAsync({
+            name: String(payload.name ?? ''),
+            head,
+          });
+        } else {
+          await updateDepartment.mutateAsync({
+            id: Number(drawer.item!.id),
+            payload: { name: String(payload.name ?? ''), head },
+          });
+        }
+        toast.addToast({
+          type: 'success',
+          title: `Department ${
+            drawer.mode === 'add' ? 'created' : 'updated'
+          }.`,
+        });
+      } else if (tab === 'Professors') {
         if (drawer.mode === 'add') {
           await createProfessor.mutateAsync(payload as {
             user_id: number;
@@ -152,6 +191,7 @@ export default function RegistrarMasterDataPage() {
             capacity: number;
             department?: number | null;
             building?: string;
+            room_type?: string;
           });
         } else {
           await updateRoom.mutateAsync({
@@ -161,6 +201,7 @@ export default function RegistrarMasterDataPage() {
               capacity: number;
               department: number | null;
               building: string;
+              room_type: string;
             },
           });
         }
@@ -168,26 +209,31 @@ export default function RegistrarMasterDataPage() {
           type: 'success',
           title: `Room ${drawer.mode === 'add' ? 'created' : 'updated'}.`,
         });
-      } else if (tab === 'Courses') {
+      } else if (tab === 'Subjects') {
+        const subjectPayload = payload as {
+          code: string;
+          title: string;
+          units: number;
+          lec_hours: number;
+          lab_hours: number;
+        };
         if (drawer.mode === 'add') {
-          await createSubject.mutateAsync(payload as {
-            code: string;
-            title: string;
-            units: number;
-          });
+          await createSubject.mutateAsync(subjectPayload);
         } else {
           await updateSubject.mutateAsync({
             id: Number(drawer.item!.id),
-            payload: payload as {
-              code: string;
-              title: string;
-              units: number;
-            },
+            payload: subjectPayload,
           });
         }
+        const mismatch =
+          Number(subjectPayload.lec_hours) + Number(subjectPayload.lab_hours) !==
+          Number(subjectPayload.units);
         toast.addToast({
-          type: 'success',
-          title: `Course ${drawer.mode === 'add' ? 'created' : 'updated'}.`,
+          type: mismatch ? 'warning' : 'success',
+          title: `Subject ${drawer.mode === 'add' ? 'created' : 'updated'}.`,
+          description: mismatch
+            ? 'Units is the reference; lec + lab differs from units.'
+            : undefined,
         });
       } else if (tab === 'Sections') {
         if (drawer.mode === 'add') {
@@ -229,11 +275,13 @@ export default function RegistrarMasterDataPage() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      if (deleteTarget.tab === 'Professors') {
+      if (deleteTarget.tab === 'Departments') {
+        await deleteDepartment.mutateAsync(deleteTarget.id);
+      } else if (deleteTarget.tab === 'Professors') {
         await deleteProfessor.mutateAsync(deleteTarget.id);
       } else if (deleteTarget.tab === 'Rooms') {
         await deleteRoom.mutateAsync(deleteTarget.id);
-      } else if (deleteTarget.tab === 'Courses') {
+      } else if (deleteTarget.tab === 'Subjects') {
         await deleteSubject.mutateAsync(deleteTarget.id);
       } else if (deleteTarget.tab === 'Sections') {
         await deleteSection.mutateAsync(deleteTarget.id);
@@ -262,11 +310,17 @@ export default function RegistrarMasterDataPage() {
             Master Data
           </h1>
           <p className='text-sm text-text-secondary mt-1'>
-            Manage professors, rooms, courses and sections.
+            Manage departments, professors, rooms, subjects and sections.
           </p>
         </div>
         <div className='flex gap-2'>
-          {['Professors', 'Rooms', 'Courses', 'Sections'].map((t) => (
+          {[
+            'Departments',
+            'Professors',
+            'Rooms',
+            'Subjects',
+            'Sections',
+          ].map((t) => (
             <button
               key={t}
               type='button'
@@ -310,6 +364,12 @@ export default function RegistrarMasterDataPage() {
             <thead className='sticky top-0 z-10 bg-surface'>
               <tr className='border-b border-border text-left text-[10px] text-text-secondary uppercase'>
                 <th className='px-3 py-2'>#</th>
+                {tab === 'Departments' && (
+                  <>
+                    <th className='px-3 py-2'>Name</th>
+                    <th className='px-3 py-2'>Head</th>
+                  </>
+                )}
                 {tab === 'Professors' && (
                   <>
                     <th className='px-3 py-2'>Name</th>
@@ -323,15 +383,18 @@ export default function RegistrarMasterDataPage() {
                   <>
                     <th className='px-3 py-2'>Name</th>
                     <th className='px-3 py-2'>Capacity</th>
+                    <th className='px-3 py-2'>Type</th>
                     <th className='px-3 py-2'>Department</th>
                     <th className='px-3 py-2'>Building</th>
                   </>
                 )}
-                {tab === 'Courses' && (
+                {tab === 'Subjects' && (
                   <>
                     <th className='px-3 py-2'>Code</th>
                     <th className='px-3 py-2'>Title</th>
                     <th className='px-3 py-2'>Units</th>
+                    <th className='px-3 py-2'>Lec hours</th>
+                    <th className='px-3 py-2'>Lab hours</th>
                   </>
                 )}
                 {tab === 'Sections' && (
@@ -350,7 +413,7 @@ export default function RegistrarMasterDataPage() {
               {rows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={tab === 'Professors' ? 7 : 6}
+                    colSpan={tab === 'Departments' ? 4 : 7}
                     className='px-3 py-8 text-center text-text-secondary'
                   >
                     No {tab.toLowerCase()} found.
@@ -363,7 +426,34 @@ export default function RegistrarMasterDataPage() {
                     className='border-b border-border-light hover:bg-surface-secondary'
                   >
                     <td className='px-3 py-1 text-text-tertiary'>{idx + 1}</td>
-                    {tab === 'Professors' && (
+                    {tab === 'Departments' && (
+                      <>
+                        <td className='px-3 py-1 text-text-primary truncate'>
+                          {String(row.name ?? '')}
+                        </td>
+                        <td className='px-3 py-1 text-text-secondary truncate'>
+                          {String(row.head_name ?? '—')}
+                        </td>
+                      </>
+                    )}
+{tab === 'Departments' && (
+              <div className='space-y-4'>
+                <div>
+                  <label className='mb-1.5 block text-sm font-medium text-text-primary'>Name</label>
+                  <input name='name' defaultValue={drawer.mode === 'edit' ? String(drawer.item!.name ?? '') : ''} required className='w-full rounded-control border border-border bg-surface px-3 py-2 text-sm text-text-primary' />
+                </div>
+                <div>
+                  <label className='mb-1.5 block text-sm font-medium text-text-primary'>Head</label>
+                  <select name='head' defaultValue={drawer.mode === 'edit' ? String(drawer.item!.head ?? '') : ''} className='w-full rounded-control border border-border bg-surface px-3 py-2 text-sm text-text-primary'>
+                    <option value=''>None</option>
+                    {userList.map((user) => (
+                      <option key={user.id} value={user.id}>{user.username} ({user.email})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+            {tab === 'Professors' && (
                       <>
                         <td className='px-3 py-1 text-text-primary truncate'>
                           {String(row.full_name ?? '')}
@@ -391,6 +481,9 @@ export default function RegistrarMasterDataPage() {
                           {String(row.capacity ?? '')}
                         </td>
                         <td className='px-3 py-1 text-text-secondary truncate'>
+                          {String(row.room_type_display ?? row.room_type ?? '—')}
+                        </td>
+                        <td className='px-3 py-1 text-text-secondary truncate'>
                           {String(row.department_name ?? '—')}
                         </td>
                         <td className='px-3 py-1 text-text-secondary truncate'>
@@ -398,7 +491,7 @@ export default function RegistrarMasterDataPage() {
                         </td>
                       </>
                     )}
-                    {tab === 'Courses' && (
+                    {tab === 'Subjects' && (
                       <>
                         <td className='px-3 py-1 text-text-primary truncate'>
                           {String(row.code ?? '')}
@@ -408,6 +501,12 @@ export default function RegistrarMasterDataPage() {
                         </td>
                         <td className='px-3 py-1 text-text-secondary'>
                           {String(row.units ?? '')}
+                        </td>
+                        <td className='px-3 py-1 text-text-secondary'>
+                          {String(row.lec_hours ?? '')}
+                        </td>
+                        <td className='px-3 py-1 text-text-secondary'>
+                          {String(row.lab_hours ?? '')}
                         </td>
                       </>
                     )}
@@ -426,7 +525,7 @@ export default function RegistrarMasterDataPage() {
                           {String(row.year_level ?? '—')}
                         </td>
                         <td className='px-3 py-1 text-text-secondary'>
-                          {String(row.term ?? '—')}
+                          {termList.find((term) => term.id === Number(row.term))?.name ?? String(row.term ?? '—')}
                         </td>
                       </>
                     )}
@@ -451,13 +550,15 @@ export default function RegistrarMasterDataPage() {
                               tab,
                               id: Number(String(row.id ?? '')),
                               label:
-                                tab === 'Professors'
-                                  ? String(row.full_name ?? '')
-                                  : tab === 'Rooms'
-                                    ? String(row.name ?? '')
-                                    : tab === 'Courses'
-                                      ? String(row.code ?? '')
-                                      : String(row.name ?? ''),
+                                tab === 'Departments'
+                                  ? String(row.name ?? '')
+                                  : tab === 'Professors'
+                                    ? String(row.full_name ?? '')
+                                    : tab === 'Rooms'
+                                      ? String(row.name ?? '')
+                                      : tab === 'Subjects'
+                                        ? String(row.code ?? '')
+                                        : String(row.name ?? ''),
                             });
                           }}
                           className='w-7 h-7 rounded border border-border bg-surface-secondary text-text-secondary flex items-center justify-center text-[9px] transition hover:bg-red-50 hover:text-red-700'
@@ -608,6 +709,19 @@ export default function RegistrarMasterDataPage() {
                   </div>
                   <div className='flex flex-col gap-1.5 sm:col-span-2'>
                     <label className='text-xs font-medium text-text-secondary'>
+                      Room type
+                    </label>
+                    <select
+                      name='room_type'
+                      className='h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
+                    >
+                      <option value='lecture'>Lecture</option>
+                      <option value='laboratory'>Laboratory</option>
+                      <option value='general'>General</option>
+                    </select>
+                  </div>
+                  <div className='flex flex-col gap-1.5 sm:col-span-2'>
+                    <label className='text-xs font-medium text-text-secondary'>
                       Department
                     </label>
                     <select
@@ -640,12 +754,12 @@ export default function RegistrarMasterDataPage() {
                 </div>
               </>
             )}
-            {tab === 'Courses' && (
+            {tab === 'Subjects' && (
               <>
                 <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
                   <div className='flex flex-col gap-1.5 sm:col-span-2'>
                     <label className='text-xs font-medium text-text-secondary'>
-                      Course code
+                      Subject code
                     </label>
                     <input
                       name='code'
@@ -688,7 +802,38 @@ export default function RegistrarMasterDataPage() {
                       className='h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
                     />
                   </div>
+                  <div className='flex flex-col gap-1.5'>
+                    <label className='text-xs font-medium text-text-secondary'>
+                      Lec hours
+                    </label>
+                    <input
+                      name='lec_hours'
+                      type='number'
+                      defaultValue={
+                        drawer.mode === 'edit'
+                          ? Number(drawer.item!.lec_hours ?? drawer.item!.units ?? 3)
+                          : 3
+                      }
+                      className='h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
+                    />
+                  </div>
+                  <div className='flex flex-col gap-1.5'>
+                    <label className='text-xs font-medium text-text-secondary'>
+                      Lab hours
+                    </label>
+                    <input
+                      name='lab_hours'
+                      type='number'
+                      defaultValue={
+                        drawer.mode === 'edit'
+                          ? Number(drawer.item!.lab_hours ?? 0)
+                          : 0
+                      }
+                      className='h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
+                    />
+                  </div>
                 </div>
+                <p className='mt-3 text-xs text-text-secondary'>Units is the reference; lec + lab may differ.</p>
               </>
             )}
             {tab === 'Sections' && (
@@ -761,9 +906,14 @@ export default function RegistrarMasterDataPage() {
                     <select
                       name='term_id'
                       className='h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
+                      defaultValue={drawer.mode === 'edit' ? String(drawer.item!.term ?? '') : ''}
                     >
                       <option value=''>None</option>
-                      <option value=''>None</option>
+                      {termList.map((term) => (
+                        <option key={term.id} value={String(term.id)}>
+                          {term.name}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -787,7 +937,9 @@ export default function RegistrarMasterDataPage() {
                   createSection.isPending ||
                   updateSection.isPending ||
                   createProfessor.isPending ||
-                  updateProfessor.isPending
+                  updateProfessor.isPending ||
+                  createDepartment.isPending ||
+                  updateDepartment.isPending
                 }
                 className='flex-1 h-9 rounded-lg bg-apple-green-600 px-3 text-xs font-medium text-white transition hover:bg-apple-green-700 disabled:opacity-60'
               >
@@ -798,7 +950,9 @@ export default function RegistrarMasterDataPage() {
                 createSection.isPending ||
                 updateSection.isPending ||
                 createProfessor.isPending ||
-                updateProfessor.isPending
+                updateProfessor.isPending ||
+                createDepartment.isPending ||
+                updateDepartment.isPending
                   ? 'Saving…'
                   : 'Save'}
               </button>

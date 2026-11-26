@@ -60,8 +60,9 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "subject_label",
             "section_name",
             "section_headcount",
+            "source",
         ]
-        read_only_fields = ["term"]
+        read_only_fields = ["term", "source"]
 
     def get_prof_name(self, obj):
         return str(obj.prof)

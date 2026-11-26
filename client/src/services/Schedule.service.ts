@@ -1,20 +1,24 @@
 // client/src/services/Schedule.service.ts
 import type {
   AcademicTerm,
+  AutoAssignResult,
   Course,
   CourseAssignmentDetail,
   CourseComponent,
   CreateAssignmentPayload,
+  Department,
   GenerateSchedulePayload,
   GenerateScheduleResponse,
   ImportPreviewResponse,
   ProfessorProfile,
+  ProfessorSubject,
   Room,
   RoomType,
   Schedule,
   ScheduleCreatePayload,
   ScheduleRun,
   Section,
+  SectionSubject,
   TeacherListItem,
 } from '../types/Types';
 import { apiAllPages, apiBlob, apiFetch, apiJson } from './http';
@@ -138,10 +142,11 @@ class ScheduleService {
     return data;
   }
 
-  async getDepartments() {
+  async getDepartments(opts?: { headed?: 'me' }) {
     // /api/departments/ is paginated; fetch all pages.
-    const data: Array<{ id: number; name: string }> = await apiAllPages(
-      `${BASE_URL}/api/departments/`
+    const query = opts?.headed ? `?headed=${opts.headed}` : '';
+    const data: Department[] = await apiAllPages(
+      `${BASE_URL}/api/departments/${query}`
     );
 
     return data;
@@ -440,6 +445,7 @@ class ScheduleService {
     capacity: number;
     department?: number | null;
     building?: string;
+    room_type?: string;
   }) {
     return apiJson(`${BASE_URL}/api/rooms/`, {
       method: 'POST',
@@ -453,6 +459,7 @@ class ScheduleService {
     capacity: number;
     department: number | null;
     building: string;
+    room_type: string;
   }>) {
     return apiJson(`${BASE_URL}/api/rooms/${id}/`, {
       method: 'PATCH',
@@ -474,6 +481,8 @@ class ScheduleService {
     code: string;
     title: string;
     units: number;
+    lec_hours?: number;
+    lab_hours?: number;
   }) {
     return apiJson(`${BASE_URL}/api/subjects/`, {
       method: 'POST',
@@ -486,6 +495,8 @@ class ScheduleService {
     code: string;
     title: string;
     units: number;
+    lec_hours: number;
+    lab_hours: number;
   }>) {
     return apiJson(`${BASE_URL}/api/subjects/${id}/`, {
       method: 'PATCH',
@@ -571,6 +582,123 @@ class ScheduleService {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
     });
+  }
+
+  /* ---------- Master Data CRUD (Departments) ---------- */
+
+  async createDepartment(payload: { name: string; head?: number | null }) {
+    const data: Department = await apiJson(`${BASE_URL}/api/departments/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return data;
+  }
+
+  async updateDepartment(
+    id: number,
+    payload: Partial<{ name: string; head: number | null }>
+  ) {
+    const data: Department = await apiJson(
+      `${BASE_URL}/api/departments/${id}/`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    );
+    return data;
+  }
+
+  async deleteDepartment(id: number) {
+    await apiFetch(`${BASE_URL}/api/departments/${id}/`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  /* ---------- Department Chair (Professor Subjects) ---------- */
+
+  async getProfessorSubjects(departmentId: number) {
+    const data: ProfessorSubject[] = await apiJson(
+      `${BASE_URL}/api/departments/${departmentId}/professor-subjects/`
+    );
+    return data;
+  }
+
+  async createProfessorSubject(
+    departmentId: number,
+    payload: {
+      professor_id: number;
+      subject_id: number;
+      is_preferred?: boolean;
+    }
+  ) {
+    const data: ProfessorSubject = await apiJson(
+      `${BASE_URL}/api/departments/${departmentId}/professor-subjects/`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    );
+    return data;
+  }
+
+  async deleteProfessorSubject(departmentId: number, assignmentId: number) {
+    await apiFetch(
+      `${BASE_URL}/api/departments/${departmentId}/professor-subjects/${assignmentId}/`,
+      {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+  }
+
+  /* ---------- Section Subject Requirements ---------- */
+
+  async getSectionSubjects(sectionId?: number) {
+    const query = sectionId ? `?section=${sectionId}` : '';
+    const data: SectionSubject[] = await apiAllPages(
+      `${BASE_URL}/api/section-subjects/${query}`
+    );
+    return data;
+  }
+
+  async createSectionSubject(payload: { section: number; subject: number }) {
+    const data: SectionSubject = await apiJson(
+      `${BASE_URL}/api/section-subjects/`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    );
+    return data;
+  }
+
+  async deleteSectionSubject(id: number) {
+    await apiFetch(`${BASE_URL}/api/section-subjects/${id}/`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  /* ---------- Auto Assignment ---------- */
+
+  async autoAssign(payload?: {
+    term_id?: number | null;
+    replace_auto?: boolean;
+  }) {
+    const data: AutoAssignResult = await apiJson(
+      `${BASE_URL}/api/schedules/auto-assign/`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload ?? {}),
+      }
+    );
+    return data;
   }
 
   /* ---------- Public Schedule API (no auth required) ---------- */

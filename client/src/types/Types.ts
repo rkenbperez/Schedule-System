@@ -124,6 +124,65 @@ export interface Room {
   department: number | null;
   department_name: string;
   building: string;
+  room_type: string;
+  room_type_display?: string;
+}
+
+export interface Department {
+  id: number;
+  name: string;
+  head: number | null;
+  head_name: string;
+  head_email: string;
+}
+
+export interface ProfessorSubject {
+  id: number;
+  professor: number;
+  professor_name: string;
+  professor_department_id: number | null;
+  professor_department_name: string;
+  subject: number;
+  subject_code: string;
+  subject_title: string;
+  is_preferred: boolean;
+}
+
+export interface SectionSubject {
+  id: number;
+  section: number;
+  section_name: string;
+  subject: number;
+  subject_code: string;
+  subject_title: string;
+}
+
+export interface AutoAssignResult {
+  term_id: number;
+  term: string;
+  created_count: number;
+  skipped: number;
+  unassigned_count: number;
+  created: Array<{
+    assignment_id: number;
+    professor_id: number;
+    professor_name: string;
+    section_id: number;
+    section_name: string;
+    subject_id: number;
+    subject_code: string;
+    subject_title: string;
+    lec_hours: number;
+    lab_hours: number;
+  }>;
+  unassigned: Array<{
+    section_id: number;
+    section_name: string;
+    subject_id: number;
+    subject_code: string;
+    subject_title: string;
+    reason: string;
+  }>;
 }
 
 export const DAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -144,6 +203,8 @@ export interface Course {
   code: string;
   title: string;
   units: string;
+  lec_hours: number;
+  lab_hours: number;
   is_active: boolean;
   created_at: string;
 }
