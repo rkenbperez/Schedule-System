@@ -6,6 +6,7 @@ import {
   CalendarCheck,
   LayoutDashboard,
   Users,
+  Settings,
 } from 'lucide-react';
 import { AppShell, type AppNavItem } from '../components/layout/AppShell';
 import { useMe } from '../hooks/useAuth';
@@ -43,6 +44,11 @@ export default function TeacherLayout() {
       label: 'Dashboard',
       to: `/teacher/${teacher}`,
       end: true,
+    },
+    {
+      icon: Settings,
+      label: 'Schedule Preferences',
+      to: `/teacher/${teacher}/preferences`,
     },
     {
       icon: BookOpen,

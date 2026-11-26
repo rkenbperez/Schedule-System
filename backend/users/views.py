@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
 from django.urls import reverse
 
-from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view, inline_serializer
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema, extend_schema_view, inline_serializer
 from rest_framework import serializers, status, viewsets
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -13,15 +13,17 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from core.permissions import IsRegistrarOrReadOnly
 
-from django.contrib.auth import get_user_model
-
-from .models import PasswordResetToken, Professors
+from .models import PasswordResetToken, Professors, ProfessorPreference, PreferenceSubmission
 from .serializers import (
     LoginSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     ProfessorsSerializer,
+    ProfessorPreferenceSerializer,
+    ProfessorPreferenceListSerializer,
+    PreferenceSubmissionSerializer,
 )
+from .permissions import IsProfessor, IsDepartmentHead, IsRegistrar
 from .throttles import LoginRateThrottle
 
 User = get_user_model()
@@ -237,3 +239,345 @@ class ProfessorsViewSet(viewsets.ModelViewSet):
             if active_term is not None:
                 qs = qs.filter(assignments__term=active_term).distinct()
         return qs
+
+
+@extend_schema_view(
+    list=extend_schema(tags=["professor-preferences"], summary="List my preferences"),
+    create=extend_schema(tags=["professor-preferences"], summary="Create preference"),
+    retrieve=extend_schema(tags=["professor-preferences"], summary="Get preference"),
+    update=extend_schema(tags=["professor-preferences"], summary="Update preference"),
+    partial_update=extend_schema(tags=["professor-preferences"], summary="Partial update preference"),
+    destroy=extend_schema(tags=["professor-preferences"], summary="Delete preference"),
+)
+class ProfessorPreferenceViewSet(viewsets.ModelViewSet):
+    """Professor's course preferences for active term."""
+
+    serializer_class = ProfessorPreferenceSerializer
+    permission_classes = [IsProfessor]
+
+    def get_queryset(self):
+        from timetable.models import AcademicTerm
+        user = self.request.user
+        if not hasattr(user, "prof"):
+            return ProfessorPreference.objects.none()
+
+        active_term = AcademicTerm.objects.filter(is_active=True).first()
+        if not active_term:
+            return ProfessorPreference.objects.none()
+
+        return ProfessorPreference.objects.filter(
+            professor=user.prof,
+            term=active_term,
+        ).select_related("professor__user", "subject", "section", "term", "professor__department")
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return ProfessorPreferenceListSerializer
+        return ProfessorPreferenceSerializer
+
+    def perform_create(self, serializer):
+        from timetable.models import AcademicTerm
+        active_term = AcademicTerm.objects.filter(is_active=True).first()
+        if not active_term:
+            raise serializers.ValidationError("No active term found.")
+        serializer.save(professor=self.request.user.prof, term=active_term)
+
+
+@extend_schema_view(
+    list=extend_schema(tags=["professor-preferences"], summary="Submit preference for review"),
+)
+class ProfessorPreferenceSubmitView(APIView):
+    """Submit a preference for department head review."""
+
+    permission_classes = [IsProfessor]
+
+    @extend_schema(
+        tags=["professor-preferences"],
+        summary="Submit preference for review",
+        request=inline_serializer(
+            name="SubmitPreferenceRequest",
+            fields={},
+        ),
+        responses={
+            200: ProfessorPreferenceSerializer,
+            400: OpenApiResponse(description="Invalid state"),
+        },
+    )
+    def post(self, request, pk=None):
+        try:
+            pref = ProfessorPreference.objects.get(pk=pk, professor=request.user.prof)
+        except ProfessorPreference.DoesNotExist:
+            return Response(
+                {"detail": "Preference not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if pref.status != "draft":
+            return Response(
+                {"detail": f"Cannot submit preference with status '{pref.status}'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from django.utils import timezone
+        pref.status = "submitted"
+        pref.submitted_at = timezone.now()
+        pref.save(update_fields=["status", "submitted_at", "updated_at"])
+
+        serializer = ProfessorPreferenceSerializer(pref, context={"request": request})
+        return Response(serializer.data)
+
+
+@extend_schema_view(
+    list=extend_schema(tags=["professor-availability"], summary="List my availability windows"),
+    create=extend_schema(tags=["professor-availability"], summary="Create availability window"),
+    retrieve=extend_schema(tags=["professor-availability"], summary="Get availability window"),
+    update=extend_schema(tags=["professor-availability"], summary="Update availability window"),
+    partial_update=extend_schema(tags=["professor-availability"], summary="Partial update availability window"),
+    destroy=extend_schema(tags=["professor-availability"], summary="Delete availability window"),
+)
+class ProfessorAvailabilityViewSet(viewsets.ModelViewSet):
+    """Professor's availability windows (1-hour blocks)."""
+
+    permission_classes = [IsProfessor]
+
+    def get_queryset(self):
+        from timetable.models import AcademicTerm, AvailabilityWindow
+        user = self.request.user
+        if not hasattr(user, "prof"):
+            return AvailabilityWindow.objects.none()
+
+        active_term = AcademicTerm.objects.filter(is_active=True).first()
+        if not active_term:
+            return AvailabilityWindow.objects.none()
+
+        return AvailabilityWindow.objects.filter(
+            prof=user.prof,
+            term=active_term,
+        ).select_related("prof")
+
+    def get_serializer_class(self):
+        from timetable.serializers import AvailabilityWindowSerializer
+        return AvailabilityWindowSerializer
+
+    def perform_create(self, serializer):
+        from timetable.models import AcademicTerm
+        active_term = AcademicTerm.objects.filter(is_active=True).first()
+        if not active_term:
+            raise serializers.ValidationError("No active term found.")
+        serializer.save(prof=self.request.user.prof, term=active_term)
+
+
+@extend_schema_view(
+    list=extend_schema(tags=["department-head"], summary="List pending submissions for my department"),
+)
+class DepartmentHeadSubmissionViewSet(viewsets.ReadOnlyModelViewSet):
+    """Department head views pending professor submissions."""
+
+    serializer_class = PreferenceSubmissionSerializer
+    permission_classes = [IsDepartmentHead]
+
+    def get_queryset(self):
+        from catalog.models import Department
+        user = self.request.user
+        dept = Department.objects.filter(head=user).first()
+        if not dept:
+            return PreferenceSubmission.objects.none()
+
+        from timetable.models import AcademicTerm
+        active_term = AcademicTerm.objects.filter(is_active=True).first()
+        if not active_term:
+            return PreferenceSubmission.objects.none()
+
+        return PreferenceSubmission.objects.filter(
+            department=dept,
+            term=active_term,
+        ).prefetch_related(
+            "items__preference__professor__user",
+            "items__preference__subject",
+            "items__preference__section",
+            "submitted_by",
+        ).order_by("-submitted_at")
+
+
+@extend_schema_view(
+    create=extend_schema(tags=["department-head"], summary="Publish individual preference"),
+)
+class DepartmentHeadPublishView(APIView):
+    """Publish or reject individual professor preference."""
+
+    permission_classes = [IsDepartmentHead]
+
+    @extend_schema(
+        tags=["department-head"],
+        summary="Publish preference",
+        request=inline_serializer(
+            name="PublishPreferenceRequest",
+            fields={
+                "action": serializers.ChoiceField(choices=["publish", "reject"]),
+                "notes": serializers.CharField(required=False, allow_blank=True),
+            },
+        ),
+        responses={
+            200: ProfessorPreferenceSerializer,
+            400: OpenApiResponse(description="Invalid state"),
+            404: OpenApiResponse(description="Not found"),
+        },
+    )
+    def post(self, request, pk=None):
+        from catalog.models import Department
+        user = request.user
+        dept = Department.objects.filter(head=user).first()
+        if not dept:
+            return Response(
+                {"detail": "You are not a department head."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            pref = ProfessorPreference.objects.select_related("professor__department").get(
+                pk=pk,
+                professor__department=dept,
+            )
+        except ProfessorPreference.DoesNotExist:
+            return Response(
+                {"detail": "Preference not found in your department."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if pref.status not in ["draft", "submitted"]:
+            return Response(
+                {"detail": f"Cannot process preference with status '{pref.status}'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        action = request.data.get("action", "publish")
+        notes = request.data.get("notes", "")
+
+        from django.utils import timezone
+        if action == "publish":
+            pref.status = "published"
+            pref.published_at = timezone.now()
+        else:
+            pref.status = "rejected"
+        pref.reviewed_by = user
+        pref.review_notes = notes
+        pref.save(update_fields=["status", "published_at", "reviewed_by", "review_notes", "updated_at"])
+
+        serializer = ProfessorPreferenceSerializer(pref, context={"request": request})
+        return Response(serializer.data)
+
+
+@extend_schema_view(
+    create=extend_schema(tags=["department-head"], summary="Batch publish/reject preferences"),
+)
+class DepartmentHeadBatchPublishView(APIView):
+    """Batch publish or reject multiple preferences."""
+
+    permission_classes = [IsDepartmentHead]
+
+    @extend_schema(
+        tags=["department-head"],
+        summary="Batch publish preferences",
+        request=inline_serializer(
+            name="BatchPublishRequest",
+            fields={
+                "preference_ids": serializers.ListField(child=serializers.IntegerField()),
+                "action": serializers.ChoiceField(choices=["publish", "reject"]),
+                "notes": serializers.CharField(required=False, allow_blank=True),
+            },
+        ),
+        responses={
+            200: inline_serializer(
+                name="BatchPublishResponse",
+                fields={
+                    "updated": serializers.IntegerField(),
+                    "preferences": ProfessorPreferenceSerializer(many=True),
+                },
+            ),
+        },
+    )
+    def post(self, request):
+        from catalog.models import Department
+        user = request.user
+        dept = Department.objects.filter(head=user).first()
+        if not dept:
+            return Response(
+                {"detail": "You are not a department head."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        preference_ids = request.data.get("preference_ids", [])
+        action = request.data.get("action", "publish")
+        notes = request.data.get("notes", "")
+
+        if not preference_ids:
+            return Response(
+                {"detail": "No preferences selected."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        prefs = ProfessorPreference.objects.filter(
+            id__in=preference_ids,
+            professor__department=dept,
+        ).select_related("professor__department")
+
+        updated = 0
+        from django.utils import timezone
+        for pref in prefs:
+            if pref.status in ["draft", "submitted"]:
+                if action == "publish":
+                    pref.status = "published"
+                    pref.published_at = timezone.now()
+                else:
+                    pref.status = "rejected"
+                pref.reviewed_by = user
+                pref.review_notes = notes
+                pref.save(update_fields=["status", "published_at", "reviewed_by", "review_notes", "updated_at"])
+                updated += 1
+
+        serializer = ProfessorPreferenceSerializer(prefs, many=True, context={"request": request})
+        return Response({"updated": updated, "preferences": serializer.data})
+
+
+@extend_schema_view(
+    list=extend_schema(tags=["registrar"], summary="List all published preferences"),
+)
+class RegistrarPublishedPreferencesView(APIView):
+    """Registrar views all published preferences for active term."""
+
+    permission_classes = [IsRegistrar]
+
+    @extend_schema(
+        tags=["registrar"],
+        summary="List published preferences",
+        parameters=[
+            OpenApiParameter(name="term", type=OpenApiTypes.INT, location=OpenApiParameter.QUERY, description="Term ID (defaults to active)"),
+        ],
+        responses={200: ProfessorPreferenceListSerializer(many=True)},
+    )
+    def get(self, request):
+        from timetable.models import AcademicTerm
+        term_id = request.query_params.get("term")
+        if term_id:
+            try:
+                term = AcademicTerm.objects.get(pk=int(term_id))
+            except (AcademicTerm.DoesNotExist, ValueError):
+                return Response({"detail": "Invalid term."}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            term = AcademicTerm.objects.filter(is_active=True).first()
+            if not term:
+                return Response({"detail": "No active term."}, status=status.HTTP_404_NOT_FOUND)
+
+        prefs = ProfessorPreference.objects.filter(
+            term=term,
+            status="published",
+        ).select_related(
+            "professor__user",
+            "professor__department",
+            "subject",
+            "section",
+            "term",
+        ).order_by("professor__user__last_name", "subject__code")
+
+        serializer = ProfessorPreferenceListSerializer(prefs, many=True, context={"request": request})
+        return Response(serializer.data)

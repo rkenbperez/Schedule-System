@@ -4,9 +4,12 @@ import ResetPasswordPage from './pages/login/ResetPasswordPage';
 import TeacherLayout from './layouts/TeacherLayout';
 import RegistrarLayout from './layouts/RegistrarLayout';
 import StudentLayout from './layouts/StudentLayout';
+import DepartmentHeadLayout from './layouts/DepartmentHeadLayout';
 import TeacherDashboard from './pages/teacher/TeacherDashboardPage';
 import TeacherAssignmentPage from './pages/teacher/TeacherAssignmentPage';
 import TeacherAssingmentDetailPage from './pages/teacher/TeacherAssingmentDetailPage';
+import ProfessorPreferenceDashboard from './pages/teacher/ProfessorPreferenceDashboard';
+import DepartmentHeadDashboard from './pages/department-head/DepartmentHeadDashboard';
 
 import TeacherRoomPage from './pages/teacher/TeacherRoomPage';
 import TeacherRoomDetailPage from './pages/teacher/TeacherRoomDetailPage';
@@ -44,6 +47,14 @@ const Router = createBrowserRouter([
       {
         index: true,
         element: <TeacherDashboard />,
+      },
+      {
+        path: 'preferences',
+        element: (
+          <RequireAuth requiredRole='professor'>
+            <ProfessorPreferenceDashboard />
+          </RequireAuth>
+        ),
       },
       {
         path: 'assignments',
@@ -166,6 +177,24 @@ const Router = createBrowserRouter([
             <RegistrarMasterDataPage />
           </RequireAuth>
         ),
+      },
+    ],
+  },
+  {
+    path: '/department-head',
+    element: (
+      <RequireAuth requiredRole='registrar'>
+        <DepartmentHeadLayout />
+      </RequireAuth>
+    ),
+    children: [
+      {
+        index: true,
+        element: <DepartmentHeadDashboard />,
+      },
+      {
+        path: 'submissions',
+        element: <DepartmentHeadDashboard />,
       },
     ],
   },

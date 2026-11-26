@@ -3,10 +3,14 @@ import {
   Activity,
   BookOpen,
   CalendarDays,
+  CheckCircle,
   ChevronRight,
   Clock,
   Download,
   Users,
+  Play,
+  RefreshCw,
+  Plus,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
@@ -15,10 +19,12 @@ import {
   useAllSchedules,
 } from '../../hooks/Registrar.hooks';
 import { useExportSchedule } from '../../hooks/GenerateManagement.hooks';
+import { usePublishedPreferences, useGenerateFromPublished } from '../../hooks/Professor.hooks';
 import type {
   CourseAssignmentDetail,
   Schedule,
   TeacherListItem,
+  GenerateFromPublishedResponse,
 } from '../../types/Types';
 import {
   Alert,
@@ -63,10 +69,17 @@ export default function RegistrarDashboardPage() {
     refetch: refetchSchedules,
   } = useAllSchedules({ enabled: true });
 
+  const { data: publishedPreferences, refetch: refetchPublished } = usePublishedPreferences(undefined, { enabled: true });
+  const generateFromPublishedMutation = useGenerateFromPublished();
+
   const exportScheduleMutation = useExportSchedule();
   const [exportPanelOpen, setExportPanelOpen] = useState(false);
   const [exportingFormat, setExportingFormat] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [generatePanelOpen, setGeneratePanelOpen] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [lastGenerateResult, setLastGenerateResult] = useState<GenerateFromPublishedResponse | null>(null);
 
   const loading = teachersLoading || assignmentsLoading || schedulesLoading;
   const error = teachersError || assignmentsError || schedulesError;
@@ -83,6 +96,7 @@ export default function RegistrarDashboardPage() {
       !scheduledAssignmentIds.has(assignment.id)
   ).length;
   const runId = allSchedules.length > 0 ? allSchedules[0].run : null;
+  const publishedCount = publishedPreferences?.length ?? 0;
 
   async function handleExport(format: string) {
     if (!runId) {
@@ -147,6 +161,13 @@ export default function RegistrarDashboardPage() {
         actions={
           <>
             <LinkButton
+              to='/registrar/master-data'
+              variant='secondary'
+              icon={<Plus size={17} aria-hidden='true' />}
+            >
+              Manage Teachers
+            </LinkButton>
+            <LinkButton
               to='/registrar/timetable'
               variant='secondary'
               icon={<CalendarDays size={17} aria-hidden='true' />}
@@ -165,6 +186,18 @@ export default function RegistrarDashboardPage() {
             >
               Export
             </Button>
+            {publishedCount > 0 && (
+              <Button
+                variant='secondary'
+                icon={<Play size={17} aria-hidden='true' />}
+                onClick={() => {
+                  setGenerateError(null);
+                  setGeneratePanelOpen(true);
+                }}
+              >
+                Generate from Published
+              </Button>
+            )}
           </>
         }
       />
@@ -205,7 +238,44 @@ export default function RegistrarDashboardPage() {
               value={allSchedules.length}
               hint='Classes placed in the timetable'
             />
+            {publishedCount > 0 && (
+              <StatCard
+                icon={BookOpen}
+                label='Published Preferences'
+                value={publishedCount}
+                hint='Ready for schedule generation'
+              />
+            )}
           </div>
+
+          {publishedCount > 0 && lastGenerateResult && (
+            <Card className='bg-apple-green-50 border-apple-green-200'>
+              <div className='flex items-center justify-between'>
+                <div className='flex items-center gap-3'>
+                  <span className='grid h-10 w-10 place-items-center rounded-full bg-apple-green-100 text-apple-green-700'>
+                    <CheckCircle size={20} />
+                  </span>
+                  <div>
+                    <h3 className='text-body font-semibold text-apple-green-800'>
+                      Last Generation: {new Date().toLocaleDateString()}
+                    </h3>
+                    <p className='text-caption text-apple-green-700'>
+                      {lastGenerateResult.class_count} classes placed · {lastGenerateResult.feasible ? 'Feasible' : 'Infeasible'}
+                      {lastGenerateResult.unplaced.length > 0 && ` · ${lastGenerateResult.unplaced.length} unplaced`}
+                    </p>
+                  </div>
+                </div>
+                <div className='flex gap-2'>
+                  <Button variant='secondary' size='sm' icon={<RefreshCw size={14} />} onClick={() => { setGenerateError(null); setGeneratePanelOpen(true); }}>
+                    Regenerate
+                  </Button>
+                  <Button variant='primary' size='sm' icon={<Download size={14} />} onClick={() => { if (lastGenerateResult.run_id) handleExport('xlsx'); }} disabled={!lastGenerateResult.run_id}>
+                    Export
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          )}
 
           <section className='space-y-4'>
             <div className='flex flex-wrap items-end justify-between gap-2'>
@@ -396,6 +466,88 @@ export default function RegistrarDashboardPage() {
           <p className='text-caption text-text-tertiary'>
             Exports use the most recently generated schedule.
           </p>
+        </div>
+      </Modal>
+
+      <Modal
+        open={generatePanelOpen}
+        onClose={() => {
+          if (!generating) setGeneratePanelOpen(false);
+        }}
+        title='Generate Schedule from Published Preferences'
+        description='Choose algorithm and options to generate a timetable from professor preferences.'
+        size='md'
+      >
+        <div className='space-y-4'>
+          {generateError && <Alert tone='danger'>{generateError}</Alert>}
+
+          <div className='space-y-4'>
+            <div>
+              <label className='block text-body-sm font-medium mb-1'>Algorithm</label>
+              <select
+                value="greedy"
+                onChange={() => {}}
+                className='w-full p-3 border border-border-control rounded-control text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-apple-green-400'
+                disabled={generating}
+              >
+                <option value='greedy'>Greedy (fast, good for most cases)</option>
+                <option value='min_conflicts'>Min Conflicts (iterative improvement)</option>
+                <option value='backtracking'>Backtracking (exhaustive, slower)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className='block text-body-sm font-medium mb-1'>Time Limit (seconds)</label>
+              <input
+                type='number'
+                value={30}
+                min={5}
+                max={300}
+                className='w-full p-3 border border-border-control rounded-control text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-apple-green-400'
+                disabled={generating}
+              />
+            </div>
+
+            <label className='flex items-center gap-2 cursor-pointer'>
+              <input type='checkbox' className='text-apple-green-600' disabled={generating} />
+              <span className='text-body-sm text-text-secondary'>
+                Force generation even if feasibility check fails
+              </span>
+            </label>
+          </div>
+
+          <div className='flex justify-end gap-3 pt-4'>
+            <Button variant='secondary' onClick={() => setGeneratePanelOpen(false)} disabled={generating}>
+              Cancel
+            </Button>
+            <Button
+              variant='primary'
+              icon={<Play size={16} />}
+              onClick={async () => {
+                setGenerating(true);
+                setGenerateError(null);
+                try {
+                  const result = await generateFromPublishedMutation.mutateAsync({
+                    algorithm: 'greedy',
+                    time_limit_s: 30,
+                    force: false,
+                  });
+                  setLastGenerateResult(result);
+                  setGeneratePanelOpen(false);
+                  refetchPublished();
+                  refetchSchedules();
+                } catch (err) {
+                  setGenerateError(err instanceof Error ? err.message : 'Generation failed');
+                } finally {
+                  setGenerating(false);
+                }
+              }}
+              disabled={generating}
+              loading={generating}
+            >
+              Generate Schedule
+            </Button>
+          </div>
         </div>
       </Modal>
     </div>

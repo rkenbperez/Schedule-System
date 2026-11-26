@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Search, Users } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Search, Users } from 'lucide-react';
 import { useAllAssignments, useTeachers } from '../../hooks/Schedule.hooks';
 import { cn } from '../../lib/cn';
 import {
   Alert,
   Badge,
   EmptyState,
+  LinkButton,
   LoadingState,
   PageHeader,
   Table,
@@ -76,9 +77,18 @@ export default function RegistrarTeacherList() {
         title='Teachers'
         description='Review teaching loads and open a teacher to manage their assignments.'
         actions={
-          <Badge tone='neutral' size='md'>
-            {filtered.length} of {teachers.length}
-          </Badge>
+          <>
+            <LinkButton
+              to='/registrar/master-data'
+              variant='secondary'
+              icon={<Plus size={17} aria-hidden='true' />}
+            >
+              Manage Teachers
+            </LinkButton>
+            <Badge tone='neutral' size='md'>
+              {filtered.length} of {teachers.length}
+            </Badge>
+          </>
         }
       />
 

@@ -5,7 +5,7 @@ This is the only Django-touching piece of the solver. It stays out of the
 """
 
 from catalog.models import Room
-from users.models import Professors
+from users.models import Professors, ProfessorPreference
 
 from .engines.scenario import Availability, Busy, Meeting, RoomRef, Scenario
 from .models import AcademicTerm, Assignment, AvailabilityWindow, BusyBlock
@@ -64,6 +64,99 @@ def build_scenario(term=None) -> Scenario:
                     duration_slots=slot.duration_slots,
                     department=department,
                     mode=slot.mode,
+                )
+            )
+            meeting_id += 1
+
+    availability = [
+        Availability(
+            prof_id=window.prof_id,
+            day=window.day,
+            start=_to_minutes(window.start_time),
+            end=_to_minutes(window.end_time),
+            is_preferred=window.is_preferred,
+        )
+        for window in AvailabilityWindow.objects.filter(prof__assignments__term=term).distinct()
+    ]
+
+    busy = [
+        Busy(
+            prof_id=block.prof_id,
+            day=block.day,
+            start=_to_minutes(block.start_time),
+            end=_to_minutes(block.end_time),
+        )
+        for block in BusyBlock.objects.filter(prof__assignments__term=term).distinct()
+    ]
+
+    prof_daily_hours = {
+        prof.pk: prof.max_daily_hours for prof in Professors.objects.filter(assignments__term=term).distinct()
+    }
+    prof_max_consecutive = {
+        prof.pk: prof.max_consecutive for prof in Professors.objects.filter(assignments__term=term).distinct()
+    }
+
+    return Scenario(
+        rooms=rooms,
+        meetings=meetings,
+        availability=availability,
+        busy=busy,
+        prof_daily_hours=prof_daily_hours,
+        prof_max_consecutive=prof_max_consecutive,
+    )
+
+
+def build_scenario_from_published_preferences(term=None) -> Scenario:
+    """
+    Build a scenario from published ProfessorPreferences for the given term.
+    Uses published preferences as HARD constraints - engine MUST place these meetings.
+    """
+    if term is None:
+        term = get_active_term()
+        if term is None:
+            raise ValueError("No active term found. Set a term as active or pass one explicitly.")
+
+    rooms = [
+        RoomRef(
+            id=r.pk,
+            name=r.name,
+            capacity=r.capacity,
+            department=r.department.name if r.department else "",
+            building=r.building or "",
+        )
+        for r in Room.objects.select_related("department")
+    ]
+
+    meetings = []
+    meeting_id = 1
+
+    prefs = ProfessorPreference.objects.filter(
+        term=term,
+        status="published",
+    ).select_related(
+        "professor__department", "professor__user", "subject", "section"
+    )
+
+    for pref in prefs:
+        headcount = pref.section.headcount
+        department = pref.professor.department.name if pref.professor.department else ""
+        prof_label = str(pref.professor)
+        subject_label = str(pref.subject)
+
+        for slot in pref.meetings:
+            meetings.append(
+                Meeting(
+                    meeting_id=meeting_id,
+                    assignment_id=0,
+                    prof_id=pref.professor_id,
+                    prof_label=prof_label,
+                    subject_label=subject_label,
+                    section_id=pref.section_id,
+                    section_name=pref.section.name,
+                    section_headcount=headcount,
+                    duration_slots=slot["duration_slots"],
+                    department=department,
+                    mode=slot["mode"],
                 )
             )
             meeting_id += 1

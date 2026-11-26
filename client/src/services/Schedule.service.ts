@@ -9,9 +9,15 @@ import type {
   Department,
   GenerateSchedulePayload,
   GenerateScheduleResponse,
+  GenerateFromPublishedPayload,
+  GenerateFromPublishedResponse,
   ImportPreviewResponse,
+  MeetingPreference,
+  ProfessorPreference,
+  ProfessorPreferenceListItem,
   ProfessorProfile,
   ProfessorSubject,
+  PreferenceSubmission,
   Room,
   RoomType,
   Schedule,
@@ -20,6 +26,7 @@ import type {
   Section,
   SectionSubject,
   TeacherListItem,
+  AvailabilityWindow,
 } from '../types/Types';
 import { apiAllPages, apiBlob, apiFetch, apiJson } from './http';
 
@@ -552,10 +559,13 @@ class ScheduleService {
   /* ---------- Master Data CRUD (Professors) ---------- */
 
   async createProfessor(payload: {
-    user_id: number;
+    user_email: string;
+    user_password?: string;
+    user_is_staff?: boolean;
     department_id?: number | null;
     max_daily_hours?: number;
     max_consecutive?: number;
+    department_head?: boolean;
   }) {
     return apiJson(`${BASE_URL}/api/profs/`, {
       method: 'POST',
@@ -565,10 +575,13 @@ class ScheduleService {
   }
 
   async updateProfessor(id: number, payload: Partial<{
-    user_id: number;
+    user_email: string;
+    user_password?: string;
+    user_is_staff?: boolean;
     department_id: number | null;
     max_daily_hours: number;
     max_consecutive: number;
+    department_head: boolean;
   }>) {
     return apiJson(`${BASE_URL}/api/profs/${id}/`, {
       method: 'PATCH',
@@ -755,6 +768,186 @@ class ScheduleService {
       }>;
     } = await apiJson(`${BASE_URL}/api/public/schedules/${termCode}/sections/`);
 
+    return data;
+  }
+
+  /* ---------- Professor Preferences ---------- */
+
+  async getProfessorPreferences(): Promise<ProfessorPreference[]> {
+    const data: ProfessorPreference[] = await apiAllPages(
+      `${BASE_URL}/api/professor/preferences/`
+    );
+    return data;
+  }
+
+  async createProfessorPreference(payload: {
+    subject: number;
+    section: number;
+    meetings: MeetingPreference[];
+  }): Promise<ProfessorPreference> {
+    const data: ProfessorPreference = await apiJson(
+      `${BASE_URL}/api/professor/preferences/`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    );
+    return data;
+  }
+
+  async updateProfessorPreference(
+    id: number,
+    payload: Partial<{
+      subject: number;
+      section: number;
+      meetings: MeetingPreference[];
+    }>
+  ): Promise<ProfessorPreference> {
+    const data: ProfessorPreference = await apiJson(
+      `${BASE_URL}/api/professor/preferences/${id}/`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    );
+    return data;
+  }
+
+  async deleteProfessorPreference(id: number): Promise<void> {
+    await apiFetch(`${BASE_URL}/api/professor/preferences/${id}/`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  async submitProfessorPreference(id: number): Promise<ProfessorPreference> {
+    const data: ProfessorPreference = await apiJson(
+      `${BASE_URL}/api/professor/preferences/${id}/submit/`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+    return data;
+  }
+
+  /* ---------- Professor Availability ---------- */
+
+  async getProfessorAvailability(): Promise<AvailabilityWindow[]> {
+    const data: AvailabilityWindow[] = await apiJson(
+      `${BASE_URL}/api/professor/availability/`
+    );
+    return data;
+  }
+
+  async createProfessorAvailability(payload: {
+    day: number;
+    start_time: string;
+    end_time: string;
+    is_preferred?: boolean;
+  }): Promise<AvailabilityWindow> {
+    const data: AvailabilityWindow = await apiJson(
+      `${BASE_URL}/api/professor/availability/`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    );
+    return data;
+  }
+
+  async updateProfessorAvailability(
+    id: number,
+    payload: Partial<{
+      day: number;
+      start_time: string;
+      end_time: string;
+      is_preferred: boolean;
+    }>
+  ): Promise<AvailabilityWindow> {
+    const data: AvailabilityWindow = await apiJson(
+      `${BASE_URL}/api/professor/availability/${id}/`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    );
+    return data;
+  }
+
+  async deleteProfessorAvailability(id: number): Promise<void> {
+    await apiFetch(`${BASE_URL}/api/professor/availability/${id}/`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  /* ---------- Department Head ---------- */
+
+  async getDepartmentHeadSubmissions(): Promise<PreferenceSubmission[]> {
+    const data: PreferenceSubmission[] = await apiJson(
+      `${BASE_URL}/api/department-head/submissions/`
+    );
+    return data;
+  }
+
+  async publishPreference(
+    id: number,
+    action: 'publish' | 'reject',
+    notes?: string
+  ): Promise<ProfessorPreference> {
+    const data: ProfessorPreference = await apiJson(
+      `${BASE_URL}/api/department-head/submissions/${id}/publish/`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, notes }),
+      }
+    );
+    return data;
+  }
+
+  async batchPublishPreferences(
+    preferenceIds: number[],
+    action: 'publish' | 'reject',
+    notes?: string
+  ): Promise<{ updated: number; preferences: ProfessorPreference[] }> {
+    const data = await apiJson<{ updated: number; preferences: ProfessorPreference[] }>(
+      `${BASE_URL}/api/department-head/submissions/batch-publish/`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preference_ids: preferenceIds, action, notes }),
+      }
+    );
+    return data;
+  }
+
+  /* ---------- Registrar ---------- */
+
+  async getPublishedPreferences(termId?: number): Promise<ProfessorPreferenceListItem[]> {
+    const query = termId ? `?term=${termId}` : '';
+    const data: ProfessorPreferenceListItem[] = await apiJson(
+      `${BASE_URL}/api/registrar/published-preferences/${query}`
+    );
+    return data;
+  }
+
+  async generateFromPublished(
+    payload: GenerateFromPublishedPayload
+  ): Promise<GenerateFromPublishedResponse> {
+    const data: GenerateFromPublishedResponse = await apiJson(
+      `${BASE_URL}/api/schedules/generate-from-published`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    );
     return data;
   }
 }
