@@ -133,25 +133,49 @@ def department_ok(scenario: Scenario, meeting: Meeting, room: RoomRef) -> bool:
 def room_type_ok(meeting: Meeting, room: RoomRef) -> bool:
     """True when the room type can host this meeting's mode.
 
-    Laboratory meetings need a laboratory, synchronous meetings need a
-    lecture or general room, and asynchronous meetings are unrestricted.
+    Laboratory meetings prefer a laboratory but can fall back to general.
+    Synchronous meetings need a lecture or general room.
+    Asynchronous meetings are unrestricted.
     """
     mode = (meeting.mode or "").casefold()
     if mode in ("lab", "laboratory"):
-        return room.room_type == ROOM_TYPE_LABORATORY
+        return room.room_type in (ROOM_TYPE_LABORATORY, ROOM_TYPE_GENERAL)
     if mode in ("sync", "synchronous"):
         return room.room_type in (ROOM_TYPE_LECTURE, ROOM_TYPE_GENERAL)
     return True
 
 
+def room_type_fallback(meeting: Meeting, room: RoomRef) -> bool:
+    """True if this meeting is using a room type fallback (lab in general room)."""
+    mode = (meeting.mode or "").casefold()
+    if mode in ("lab", "laboratory"):
+        return room.room_type == ROOM_TYPE_GENERAL
+    return False
+
+
 def legal_rooms(scenario: Scenario, meeting: Meeting) -> List[RoomRef]:
-    return [
-        r
-        for r in scenario.rooms
-        if r.capacity >= meeting.section_headcount
-        and department_ok(scenario, meeting, r)
-        and room_type_ok(meeting, r)
-    ]
+    """Return all rooms that can host this meeting, prioritizing exact type matches.
+    
+    Async meetings don't need physical rooms.
+    """
+    mode = (meeting.mode or "").casefold()
+    if mode in ("async", "asynchronous"):
+        return []
+    
+    exact = []
+    fallback = []
+    for r in scenario.rooms:
+        if r.capacity < meeting.section_headcount:
+            continue
+        if not department_ok(scenario, meeting, r):
+            continue
+        if room_type_ok(meeting, r):
+            if room_type_fallback(meeting, r):
+                fallback.append(r)
+            else:
+                exact.append(r)
+    # Return exact matches first, then fallback rooms
+    return exact + fallback
 
 
 def is_time_free(
@@ -184,6 +208,14 @@ def free_rooms(
     day: int,
     start: int,
 ) -> List[RoomRef]:
+    """Return free rooms for a meeting at a given time, prioritizing exact type matches.
+    
+    Async meetings don't need physical rooms.
+    """
+    mode = (meeting.mode or "").casefold()
+    if mode in ("async", "asynchronous"):
+        return []
+    
     duration = minutes(scenario, meeting.duration_slots)
     meeting_map = scenario.meeting_map()
     busy_room_ids = set()
@@ -197,11 +229,18 @@ def free_rooms(
         ):
             busy_room_ids.add(placement.room_id)
 
-    return [
-        r
-        for r in scenario.rooms
-        if r.capacity >= meeting.section_headcount
-        and r.id not in busy_room_ids
-        and department_ok(scenario, meeting, r)
-        and room_type_ok(meeting, r)
-    ]
+    exact = []
+    fallback = []
+    for r in scenario.rooms:
+        if r.id in busy_room_ids:
+            continue
+        if r.capacity < meeting.section_headcount:
+            continue
+        if not department_ok(scenario, meeting, r):
+            continue
+        if room_type_ok(meeting, r):
+            if room_type_fallback(meeting, r):
+                fallback.append(r)
+            else:
+                exact.append(r)
+    return exact + fallback

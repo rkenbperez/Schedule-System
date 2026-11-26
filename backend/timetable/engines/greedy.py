@@ -36,9 +36,23 @@ def greedy(scenario: Scenario, time_limit_s: float = 30.0) -> Dict[int, Placemen
         if time.monotonic() >= deadline:
             break
 
+        mode = (meeting.mode or "").casefold()
+        is_async = mode in ("async", "asynchronous")
+
         for day, start in legal_time_slots(scenario, meeting, placed):
             if not is_time_free(scenario, placed, meeting, day, start):
                 continue
+            
+            if is_async:
+                # Async meetings don't need rooms
+                placed[meeting.meeting_id] = Placement(
+                    meeting_id=meeting.meeting_id,
+                    day=day,
+                    start=start,
+                    room_id=None,
+                )
+                break
+            
             rooms = free_rooms(scenario, placed, meeting, day, start)
             if not rooms:
                 continue

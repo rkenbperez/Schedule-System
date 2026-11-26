@@ -3,7 +3,7 @@ from unittest.mock import patch
 from django.test import SimpleTestCase
 
 from timetable.engines import run
-from timetable.engines.constraints import hard_violations
+from timetable.engines.constraints import hard_violations, soft_violations
 from timetable.engines.backtracking import backtracking
 from timetable.engines.min_conflicts import _conflicted_meetings
 from timetable.engines.scenario import (
@@ -391,12 +391,14 @@ class RoomTypeTests(SimpleTestCase):
         self.assertEqual(room_type_from_name("CS Lecture Room 1"), "lecture")
         self.assertEqual(room_type_from_name("R201"), "general")
 
-    def test_lab_meeting_requires_laboratory_room_for_every_engine(self):
+    def test_lab_meeting_falls_back_to_general_room(self):
         for algorithm in ("greedy", "backtracking", "min_conflicts"):
             with self.subTest(algorithm=algorithm):
                 result = run(algorithm, _room_type_scenario("lab", "R201"), seed=0)
-                self.assertFalse(result.feasible, result.violations)
-                self.assertTrue(result.unplaced)
+                self.assertTrue(result.feasible, result.violations)
+                self.assertEqual(len(result.classes), 1)
+                self.assertTrue(result.warnings)
+                self.assertTrue(any("fallback" in w.lower() for w in result.warnings))
 
     def test_lab_meeting_is_placed_in_laboratory(self):
         for algorithm in ("greedy", "backtracking", "min_conflicts"):
@@ -405,6 +407,7 @@ class RoomTypeTests(SimpleTestCase):
                 self.assertTrue(result.feasible, result.violations)
                 self.assertEqual(len(result.classes), 1)
                 self.assertEqual(result.classes[0].room_id, 1)
+                self.assertFalse(result.warnings)
 
     def test_sync_meeting_is_rejected_from_laboratory_only(self):
         result = run("greedy", _room_type_scenario("sync", "Lab 1"))
@@ -419,8 +422,8 @@ class RoomTypeTests(SimpleTestCase):
         result = run("greedy", _room_type_scenario("sync", "R201"))
         self.assertTrue(result.feasible, result.violations)
 
-    def test_mismatched_room_type_reported_as_violation(self):
+    def test_lab_in_general_room_reported_as_warning(self):
         scenario = _room_type_scenario("lab", "R201")
         placed = {1: Placement(meeting_id=1, day=0, start=8 * 60, room_id=1)}
-        violations = hard_violations(scenario, placed)
-        self.assertTrue(any("room type" in v for v in violations), violations)
+        warnings = soft_violations(scenario, placed)
+        self.assertTrue(any("fallback" in w.lower() for w in warnings), warnings)

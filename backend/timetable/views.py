@@ -399,6 +399,7 @@ class ScheduleGenerateView(APIView):
             "soft_score": result.soft_score,
             "class_count": len(result.classes),
             "violations": result.violations,
+            "warnings": result.warnings,
             "unplaced": result.unplaced,
         }
         if auto_stats is not None:

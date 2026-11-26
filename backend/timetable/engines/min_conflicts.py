@@ -7,11 +7,16 @@ Seeded for determinism in tests.
 
 import random
 import time
-from typing import Dict
+from typing import Dict, Optional
 
 from .constraints import count_conflicts, hard_violations
 from .scenario import Meeting, Placement, Scenario
 from .slots import legal_rooms, legal_time_slots
+
+
+def _is_async(meeting: Meeting) -> bool:
+    mode = (meeting.mode or "").casefold()
+    return mode in ("async", "asynchronous")
 
 
 def _combined_conflicts(
@@ -20,7 +25,7 @@ def _combined_conflicts(
     meeting: Meeting,
     day: int,
     start: int,
-    room_id: int,
+    room_id: Optional[int],
 ) -> int:
     candidate = dict(remaining)
     candidate[meeting.meeting_id] = Placement(
@@ -39,11 +44,15 @@ def _initial_assignment(
         if time.monotonic() >= deadline:
             break
         slots = legal_time_slots(scenario, meeting, {})
-        rooms = legal_rooms(scenario, meeting)
-        if not slots or not rooms:
+        if not slots:
             continue
         day, start = rng.choice(slots)
-        room_id = rng.choice(rooms).id
+        room_id = None
+        if not _is_async(meeting):
+            rooms = legal_rooms(scenario, meeting)
+            if not rooms:
+                continue
+            room_id = rng.choice(rooms).id
         placed[meeting.meeting_id] = Placement(
             meeting_id=meeting.meeting_id, day=day, start=start, room_id=room_id
         )
@@ -98,15 +107,26 @@ def min_conflicts(
         best_conflicts = None
         best_candidates = []
         for day, start in legal_time_slots(scenario, meeting, remaining):
-            for room in legal_rooms(scenario, meeting):
+            if _is_async(meeting):
+                # Async meetings don't need rooms
                 conflicts = _combined_conflicts(
-                    scenario, remaining, meeting, day, start, room.id
+                    scenario, remaining, meeting, day, start, None
                 )
                 if best_conflicts is None or conflicts < best_conflicts:
                     best_conflicts = conflicts
-                    best_candidates = [(day, start, room.id)]
+                    best_candidates = [(day, start, None)]
                 elif conflicts == best_conflicts:
-                    best_candidates.append((day, start, room.id))
+                    best_candidates.append((day, start, None))
+            else:
+                for room in legal_rooms(scenario, meeting):
+                    conflicts = _combined_conflicts(
+                        scenario, remaining, meeting, day, start, room.id
+                    )
+                    if best_conflicts is None or conflicts < best_conflicts:
+                        best_conflicts = conflicts
+                        best_candidates = [(day, start, room.id)]
+                    elif conflicts == best_conflicts:
+                        best_candidates.append((day, start, room.id))
 
         if best_candidates:
             day, start, room_id = rng.choice(best_candidates)

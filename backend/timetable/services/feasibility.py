@@ -149,35 +149,39 @@ def check_feasibility(term: AcademicTerm) -> Dict[str, Any]:
     # --- 1. Lab room shortage (Critical) ---
     lab_meetings = meeting_counts.get('lab', 0)
     lab_rooms = room_counts.get('laboratory', 0)
-    if lab_rooms == 0 and lab_meetings > 0:
+    general_rooms = room_counts.get('general', 0)
+    
+    # Lab meetings can use lab rooms OR general rooms as fallback
+    effective_lab_rooms = lab_rooms + general_rooms
+    if effective_lab_rooms == 0 and lab_meetings > 0:
         violations.append({
             'type': 'lab_shortage',
-            'message': f'{lab_meetings} lab meetings but 0 lab rooms',
+            'message': f'{lab_meetings} lab meetings but 0 lab/general rooms available',
             'severity': 'critical',
         })
-        recommendations.append('Add lab rooms (type=laboratory)')
+        recommendations.append('Add lab rooms (type=laboratory) or general rooms')
         bottlenecks.append({
             'type': 'lab_rooms',
             'ratio': 999999,
             'lab_meetings': lab_meetings,
-            'lab_rooms': lab_rooms,
+            'lab_rooms': effective_lab_rooms,
         })
-    elif lab_rooms > 0:
+    elif effective_lab_rooms > 0:
         # Slots per day = 12 (07:00-19:00 = 12 hours)
-        max_lab_slots_per_week = lab_rooms * 12 * 5  # 5 days
+        max_lab_slots_per_week = effective_lab_rooms * 12 * 5  # 5 days
         lab_ratio = lab_meetings / max_lab_slots_per_week if max_lab_slots_per_week > 0 else 999999
         if lab_ratio > 0.8:
             violations.append({
                 'type': 'lab_shortage',
-                'message': f'{lab_meetings} lab meetings for {lab_rooms} lab rooms (utilization: {lab_ratio:.1%})',
+                'message': f'{lab_meetings} lab meetings for {effective_lab_rooms} lab/general rooms (utilization: {lab_ratio:.1%})',
                 'severity': 'critical' if lab_ratio > 1.0 else 'warning',
             })
-            recommendations.append(f'Add {max(1, int(lab_meetings / (12 * 5)) - lab_rooms + 1)} more lab rooms')
+            recommendations.append(f'Add {max(1, int(lab_meetings / (12 * 5)) - effective_lab_rooms + 1)} more lab/general rooms')
             bottlenecks.append({
                 'type': 'lab_rooms',
                 'ratio': lab_ratio,
                 'lab_meetings': lab_meetings,
-                'lab_rooms': lab_rooms,
+                'lab_rooms': effective_lab_rooms,
             })
     
     # --- 2. Professor availability gaps ---
@@ -257,13 +261,15 @@ def check_feasibility(term: AcademicTerm) -> Dict[str, Any]:
     # --- 4. Room type match ---
     lab_meetings = meeting_counts.get('lab', 0)
     lab_rooms = room_counts.get('laboratory', 0)
-    if lab_meetings > 0 and lab_rooms == 0:
+    general_rooms = room_counts.get('general', 0)
+    effective_lab_rooms = lab_rooms + general_rooms
+    if lab_meetings > 0 and effective_lab_rooms == 0:
         violations.append({
             'type': 'room_type_mismatch',
-            'message': f'{lab_meetings} lab meetings but 0 lab rooms (type=laboratory)',
+            'message': f'{lab_meetings} lab meetings but 0 lab/general rooms available',
             'severity': 'critical',
         })
-        recommendations.append('Set room_type=laboratory for lab rooms or add lab rooms')
+        recommendations.append('Add lab rooms (type=laboratory) or general rooms')
     
     # --- 5. Department matching ---
     # Check if professors have rooms in their department

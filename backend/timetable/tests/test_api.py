@@ -315,7 +315,7 @@ class ScheduleGenerateTests(ApiTestCase):
         self.assertEqual(durations, [2, 3])
         self.assertEqual(modes, ["lab", "sync"])
 
-    def test_generate_lab_without_laboratory_room_is_infeasible(self):
+    def test_generate_lab_without_laboratory_room_is_feasible_with_fallback(self):
         subject = Subject.objects.create(code="CC101", title="Intro", units=3)
         section = Section.objects.create(name="BSIT-3A", headcount=30)
         Room.objects.create(name="R101", capacity=40)
@@ -324,12 +324,13 @@ class ScheduleGenerateTests(ApiTestCase):
             prof=self.prof, day=0, start_time=time(8, 0), end_time=time(17, 0)
         )
         self.auth(self.reg_token)
-        # With force=true, should proceed despite infeasibility
-        response = self.client.post("/api/schedules/generate", {"algorithm": "greedy", "force": True})
+        # Should now be feasible with lab fallback to general room
+        response = self.client.post("/api/schedules/generate", {"algorithm": "greedy"})
         self.assertEqual(response.status_code, 201)
-        self.assertFalse(response.data["feasible"])
-        self.assertEqual(response.data["class_count"], 0)
-        self.assertTrue(any("not placed" in v for v in response.data["violations"]))
+        self.assertTrue(response.data["feasible"])
+        self.assertEqual(response.data["class_count"], 1)
+        # Should have a fallback warning in warnings field
+        self.assertTrue(any("fallback" in v.lower() or "general room used for lab" in v.lower() for v in response.data["warnings"]))
 
 
 class AssignmentApiTests(ApiTestCase):
