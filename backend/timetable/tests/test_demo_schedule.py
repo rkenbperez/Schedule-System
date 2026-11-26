@@ -50,7 +50,7 @@ class DemoScheduleCommandTests(TestCase):
 
         self.assertEqual(Command()._http("http://example.test", "GET", "/status"), {"ok": True})
         urlopen.assert_called_once()
-        self.assertEqual(urlopen.call_args.kwargs["timeout"], 60)
+        self.assertEqual(urlopen.call_args.kwargs["timeout"], 300)
 
     @override_settings(DEBUG=True)
     def test_handle_stops_before_requesting_classes_when_all_results_infeasible(self):
@@ -90,7 +90,7 @@ class DemoScheduleCommandTests(TestCase):
         self.assertIn("No valid placement", command.stdout.getvalue())
 
     def test_dataset_lab_rooms_have_enough_capacity_for_every_scale(self):
-        expected_lab_rooms = {"normal": 1, "large": 2, "full": 3}
+        expected_lab_rooms = {"normal": 1, "large": 4, "full": 4}
         for scale in ("normal", "large", "full"):
             with self.subTest(scale=scale):
                 data = _dataset(scale)

@@ -112,14 +112,7 @@ def _dataset(scale):
             "demo_prof3": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
             "demo_prof4": [(d, "08:00:00", "18:00:00", True) for d in range(5)],
             "demo_prof5": [(d, "07:00:00", "17:00:00", True) for d in range(5)],
-            "demo_prof6": [
-                (0, "08:00:00", "17:00:00", False),
-                (1, "08:00:00", "17:00:00", False),
-                (2, "08:00:00", "17:00:00", False),
-                (3, "08:00:00", "12:00:00", False),
-                (3, "13:00:00", "17:00:00", False),
-                (4, "08:00:00", "17:00:00", False),
-            ],
+            "demo_prof6": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
             "demo_prof10": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
         },
         "loads": [
@@ -184,12 +177,16 @@ def _dataset(scale):
             ("MATH2", 40, "MATH"),
             ("GEC3", 45, "GE"),
             ("LAB2", 40, None),
+            ("LAB3", 40, None),
+            ("LAB4", 40, None),
+            ("GEN1", 45, None),
+            ("GEN2", 45, None),
         ],
         "availability": {
             **normal["availability"],
             "demo_prof7": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
             "demo_prof8": [(d, "09:00:00", "18:00:00", True) for d in range(5)],
-            "demo_prof9": [(d, "08:00:00", "16:00:00", False) for d in range(5)],
+            "demo_prof9": [(d, "07:00:00", "19:00:00", True) for d in range(5)],
             "demo_prof11": [(d, "07:00:00", "17:00:00", True) for d in range(5)],
         },
         "loads": normal["loads"]
@@ -250,6 +247,9 @@ def _dataset(scale):
             ("R305", 45, "CS"),
             ("R306", 45, "IT"),
             ("LAB3", 40, None),
+            ("LAB4", 40, None),
+            ("GEN1", 45, None),
+            ("GEN2", 45, None),
         ],
         "availability": {
             **large["availability"],
@@ -581,12 +581,22 @@ class Command(BaseCommand):
                 user.email = f"{username}@school.edu"
                 user.save(update_fields=["email"])
             professor, _ = Professors.objects.get_or_create(
-                user=user, defaults={"department": departments[prof_depts[username]]}
+                user=user,
+                defaults={
+                    "department": departments[prof_depts[username]],
+                    "max_daily_hours": 10,
+                    "max_consecutive": 6,
+                },
             )
             department = departments[prof_depts[username]]
             if professor.department_id != department.id:
                 professor.department = department
                 professor.save(update_fields=["department"])
+            # Update limits for demo professors
+            if professor.max_daily_hours < 10 or professor.max_consecutive < 6:
+                professor.max_daily_hours = 10
+                professor.max_consecutive = 6
+                professor.save(update_fields=["max_daily_hours", "max_consecutive"])
 
         return registrar
 
@@ -606,17 +616,26 @@ class Command(BaseCommand):
             return Department.objects.filter(name=name).first()
 
         for name, capacity, dept_name in data["rooms"]:
+            # Determine room type from name
+            if name.startswith("LAB"):
+                room_type = Room.RoomType.LABORATORY
+            elif name.startswith("R") or name.startswith("MATH") or name.startswith("GEC"):
+                room_type = Room.RoomType.LECTURE
+            else:
+                room_type = Room.RoomType.GENERAL
             room, created = Room.objects.get_or_create(
                 name=name,
                 defaults={
                     "capacity": capacity,
                     "department": department(dept_name) if dept_name else None,
+                    "room_type": room_type,
                 },
             )
             if not created:
                 room.capacity = capacity
                 room.department = department(dept_name) if dept_name else None
-                room.save(update_fields=["capacity", "department"])
+                room.room_type = room_type
+                room.save(update_fields=["capacity", "department", "room_type"])
 
     def _seed_load_and_availability(self, scale, term):
         data = _dataset(scale)
@@ -751,7 +770,7 @@ class Command(BaseCommand):
         )
         if data is not None:
             request.add_header("Content-Type", "application/json")
-        with urllib.request.urlopen(request, timeout=60) as response:
+        with urllib.request.urlopen(request, timeout=300) as response:
             return json.loads(response.read().decode())
 
     def _print_result(self, algorithm, result):

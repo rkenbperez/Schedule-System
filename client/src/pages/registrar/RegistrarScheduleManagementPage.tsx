@@ -1205,7 +1205,7 @@ export default function RegistrarScheduleManagementPage() {
                 </div>
               </dl>
 
-              {generateResult.soft_score !== undefined && (
+              {generateResult.soft_score != null && (
                 <p className='text-body-sm text-text-secondary'>
                   Soft score:{' '}
                   <span className='font-medium text-text-primary'>
