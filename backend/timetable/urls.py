@@ -10,6 +10,7 @@ from .analytics.views import (
 )
 from .views import (
     AutoAssignView,
+    FeasibilityView,
     ScheduleGenerateView,
     ScheduleMyView,
     ScheduleRunClassesView,
@@ -51,6 +52,8 @@ router.register("professor/busy-blocks", ProfessorBusyBlockViewSet, basename="pr
 urlpatterns = [
     path("schedules/auto-assign", AutoAssignView.as_view(), name="schedule-auto-assign"),
     path("schedules/auto-assign/", AutoAssignView.as_view(), name="schedule-auto-assign-slash"),
+    path("schedules/feasibility", FeasibilityView.as_view(), name="schedule-feasibility"),
+    path("schedules/feasibility/", FeasibilityView.as_view(), name="schedule-feasibility-slash"),
     path("schedules/generate", ScheduleGenerateView.as_view(), name="schedule-generate"),
     path("schedules/runs", ScheduleRunListView.as_view(), name="schedule-run-list"),
     path("schedules/runs/<int:pk>", ScheduleRunDetailView.as_view(), name="schedule-run-detail"),

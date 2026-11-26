@@ -28,6 +28,7 @@ from .models import (
 )
 from .scenario_builder import build_scenario
 from .services.auto_assign import auto_assign_professors
+from .services.feasibility import check_feasibility
 from .analytics.conflicts import audit_conflicts
 from .serializers import (
     AssignmentSerializer,
@@ -208,6 +209,52 @@ class AutoAssignView(APIView):
 @extend_schema(
     tags=["schedules"],
     request=inline_serializer(
+        name="FeasibilityRequest",
+        fields={
+            "term_id": serializers.IntegerField(required=False),
+            "algorithm": serializers.CharField(required=False),
+            "time_limit_s": serializers.FloatField(required=False),
+        },
+    ),
+    responses={
+        200: OpenApiResponse(description="Feasibility check completed"),
+        400: OpenApiResponse(description="No active academic term found"),
+    },
+)
+class FeasibilityView(APIView):
+    permission_classes = [IsRegistrar]
+
+    def post(self, request):
+        term = AcademicTerm.objects.filter(is_active=True).first()
+        term_id = request.data.get("term_id")
+        if term_id:
+            try:
+                term = AcademicTerm.objects.get(pk=int(term_id))
+            except (AcademicTerm.DoesNotExist, ValueError, TypeError):
+                return Response(
+                    {"error": f"Academic term {term_id} not found."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        elif term is None:
+            return Response(
+                {"error": "No active academic term found. Please set a term as active."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        report = check_feasibility(term)
+        return Response(
+            {
+                "term_id": term.id,
+                "term": str(term),
+                **report,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+@extend_schema(
+    tags=["schedules"],
+    request=inline_serializer(
         name="ScheduleGenerateRequest",
         fields={
             "algorithm": serializers.CharField(),
@@ -215,11 +262,12 @@ class AutoAssignView(APIView):
             "term_id": serializers.IntegerField(required=False),
             "auto_assign": serializers.BooleanField(required=False),
             "replace_auto": serializers.BooleanField(required=False),
+            "force": serializers.BooleanField(required=False),
         },
     ),
     responses={
         201: OpenApiResponse(description="Schedule generated and persisted"),
-        400: OpenApiResponse(description="Invalid algorithm or time limit"),
+        400: OpenApiResponse(description="Invalid algorithm or time limit, or schedule infeasible"),
     },
 )
 class ScheduleGenerateView(APIView):
@@ -280,6 +328,26 @@ class ScheduleGenerateView(APIView):
                 "yes",
                 "on",
             }
+
+        force = request.data.get("force", False)
+        if isinstance(force, str):
+            force = force.strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+
+        # Feasibility pre-check
+        feasibility = check_feasibility(term)
+        if not feasibility["feasible"] and not force:
+            return Response(
+                {
+                    "error": "Schedule likely infeasible",
+                    "feasibility_report": feasibility,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         auto_stats = None
         if auto_assign:
