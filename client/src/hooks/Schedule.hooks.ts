@@ -494,10 +494,13 @@ export function useCreateProfessor() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: {
-      user_id: number;
+      user_email: string;
+      user_password?: string;
+      user_is_staff?: boolean;
       department_id?: number | null;
       max_daily_hours?: number;
       max_consecutive?: number;
+      department_head?: boolean;
     }) => scheduleService.createProfessor(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['teachers'] });
@@ -512,10 +515,13 @@ export function useUpdateProfessor() {
     mutationFn: ({ id, payload }: {
       id: number;
       payload: Partial<{
-        user_id: number;
+        user_email: string;
+        user_password?: string;
+        user_is_staff?: boolean;
         department_id: number | null;
         max_daily_hours: number;
         max_consecutive: number;
+        department_head: boolean;
       }>;
     }) => scheduleService.updateProfessor(id, payload),
     onSuccess: () => {

@@ -12,6 +12,7 @@ from .views import (
     AutoAssignView,
     FeasibilityView,
     ScheduleGenerateView,
+    ScheduleGenerateFromPublishedView,
     ScheduleMyView,
     ScheduleRunClassesView,
     ScheduleRunClassUpdateView,
@@ -55,6 +56,7 @@ urlpatterns = [
     path("schedules/feasibility", FeasibilityView.as_view(), name="schedule-feasibility"),
     path("schedules/feasibility/", FeasibilityView.as_view(), name="schedule-feasibility-slash"),
     path("schedules/generate", ScheduleGenerateView.as_view(), name="schedule-generate"),
+    path("schedules/generate-from-published", ScheduleGenerateFromPublishedView.as_view(), name="schedule-generate-from-published"),
     path("schedules/runs", ScheduleRunListView.as_view(), name="schedule-run-list"),
     path("schedules/runs/<int:pk>", ScheduleRunDetailView.as_view(), name="schedule-run-detail"),
     path(

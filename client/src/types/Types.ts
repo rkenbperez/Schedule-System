@@ -436,3 +436,107 @@ export interface PublicClass {
   mode_display: string | null;
   department_name?: string | null;
 }
+
+export interface MeetingPreference {
+  mode: 'sync' | 'lab' | 'async';
+  duration_slots: number;
+  preferred_days?: number[];
+  preferred_start?: string | null;
+  preferred_end?: string | null;
+}
+
+export interface ProfessorPreference {
+  id: number;
+  professor: number;
+  professor_name: string;
+  professor_department: string | null;
+  department_id: number | null;
+  subject: number;
+  subject_code: string;
+  subject_title: string;
+  section: number;
+  section_name: string;
+  term: number;
+  term_code: string;
+  meetings: MeetingPreference[];
+  status: 'draft' | 'submitted' | 'published' | 'rejected';
+  submitted_at: string | null;
+  published_at: string | null;
+  reviewed_by: number | null;
+  review_notes: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProfessorPreferenceListItem {
+  id: number;
+  professor: number;
+  professor_name: string;
+  subject: number;
+  subject_code: string;
+  subject_title: string;
+  section: number;
+  section_name: string;
+  term: number;
+  term_code: string;
+  meetings: MeetingPreference[];
+  meeting_count: number;
+  total_duration: number;
+  status: 'draft' | 'submitted' | 'published' | 'rejected';
+  submitted_at: string | null;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PreferenceSubmission {
+  id: number;
+  department: number;
+  department_name: string;
+  term: number;
+  term_code: string;
+  submitted_by: number;
+  submitted_by_name: string;
+  submitted_at: string;
+  status: 'pending' | 'accepted';
+  items: SubmissionItem[];
+}
+
+export interface SubmissionItem {
+  id: number;
+  preference: ProfessorPreferenceListItem;
+  action: 'publish' | 'reject';
+  notes: string;
+}
+
+export interface AvailabilityWindow {
+  id: number;
+  prof: number;
+  term: number;
+  day: number;
+  start_time: string;
+  end_time: string;
+  is_preferred: boolean;
+}
+
+export interface GenerateFromPublishedPayload {
+  algorithm: 'greedy' | 'min_conflicts' | 'backtracking';
+  time_limit_s?: number;
+  term_id?: number;
+  force?: boolean;
+}
+
+export interface GenerateFromPublishedResponse {
+  run_id: number;
+  algorithm: string;
+  status: 'feasible' | 'infeasible';
+  feasible: boolean;
+  runtime_ms: number;
+  soft_score: number;
+  class_count: number;
+  violations: string[];
+  warnings: string[];
+  unplaced: string[];
+  source: 'published_preferences';
+  published_preferences_count: number;
+}

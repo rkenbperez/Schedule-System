@@ -26,7 +26,7 @@ from .models import (
     AcademicTerm, Assignment, AuditLog, AvailabilityWindow, BusyBlock,
     ConflictResolution, GlobalSettings, MeetingSlot, ScheduledClass, ScheduleRun
 )
-from .scenario_builder import build_scenario
+from .scenario_builder import build_scenario, build_scenario_from_published_preferences
 from .services.auto_assign import auto_assign_professors
 from .services.feasibility import check_feasibility
 from .analytics.conflicts import audit_conflicts
@@ -404,6 +404,128 @@ class ScheduleGenerateView(APIView):
         }
         if auto_stats is not None:
             payload["auto_assign"] = auto_stats
+
+        return Response(payload, status=status.HTTP_201_CREATED)
+
+
+@extend_schema(
+    tags=["schedules"],
+    request=inline_serializer(
+        name="ScheduleGenerateFromPublishedRequest",
+        fields={
+            "algorithm": serializers.CharField(),
+            "time_limit_s": serializers.FloatField(required=False),
+            "term_id": serializers.IntegerField(required=False),
+            "force": serializers.BooleanField(required=False),
+        },
+    ),
+    responses={
+        201: OpenApiResponse(description="Schedule generated from published preferences"),
+        400: OpenApiResponse(description="Invalid algorithm, no published preferences, or schedule infeasible"),
+    },
+)
+class ScheduleGenerateFromPublishedView(APIView):
+    permission_classes = [IsRegistrar]
+
+    def post(self, request):
+        algorithm = request.data.get("algorithm")
+        if algorithm not in ALGORITHMS:
+            return Response(
+                {
+                    "error": (
+                        f"Unknown algorithm '{algorithm}'. "
+                        f"Choose from {sorted(ALGORITHMS)}."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        time_limit = request.data.get("time_limit_s", 30)
+        try:
+            time_limit = float(time_limit)
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "time_limit_s must be a number."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        term = AcademicTerm.objects.filter(is_active=True).first()
+
+        term_id = request.data.get("term_id")
+        if term_id:
+            try:
+                term = AcademicTerm.objects.get(pk=int(term_id))
+            except (AcademicTerm.DoesNotExist, ValueError, TypeError):
+                return Response(
+                    {"error": f"Academic term {term_id} not found."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        elif term is None:
+            return Response(
+                {"error": "No active academic term found. Please set a term as active."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        force = request.data.get("force", False)
+        if isinstance(force, str):
+            force = force.strip().lower() in {"1", "true", "yes", "on"}
+
+        from users.models import ProfessorPreference
+        published_count = ProfessorPreference.objects.filter(term=term, status="published").count()
+        if published_count == 0:
+            return Response(
+                {"error": "No published preferences found for this term."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        scenario = build_scenario_from_published_preferences(term=term)
+        result = run(algorithm, scenario, time_limit_s=time_limit)
+
+        with transaction.atomic():
+            run_obj = ScheduleRun.objects.create(
+                algorithm=algorithm,
+                status=(
+                    ScheduleRun.Status.FEASIBLE
+                    if result.feasible
+                    else ScheduleRun.Status.INFEASIBLE
+                ),
+                runtime_ms=result.runtime_ms,
+                soft_score=result.soft_score,
+                breakdown=result.breakdown,
+                created_by=request.user,
+                term=term,
+            )
+
+            ScheduledClass.objects.bulk_create(
+                [
+                    ScheduledClass(
+                        run=run_obj,
+                        assignment_id=0,
+                        room_id=pc.room_id,
+                        day=pc.day,
+                        start_time=dtime(pc.start // 60, pc.start % 60),
+                        duration_slots=pc.duration_slots,
+                        mode=pc.mode or None,
+                        term=term,
+                    )
+                    for pc in result.classes
+                ]
+            )
+
+        payload = {
+            "run_id": run_obj.id,
+            "algorithm": algorithm,
+            "status": run_obj.status,
+            "feasible": result.feasible,
+            "runtime_ms": result.runtime_ms,
+            "soft_score": result.soft_score,
+            "class_count": len(result.classes),
+            "violations": result.violations,
+            "warnings": result.warnings,
+            "unplaced": result.unplaced,
+            "source": "published_preferences",
+            "published_preferences_count": published_count,
+        }
 
         return Response(payload, status=status.HTTP_201_CREATED)
 

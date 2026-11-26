@@ -3,7 +3,7 @@
 // Courses (Subjects) and Sections. Each tab is a searchable table with Add /
 // Edit / Delete via SlideOverDrawer and ConfirmDialog.
 import { useState } from 'react';
-import { Plus, Trash2, Edit2, Search, X as XIcon } from 'lucide-react';
+import { Plus, Trash2, Edit2, Search, X as XIcon, Mail, Lock, Building2, Clock, Timer } from 'lucide-react';
 import {
   useCourses,
   useDepartments,
@@ -160,29 +160,31 @@ export default function RegistrarMasterDataPage() {
           }.`,
         });
       } else if (tab === 'Professors') {
+        const role = payload.role as string;
+        const isRegistrar = role === 'registrar';
+        const isDeptHead = role === 'department_head';
+        
+        const professorPayload = {
+          user_email: payload.user_email as string,
+          user_password: payload.user_password as string || undefined,
+          user_is_staff: isRegistrar,
+          department_id: payload.department_id ? Number(payload.department_id) : null,
+          max_daily_hours: Number(payload.max_daily_hours) || 8,
+          max_consecutive: Number(payload.max_consecutive) || 4,
+          department_head: isDeptHead,
+        };
+        
         if (drawer.mode === 'add') {
-          await createProfessor.mutateAsync(payload as {
-            user_id: number;
-            department_id?: number | null;
-            max_daily_hours?: number;
-            max_consecutive?: number;
-          });
+          await createProfessor.mutateAsync(professorPayload);
         } else {
           await updateProfessor.mutateAsync({
             id: Number(drawer.item!.id),
-            payload: payload as {
-              user_id: number;
-              department_id: number | null;
-              max_daily_hours: number;
-              max_consecutive: number;
-            },
+            payload: professorPayload,
           });
         }
         toast.addToast({
           type: 'success',
-          title: `Professor ${
-            drawer.mode === 'add' ? 'created' : 'updated'
-          }.`,
+          title: `Professor ${drawer.mode === 'add' ? 'created' : 'updated'}.`,
         });
       } else if (tab === 'Rooms') {
         if (drawer.mode === 'add') {
@@ -373,10 +375,11 @@ export default function RegistrarMasterDataPage() {
                 {tab === 'Professors' && (
                   <>
                     <th className='px-3 py-2'>Name</th>
-                    <th className='px-3 py-2'>Username</th>
+                    <th className='px-3 py-2'>Email</th>
+                    <th className='px-3 py-2'>Role</th>
                     <th className='px-3 py-2'>Department</th>
-                    <th className='px-3 py-2'>Max daily hours</th>
-                    <th className='px-3 py-2'>Max consecutive</th>
+                    <th className='px-3 py-2 text-right'>Max Daily</th>
+                    <th className='px-3 py-2 text-right'>Max Consecutive</th>
                   </>
                 )}
                 {tab === 'Rooms' && (
@@ -437,38 +440,67 @@ export default function RegistrarMasterDataPage() {
                       </>
                     )}
 {tab === 'Departments' && (
-              <div className='space-y-4'>
-                <div>
-                  <label className='mb-1.5 block text-sm font-medium text-text-primary'>Name</label>
-                  <input name='name' defaultValue={drawer.mode === 'edit' ? String(drawer.item!.name ?? '') : ''} required className='w-full rounded-control border border-border bg-surface px-3 py-2 text-sm text-text-primary' />
+              <>
+                <div className='space-y-4'>
+                  <div className='flex flex-col gap-1.5'>
+                    <label className='text-sm font-medium text-text-secondary'>Department Name</label>
+                    <input
+                      name='name'
+                      type='text'
+                      defaultValue={drawer.mode === 'edit' ? String(drawer.item?.name ?? '') : ''}
+                      required
+                      autoComplete='off'
+                      className='h-10 rounded-lg border border-border bg-surface px-3 text-sm text-text-primary outline-none focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100 transition-colors'
+                      placeholder='Computer Science'
+                    />
+                  </div>
+                  <div className='flex flex-col gap-1.5'>
+                    <label className='text-sm font-medium text-text-secondary'>Department Head</label>
+                    <select
+                      name='head'
+                      defaultValue={drawer.mode === 'edit' ? String(drawer.item?.head ?? '') : ''}
+                      className='h-10 rounded-lg border border-border bg-surface px-3 text-sm text-text-primary outline-none focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100 transition-colors appearance-none pr-10'
+                    >
+                      <option value=''>No head assigned</option>
+                      {userList.map((user) => {
+                        const isCurrentHead = drawer.mode === 'edit' && drawer.item?.head === user.id;
+                        return (
+                          <option key={user.id} value={user.id}>
+                            {user.username} ({user.email}) {isCurrentHead ? ' (current)' : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <p className='text-[10px] text-text-tertiary'>Optional. Select a user to be the department head.</p>
+                  </div>
                 </div>
-                <div>
-                  <label className='mb-1.5 block text-sm font-medium text-text-primary'>Head</label>
-                  <select name='head' defaultValue={drawer.mode === 'edit' ? String(drawer.item!.head ?? '') : ''} className='w-full rounded-control border border-border bg-surface px-3 py-2 text-sm text-text-primary'>
-                    <option value=''>None</option>
-                    {userList.map((user) => (
-                      <option key={user.id} value={user.id}>{user.username} ({user.email})</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              </>
             )}
             {tab === 'Professors' && (
                       <>
-                        <td className='px-3 py-1 text-text-primary truncate'>
+                        <td className='px-3 py-1.5 text-text-primary truncate font-medium'>
                           {String(row.full_name ?? '')}
                         </td>
-                        <td className='px-3 py-1 text-text-tertiary truncate'>
-                          {String(row.username ?? '')}
+                        <td className='px-3 py-1.5 text-text-tertiary truncate'>
+                          {String(row.email ?? '')}
                         </td>
-                        <td className='px-3 py-1 text-text-secondary truncate'>
+                        <td className='px-3 py-1.5 text-text-secondary'>
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-[10px] font-medium ${
+                            row.is_staff ? 'bg-apple-green-50 text-apple-green-700' :
+                            row.is_department_head ? 'bg-apple-green-50 text-apple-green-700' :
+                            'bg-surface-secondary text-text-primary'
+                          }`}>
+                            {row.is_staff ? 'Registrar' : row.is_department_head ? 'Dept Head' : 'Professor'}
+                          </span>
+                        </td>
+                        <td className='px-3 py-1.5 text-text-secondary truncate'>
                           {String(row.department_name ?? '—')}
                         </td>
-                        <td className='px-3 py-1 text-text-secondary'>
-                          {String(row.max_daily_hours ?? '')}
+                        <td className='px-3 py-1.5 text-text-secondary text-right font-mono'>
+                          {String(row.max_daily_hours ?? '—')}
                         </td>
-                        <td className='px-3 py-1 text-text-secondary'>
-                          {String(row.max_consecutive ?? '')}
+                        <td className='px-3 py-1.5 text-text-secondary text-right font-mono'>
+                          {String(row.max_consecutive ?? '—')}
                         </td>
                       </>
                     )}
@@ -608,68 +640,139 @@ export default function RegistrarMasterDataPage() {
           }}>
             {tab === 'Professors' && (
               <>
-                <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
-                  <div className='flex flex-col gap-1.5'>
-                    <label className='text-xs font-medium text-text-secondary'>
-                      User (account)
-                    </label>
-                    <select
-                      name='user_id'
-                      className='h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
-                    >
-                      <option value=''>Select user</option>
-                      {userList.map((u) => (
-                        <option key={u.id} value={String(u.id)}>
-                          {u.username} ({u.email})
-                        </option>
+                <div className='space-y-6'>
+                  <fieldset>
+                    <legend className='text-xs font-medium text-text-secondary mb-3'>Role</legend>
+                    <div className='flex flex-wrap gap-4 sm:gap-6'>
+                      {[
+                        { value: 'professor', label: 'Professor' },
+                        { value: 'department_head', label: 'Department Head' },
+                        { value: 'registrar', label: 'Registrar' },
+                      ].map((role) => (
+                        <label key={role.value} className='flex items-center gap-2 cursor-pointer'>
+                          <input
+                            type='radio'
+                            name='role'
+                            value={role.value}
+                            defaultChecked={
+                              Boolean(
+                                drawer.mode === 'add' && role.value === 'professor' ||
+                                (drawer.item as Record<string, unknown> | null)?.role === role.value ||
+                                (role.value === 'professor' && !(drawer.item as Record<string, unknown> | null)?.is_staff && !(drawer.item as Record<string, unknown> | null)?.is_department_head) ||
+                                (role.value === 'department_head' && (drawer.item as Record<string, unknown> | null)?.is_department_head) ||
+                                (role.value === 'registrar' && (drawer.item as Record<string, unknown> | null)?.is_staff)
+                              )
+                            }
+                            onChange={() => {}}
+                            className='text-apple-green-600'
+                          />
+                          <span className='text-sm text-text-primary'>{role.value === 'professor' ? 'Professor' : role.value === 'department_head' ? 'Department Head' : 'Registrar'}</span>
+                        </label>
                       ))}
-                    </select>
-                  </div>
-                  <div className='flex flex-col gap-1.5'>
-                    <label className='text-xs font-medium text-text-secondary'>
-                      Department
-                    </label>
-                    <select
-                      name='department_id'
-                      className='h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
-                    >
-                      <option value=''>None</option>
-                      {deptList.map((d) => (
-                        <option key={d.id} value={String(d.id)}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className='flex flex-col gap-1.5 sm:col-span-2'>
-                    <label className='text-xs font-medium text-text-secondary'>
-                      Max daily hours
-                    </label>
-                    <input
-                      name='max_daily_hours'
-                      type='number'
-                      defaultValue={
-                        drawer.mode === 'edit'
-                          ? Number(drawer.item!.max_daily_hours) || 8
-                          : 8
-                      }
-                      className='h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
-                    />
-                  </div>
-                  <div className='flex flex-col gap-1.5 sm:col-span-2'>
-                    <label className='text-xs font-medium text-text-secondary'>
-                      Max consecutive slots
-                    </label>
-                    <input
-                      name='max_consecutive'
-                      type='number'
-                      defaultValue={
-                        drawer.mode === 'edit'
-                          ? Number(drawer.item!.max_consecutive) || 4
-                          : 4
-                      }
-                      className='h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
-                    />
+                    </div>
+                  </fieldset>
+
+                  <div className='grid grid-cols-1 gap-4 sm:grid-cols-2'>
+                    <div className='flex flex-col gap-1.5 sm:col-span-2'>
+                      <label className='flex items-center gap-1.5 text-xs font-medium text-text-secondary'>
+                        <Mail size={14} className='text-text-tertiary' />
+                        Email (account)
+                      </label>
+                      <input
+                        name='user_email'
+                        type='email'
+                        autoComplete='email'
+                        defaultValue={drawer.mode === 'edit' ? String((drawer.item as Record<string, unknown> | null)?.email ?? '') : ''}
+                        required={drawer.mode === 'add'}
+                        className='h-10 rounded-lg border border-border bg-surface px-3 text-sm text-text-primary outline-none focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100 transition-colors'
+                        placeholder='professor@university.edu'
+                        aria-describedby={drawer.mode === 'add' ? 'email-hint' : undefined}
+                      />
+                      {drawer.mode === 'add' && (
+                        <p id='email-hint' className='text-[10px] text-text-tertiary'>Creates or links to a user account. Used for login.</p>
+                      )}
+                    </div>
+
+                    <div className='flex flex-col gap-1.5 sm:col-span-2'>
+                      <label className='flex items-center gap-1.5 text-xs font-medium text-text-secondary'>
+                        <Lock size={14} className='text-text-tertiary' />
+                        Password
+                      </label>
+                      <input
+                        name='user_password'
+                        type='password'
+                        autoComplete={drawer.mode === 'add' ? 'new-password' : 'current-password'}
+                        placeholder={drawer.mode === 'edit' ? 'Leave blank to keep current' : 'Auto-generated if empty (min 8 chars)'}
+                        className='h-10 rounded-lg border border-border bg-surface px-3 text-sm text-text-primary outline-none focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100 transition-colors'
+                        minLength={8}
+                      />
+                      {drawer.mode === 'edit' && (
+                        <p className='text-[10px] text-text-tertiary'>Leave blank to keep current password.</p>
+                      )}
+                    </div>
+
+                    <div className='flex flex-col gap-1.5 sm:col-span-2'>
+                      <label className='flex items-center gap-1.5 text-xs font-medium text-text-secondary'>
+                        <Building2 size={14} className='text-text-tertiary' />
+                        Department
+                      </label>
+                      <select
+                        name='department_id'
+                        className='h-10 rounded-lg border border-border bg-surface px-3 text-sm text-text-primary outline-none focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100 transition-colors appearance-none bg-[url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2716%27 height=%2716%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%236b7280%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27m6 9 6 6 6-6%27/%3E%3C/svg%3E")] bg-right-3 bg-no-repeat pr-10'
+                        required={true}
+                        aria-required="true"
+                      >
+                        <option value=''>Select department</option>
+                        {deptList.map((d) => (
+                          <option key={d.id} value={String(d.id)}>
+                            {d.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className='text-[10px] text-text-tertiary'>Required for Professor and Department Head roles.</p>
+                    </div>
+
+                    <div className='flex flex-col gap-1.5'>
+                      <label className='flex items-center gap-1.5 text-xs font-medium text-text-secondary'>
+                        <Clock size={14} className='text-text-tertiary' />
+                        Max daily hours
+                      </label>
+                      <input
+                        name='max_daily_hours'
+                        type='number'
+                        min={1}
+                        max={12}
+                        defaultValue={
+                          drawer.mode === 'edit'
+                            ? Number((drawer.item as Record<string, unknown> | null)?.max_daily_hours) || 8
+                            : 8
+                        }
+                        className='h-10 rounded-lg border border-border bg-surface px-3 text-sm text-text-primary outline-none focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100 transition-colors'
+                        aria-describedby='max-daily-hint'
+                      />
+                      <p id='max-daily-hint' className='text-[10px] text-text-tertiary'>Maximum teaching hours per day (1-12).</p>
+                    </div>
+
+                    <div className='flex flex-col gap-1.5'>
+                      <label className='flex items-center gap-1.5 text-xs font-medium text-text-secondary'>
+                        <Timer size={14} className='text-text-tertiary' />
+                        Max consecutive slots
+                      </label>
+                      <input
+                        name='max_consecutive'
+                        type='number'
+                        min={1}
+                        max={8}
+                        defaultValue={
+                          drawer.mode === 'edit'
+                            ? Number((drawer.item as Record<string, unknown> | null)?.max_consecutive) || 4
+                            : 4
+                        }
+                        className='h-10 rounded-lg border border-border bg-surface px-3 text-sm text-text-primary outline-none focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100 transition-colors'
+                        aria-describedby='max-consec-hint'
+                      />
+                      <p id='max-consec-hint' className='text-[10px] text-text-tertiary'>Maximum consecutive teaching hours (1-8).</p>
+                    </div>
                   </div>
                 </div>
               </>
