@@ -110,13 +110,44 @@ export function useStudentSchedule(
   });
 }
 
-export function useTeachers(opts?: { termId?: number | null; enabled?: boolean }) {
+export function useTeachers(opts?: {
+  termId?: number | null;
+  departmentId?: number;
+  enabled?: boolean;
+}) {
   const termId = opts?.termId ?? undefined;
+  const departmentId = opts?.departmentId;
 
   return useQuery({
-    queryKey: ['teachers', termId],
-    queryFn: () => scheduleService.getTeachers(termId),
+    queryKey: ['teachers', termId, departmentId],
+    queryFn: () => scheduleService.getTeachers(termId, departmentId),
     enabled: opts?.enabled ?? true,
+  });
+}
+
+export function useProfessorsByDepartment(opts?: {
+  departmentId?: number;
+  enabled?: boolean;
+}) {
+  const departmentId = opts?.departmentId;
+
+  return useQuery({
+    queryKey: ['professors-by-department', departmentId],
+    queryFn: () => scheduleService.getTeachers(undefined, departmentId),
+    enabled: opts?.enabled ?? Boolean(departmentId),
+  });
+}
+
+export function useSubjectsByDepartment(opts?: {
+  departmentId?: number;
+  enabled?: boolean;
+}) {
+  const departmentId = opts?.departmentId;
+
+  return useQuery({
+    queryKey: ['subjects-by-department', departmentId],
+    queryFn: () => scheduleService.getCourses(departmentId),
+    enabled: opts?.enabled ?? Boolean(departmentId),
   });
 }
 
@@ -600,6 +631,8 @@ export function useCreateProfessorSubject(departmentId: number) {
       queryClient.invalidateQueries({
         queryKey: ['professor-subjects', departmentId],
       });
+      // The department-scoped subject list is derived from qualifications.
+      queryClient.invalidateQueries({ queryKey: ['subjects-by-department'] });
     },
   });
 }
@@ -613,6 +646,8 @@ export function useDeleteProfessorSubject(departmentId: number) {
       queryClient.invalidateQueries({
         queryKey: ['professor-subjects', departmentId],
       });
+      // The department-scoped subject list is derived from qualifications.
+      queryClient.invalidateQueries({ queryKey: ['subjects-by-department'] });
     },
   });
 }

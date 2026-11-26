@@ -8,7 +8,7 @@ export function RequireAuth({
   requiredRole,
 }: {
   children: React.ReactNode;
-  requiredRole?: 'registrar' | 'professor' | 'student';
+  requiredRole?: 'registrar' | 'department_head' | 'professor' | 'student';
 }) {
   const { data: user, isLoading } = useMe({ enabled: true });
 

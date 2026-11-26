@@ -183,7 +183,7 @@ const Router = createBrowserRouter([
   {
     path: '/department-head',
     element: (
-      <RequireAuth requiredRole='registrar'>
+      <RequireAuth requiredRole='department_head'>
         <DepartmentHeadLayout />
       </RequireAuth>
     ),
@@ -193,8 +193,13 @@ const Router = createBrowserRouter([
         element: <DepartmentHeadDashboard />,
       },
       {
-        path: 'submissions',
+        path: 'assignments',
         element: <DepartmentHeadDashboard />,
+      },
+      {
+        // Legacy PR #85 link; the dashboard is the submissions view now.
+        path: 'submissions',
+        element: <Navigate to='/department-head' replace />,
       },
     ],
   },

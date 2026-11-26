@@ -35,6 +35,25 @@ class SubjectViewSet(viewsets.ModelViewSet):
     serializer_class = SubjectSerializer
     permission_classes = [IsRegistrarOrReadOnly]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        # Subject has no department FK; "department" scopes to subjects that at
+        # least one professor of that department is qualified to teach.
+        department = self.request.query_params.get("department")
+        if department:
+            try:
+                qs = qs.filter(
+                    qualified_professors__professor__department_id=int(department)
+                ).distinct()
+            except (TypeError, ValueError):
+                pass
+            else:
+                # Unseeded department (no qualifications yet) still needs
+                # selectable subjects for its first assignment.
+                if not qs.exists():
+                    qs = super().get_queryset()
+        return qs
+
 
 @extend_schema_view(
     list=extend_schema(tags=["catalog"]),

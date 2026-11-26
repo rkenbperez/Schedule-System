@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router-dom';
 import {
+  BookOpen,
   ClipboardList,
   LayoutDashboard,
 } from 'lucide-react';
@@ -7,15 +8,15 @@ import { AppShell, type AppNavItem } from '../components/layout/AppShell';
 
 const navItems: AppNavItem[] = [
   {
-    icon: LayoutDashboard,
+    icon: ClipboardList,
     label: 'Dashboard',
     to: '/department-head',
     end: true,
   },
   {
-    icon: ClipboardList,
-    label: 'Submissions',
-    to: '/department-head/submissions',
+    icon: BookOpen,
+    label: 'Assignments',
+    to: '/department-head/assignments',
   },
 ];
 

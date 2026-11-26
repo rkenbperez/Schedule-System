@@ -181,13 +181,23 @@ class JWTMeView(APIView):
                         },
                         required=False,
                     ),
+                    "department": inline_serializer(
+                        name="HeadedDepartment",
+                        fields={
+                            "id": serializers.IntegerField(),
+                            "name": serializers.CharField(),
+                        },
+                        required=False,
+                    ),
                 },
             )
         },
     )
     def get(self, request):
+        from .services import user_role_and_department
+
         user = request.user
-        role = "registrar" if user.is_staff else ("professor" if hasattr(user, "prof") else "user")
+        role, dept_data = user_role_and_department(user)
 
         prof_data = None
         if hasattr(user, "prof"):
@@ -209,6 +219,7 @@ class JWTMeView(APIView):
                 "is_staff": user.is_staff,
                 "role": role,
                 "professor": prof_data,
+                "department": dept_data,
             }
         )
 
@@ -227,13 +238,28 @@ class ProfessorsViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = Professors.objects.select_related("user", "department").all()
-        term_id = self.request.query_params.get("term")
+        params = self.request.query_params
+        department_id = params.get("department")
+        if department_id:
+            try:
+                department_id = int(department_id)
+            except (TypeError, ValueError):
+                # Malformed value behaves as absent so the default active-term
+                # scoping below still applies.
+                department_id = None
+        if department_id is not None:
+            # Department-scoped lists (e.g. department head assignment UI)
+            # must see every professor of the department, including ones
+            # without assignments in the active term, so the default
+            # active-term filter below is skipped when this param is used.
+            qs = qs.filter(department_id=department_id)
+        term_id = params.get("term")
         if term_id:
             try:
                 qs = qs.filter(assignments__term_id=int(term_id)).distinct()
             except (TypeError, ValueError):
                 pass
-        else:
+        elif not department_id:
             from timetable.models import AcademicTerm
             active_term = AcademicTerm.objects.filter(is_active=True).first()
             if active_term is not None:

@@ -20,6 +20,28 @@ def normalize_email(value: str) -> str:
     return (value or "").strip().lower()
 
 
+def user_role_and_department(user):
+    """Resolve the display role and headed department (if any) for a user.
+
+    Single source of truth for login and /api/auth/jwt/me/: staff users stay
+    registrars even if they head a department, non-staff users heading a
+    department are 'department_head', professors come next.
+    """
+    if user.is_staff:
+        return "registrar", None
+
+    from catalog.models import Department
+
+    dept = Department.objects.filter(head=user).order_by("name").first()
+    if dept is not None:
+        return "department_head", {"id": dept.id, "name": dept.name}
+
+    if hasattr(user, "prof"):
+        return "professor", None
+
+    return "user", None
+
+
 @dataclass
 class ProvisionResult:
     action: Literal["created", "updated"]

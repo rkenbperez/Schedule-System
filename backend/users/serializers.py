@@ -54,13 +54,9 @@ class ProfessorsSerializer(serializers.ModelSerializer):
         return full_name or obj.user.username
 
     def get_role(self, obj):
-        if obj.user.is_staff:
-            return "registrar"
-        if hasattr(obj, 'department_head') and obj.department_head:
-            return "department_head"
-        if obj.department and obj.department.head_id == obj.user_id:
-            return "department_head"
-        return "professor"
+        from .services import user_role_and_department
+
+        return user_role_and_department(obj.user)[0]
 
     def get_is_department_head(self, obj):
         if obj.department and obj.department.head_id == obj.user_id:
@@ -141,7 +137,9 @@ class LoginSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         data = super().validate(attrs)
-        role = "registrar" if self.user.is_staff else ("professor" if hasattr(self.user, "prof") else "user")
+        from .services import user_role_and_department
+
+        role, dept_data = user_role_and_department(self.user)
         prof_data = None
         if hasattr(self.user, "prof"):
             prof = self.user.prof
@@ -160,6 +158,7 @@ class LoginSerializer(TokenObtainPairSerializer):
             "is_staff": self.user.is_staff,
             "role": role,
             "professor": prof_data,
+            "department": dept_data,
         }
         return data
 

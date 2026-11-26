@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Clock, CheckCircle, XCircle, Eye, Check, X } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Clock, CheckCircle, XCircle, Eye, Check, X, ClipboardList } from 'lucide-react';
 import { useDepartmentHeadSubmissions, usePublishPreference, useBatchPublishPreferences } from '../../hooks/Professor.hooks';
 import type { ProfessorPreferenceListItem } from '../../types/Types';
 import {
@@ -16,7 +17,10 @@ import {
   StatCard,
   Separator,
   Tooltip,
+  EmptyState,
 } from '../../components/ui';
+import { cn } from '../../lib/cn';
+import DepartmentCreateAssignment from './components/DepartmentCreateAssignment';
 
 function StatusBadge({ status }: { status: string }) {
   const config = {
@@ -41,6 +45,14 @@ export default function DepartmentHeadDashboard() {
   const [reviewPreference, setReviewPreference] = useState<ProfessorPreferenceListItem | null>(null);
   const [reviewAction, setReviewAction] = useState<'publish' | 'reject'>('publish');
   const [reviewNotes, setReviewNotes] = useState('');
+  const location = useLocation();
+  const navigate = useNavigate();
+  // The active tab mirrors the route so the sidebar and tabs never disagree.
+  const view: 'submissions' | 'assignments' = location.pathname.endsWith(
+    '/assignments'
+  )
+    ? 'assignments'
+    : 'submissions';
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -107,6 +119,37 @@ export default function DepartmentHeadDashboard() {
         </div>
       </div>
 
+      <div className='flex w-fit gap-1 rounded-control border border-border bg-surface p-1'>
+        <button
+          type='button'
+          onClick={() => navigate('/department-head')}
+          className={cn(
+            'rounded-control px-3 py-1.5 text-body-sm font-medium transition-colors',
+            view === 'submissions'
+              ? 'bg-apple-green-50 text-apple-green-800'
+              : 'text-text-secondary hover:text-text-primary'
+          )}
+        >
+          Submissions
+        </button>
+        <button
+          type='button'
+          onClick={() => navigate('/department-head/assignments')}
+          className={cn(
+            'rounded-control px-3 py-1.5 text-body-sm font-medium transition-colors',
+            view === 'assignments'
+              ? 'bg-apple-green-50 text-apple-green-800'
+              : 'text-text-secondary hover:text-text-primary'
+          )}
+        >
+          Assignments
+        </button>
+      </div>
+
+      {view === 'assignments' ? (
+        <DepartmentCreateAssignment />
+      ) : (
+        <>
       <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
         <StatCard
           icon={Clock}
@@ -178,8 +221,12 @@ export default function DepartmentHeadDashboard() {
               <TBody>
                 {submissions?.length === 0 ? (
                   <TR>
-                    <TD colSpan={7} className='text-center py-8 text-text-tertiary'>
-                      No submissions for the active term.
+                    <TD colSpan={7}>
+                      <EmptyState
+                        icon={ClipboardList}
+                        title='No submissions for the active term'
+                        description='Professor preference submissions will appear here once professors submit their preferences for review.'
+                      />
                     </TD>
                   </TR>
                 ) : (
@@ -377,6 +424,8 @@ export default function DepartmentHeadDashboard() {
           </div>
         )}
       </Modal>
+        </>
+      )}
     </section>
   );
 }
