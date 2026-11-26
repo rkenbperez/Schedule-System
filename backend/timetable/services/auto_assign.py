@@ -25,13 +25,13 @@ def _term_loads(term):
     return {row["assignment__prof_id"]: row["hours"] or 0 for row in rows}
 
 
-def _qualified_professors(subject, loads):
+def _qualified_professors(requirement, loads):
     available_prof_ids = set(
         AvailabilityWindow.objects.values_list("prof_id", flat=True).distinct()
     )
     qualifications = (
         ProfessorSubject.objects.filter(
-            subject=subject,
+            subject=requirement.subject,
             professor__user__is_active=True,
         )
         .select_related("professor__user", "professor__department")
@@ -47,26 +47,38 @@ def _qualified_professors(subject, loads):
         assigned_hours = loads.get(professor.id, 0)
         if assigned_hours >= weekly_cap:
             continue
+        score = _score_professor(qualification, requirement, loads)
         candidates.append(
-            (
-                0 if qualification.is_preferred else 1,
-                assigned_hours,
-                professor.id,
-                qualification,
-                professor,
-            )
+            (-score, assigned_hours, professor.id, professor)
         )
 
-    candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+    candidates.sort()
     return candidates
 
 
 def _pick_candidate(candidates, loads, needed_hours):
-    for _, _, _, _, professor in candidates:
+    for _, _, _, professor in candidates:
         weekly_cap = (professor.max_daily_hours or 8) * 5
         if loads.get(professor.id, 0) + needed_hours <= weekly_cap:
             return professor
     return None
+
+
+def _score_professor(qualification, requirement, loads):
+    professor = qualification.professor
+    score = 50 if qualification.is_preferred else 0
+
+    department = professor.department
+    program = requirement.section.program
+    if department and program and department.name.casefold() == program.casefold():
+        score += 10
+
+    weekly_cap = (professor.max_daily_hours or 8) * 5
+    if weekly_cap:
+        load_ratio = loads.get(professor.id, 0) / weekly_cap
+        score += max(0, int((1 - load_ratio) * 10))
+
+    return score
 
 
 @transaction.atomic
@@ -99,7 +111,7 @@ def auto_assign_professors(term, replace_auto=False):
 
         lec_hours, lab_hours = _subject_hours(requirement.subject)
         needed_hours = lec_hours + lab_hours
-        candidates = _qualified_professors(requirement.subject, loads)
+        candidates = _qualified_professors(requirement, loads)
         professor = _pick_candidate(candidates, loads, needed_hours)
 
         if professor is None:
