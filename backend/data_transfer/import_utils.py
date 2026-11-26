@@ -14,6 +14,11 @@ from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import validate_email
 
+# Shared normalization so preview and commit agree on what counts as a
+# (possibly blank) email. users.services is import-safe here: it only touches
+# models lazily inside its functions.
+from users.services import normalize_email
+
 
 SHEET_MODELS = [
     "Departments",
@@ -107,283 +112,67 @@ TEMPLATE_DISPLAY_COLUMNS = {
     "Professors": ("department_name", "E"),  # department_id is column E
 }
 
-# Realistic CvSU - Imus (Computer Science) sample rows. Sample ids are
-# deliberately high so they are easy to replace; cross-references must stay
-# consistent because validation checks them before committing.
-TEMPLATE_SAMPLE_ROWS = {
-    "Departments": [
-        {"id": 9001, "name": "Department of Computer Science"},
-        {"id": 9002, "name": "Department of Information Technology"},
-    ],
-    "Rooms": [
-        {
-            "id": 9101,
-            "name": "CS Lecture Room 1",
-            "capacity": 50,
-            "department_id": 9001,
-        },
-        {
-            "id": 9102,
-            "name": "CS Computer Laboratory 1",
-            "capacity": 40,
-            "department_id": 9001,
-        },
-        {
-            "id": 9103,
-            "name": "CS Computer Laboratory 2",
-            "capacity": 35,
-            "department_id": 9001,
-        },
-        {
-            "id": 9104,
-            "name": "IT Lecture Room 1",
-            "capacity": 45,
-            "department_id": 9002,
-        },
-    ],
-    "Subjects": [
-        {"id": 9201, "code": "CS 101", "title": "Introduction to Computing", "units": 3},
-        {"id": 9202, "code": "CS 102", "title": "Computer Programming 1", "units": 3},
-        {
-            "id": 9203,
-            "code": "CS 201",
-            "title": "Data Structures and Algorithms",
-            "units": 3,
-        },
-        {"id": 9204, "code": "CS 301", "title": "Operating Systems", "units": 3},
-        {
-            "id": 9205,
-            "code": "CS 302",
-            "title": "Database Management Systems",
-            "units": 3,
-        },
-        {"id": 9206, "code": "CS 401", "title": "Software Engineering", "units": 3},
-    ],
-    "Sections": [
-        {"id": 9301, "name": "BSCS 3-A", "headcount": 40, "program": "BSCS"},
-        {"id": 9302, "name": "BSCS 3-B", "headcount": 38, "program": "BSCS"},
-        {"id": 9303, "name": "BSCS 2-A", "headcount": 42, "program": "BSCS"},
-    ],
-    # Only used when the DB has professors AND samples are requested; the
-    # template Professors fallback is header-only when the DB is empty.
-    "Professors": [
-        {
-            "id": 9501,
-            "email": "juan.delacruz@cvsu-imus.example",
-            "first_name": "Juan",
-            "last_name": "Dela Cruz",
-            "department_id": 9001,
-            "max_hours": 8,
-            "max_consecutive": 4,
-        },
-        {
-            "id": 9502,
-            "email": "maria.santos@cvsu-imus.example",
-            "first_name": "Maria",
-            "last_name": "Santos",
-            "department_id": 9001,
-            "max_hours": 8,
-            "max_consecutive": 4,
-        },
-    ],
-    "Assignments": [
-        {
-            "id": 9401,
-            "professor_id": 9501,
-            "subject_id": 9203,
-            "section_id": 9301,
-        },
-        {
-            "id": 9402,
-            "professor_id": 9501,
-            "subject_id": 9205,
-            "section_id": 9301,
-        },
-        {
-            "id": 9403,
-            "professor_id": 9502,
-            "subject_id": 9204,
-            "section_id": 9302,
-        },
-        {
-            "id": 9404,
-            "professor_id": 9502,
-            "subject_id": 9206,
-            "section_id": 9303,
-        },
-    ],
-    "Meetings": [
-        {
-            "id": 9601,
-            "assignment_id": 9401,
-            "order": 1,
-            "mode": "sync",
-            "duration_slots": 2,
-        },
-        {
-            "id": 9602,
-            "assignment_id": 9401,
-            "order": 2,
-            "mode": "lab",
-            "duration_slots": 3,
-        },
-        {
-            "id": 9603,
-            "assignment_id": 9402,
-            "order": 1,
-            "mode": "sync",
-            "duration_slots": 2,
-        },
-        {
-            "id": 9604,
-            "assignment_id": 9403,
-            "order": 1,
-            "mode": "lab",
-            "duration_slots": 3,
-        },
-        {
-            "id": 9605,
-            "assignment_id": 9403,
-            "order": 2,
-            "mode": "async",
-            "duration_slots": 1,
-        },
-        {
-            "id": 9606,
-            "assignment_id": 9404,
-            "order": 1,
-            "mode": "sync",
-            "duration_slots": 2,
-        },
-    ],
-    "Availability": [
-        {
-            "id": 9701,
-            "professor_id": 9501,
-            "day": 0,
-            "start_time": "08:00",
-            "end_time": "17:00",
-            "is_preferred": True,
-        },
-        {
-            "id": 9702,
-            "professor_id": 9501,
-            "day": 2,
-            "start_time": "08:00",
-            "end_time": "17:00",
-            "is_preferred": False,
-        },
-        {
-            "id": 9703,
-            "professor_id": 9502,
-            "day": 1,
-            "start_time": "08:00",
-            "end_time": "17:00",
-            "is_preferred": True,
-        },
-        {
-            "id": 9704,
-            "professor_id": 9502,
-            "day": 3,
-            "start_time": "08:00",
-            "end_time": "17:00",
-            "is_preferred": False,
-        },
-    ],
-    "BusyBlocks": [
-        {
-            "id": 9801,
-            "professor_id": 9501,
-            "day": 4,
-            "start_time": "13:00",
-            "end_time": "15:00",
-        },
-        {
-            "id": 9802,
-            "professor_id": 9502,
-            "day": 5,
-            "start_time": "09:00",
-            "end_time": "11:00",
-        },
-    ],
-}
+# Auto-fill formula rows written into Rooms/Professors regardless of data:
+# rows 2..501 (500 rows) so users can paste large batches under the header.
+TEMPLATE_FORMULA_ROWS = 500
+
+# Hidden lookup sheet feeding the department_id dropdowns. Column A holds the
+# Department ids that exist in the database; column B repeats the name for
+# readability. The generous fixed range keeps working as departments are
+# added without regenerating the template.
+LISTS_SHEET_NAME = "_Lists"
+DEPT_DROPDOWN_FORMULA = "_Lists!$A$2:$A$2000"
 
 # One row per column so the Instructions tab explains the entire schema.
 TEMPLATE_COLUMN_GUIDE = {
     "Departments": [
-        ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
+        ("id", "Optional", "Integer primary key. Leave blank to create; type an existing id to update. An id that does not exist in the database is rejected for that row."),
         ("name", "Required", "Unique department name (max 100 characters). Sample: Department of Computer Science."),
     ],
     "Rooms": [
-        ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
+        ("id", "Optional", "Integer primary key. Leave blank to create; type an existing id to update. An id that does not exist in the database is rejected for that row."),
         ("name", "Required", "Unique room name (max 50 characters). Samples: CS Lecture Room 1, CS Computer Laboratory 1."),
         ("capacity", "Required", "Positive integer seat capacity."),
-        ("department_id", "Optional", "Integer id from the Departments sheet."),
+        ("department_id", "Optional", "Department id. Pick from the dropdown (fed by the hidden _Lists sheet) or leave blank."),
     ],
     "Subjects": [
-        ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
+        ("id", "Optional", "Integer primary key. Leave blank to create; type an existing id to update. An id that does not exist in the database is rejected for that row."),
         ("code", "Required", "Unique subject code (max 20 characters). Sample: CS 201."),
         ("title", "Required", "Subject title (max 200 characters)."),
         ("units", "Optional", "Positive integer; defaults to 3."),
     ],
     "Sections": [
-        ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
+        ("id", "Optional", "Integer primary key. Leave blank to create; type an existing id to update. An id that does not exist in the database is rejected for that row."),
         ("name", "Required", "Unique section name (max 50 characters). Sample: BSCS 3-A."),
         ("headcount", "Required", "Positive integer number of students."),
         ("program", "Optional", "Program code such as BSCS or BSIT (max 20 characters). Leave blank to derive it from the section name."),
     ],
     "Professors": [
-        ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
+        ("id", "Optional", "Integer primary key. Leave blank to create; type an existing id to update. An id that does not exist in the database is rejected for that row."),
         ("email", "Required", "Professor's email address (case-insensitive). A new email creates the login account and profile; an existing email updates that professor. Passwords are never set or reset."),
         ("first_name", "Optional", "First name; only applied when provided."),
         ("last_name", "Optional", "Last name; only applied when provided."),
-        ("department_id", "Optional", "Integer id from the Departments sheet."),
+        ("department_id", "Optional", "Department id. Pick from the dropdown (fed by the hidden _Lists sheet) or leave blank."),
         ("max_hours", "Optional", "Maximum teaching hours per day; positive integer, defaults to 8."),
         ("max_consecutive", "Optional", "Positive integer; defaults to 4."),
-    ],
-    "Assignments": [
-        ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
-        ("professor_id", "Required", "Integer id from the Professors sheet."),
-        ("subject_id", "Required", "Integer id from the Subjects sheet."),
-        ("section_id", "Required", "Integer id from the Sections sheet."),
-        ("term_id", "Optional", "Integer id of an existing AcademicTerm. Leave blank if not term-specific."),
-    ],
-    "Meetings": [
-        ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
-        ("assignment_id", "Required", "Integer id from the Assignments sheet."),
-        ("order", "Required", "Integer >= 1; must be unique per assignment."),
-        ("mode", "Required", "Allowed values: async, sync, lab (lowercase)."),
-        ("duration_slots", "Optional", "Integer >= 1; defaults to 1."),
-    ],
-    "Availability": [
-        ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
-        ("professor_id", "Required", "Integer id from the Professors sheet."),
-        ("day", "Required", "0-5 or a day name. 0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday."),
-        ("start_time", "Required", "24-hour time in HH:MM format, e.g., 08:00."),
-        ("end_time", "Required", "24-hour time in HH:MM format; must be after start_time."),
-        ("is_preferred", "Optional", "true/false (also accepts 1/0, yes/no); defaults to false."),
-    ],
-    "BusyBlocks": [
-        ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
-        ("professor_id", "Required", "Integer id from the Professors sheet."),
-        ("day", "Required", "0-5 or a day name. 0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday."),
-        ("start_time", "Required", "24-hour time in HH:MM format, e.g., 09:00."),
-        ("end_time", "Required", "24-hour time in HH:MM format; must be after start_time."),
     ],
 }
 
 TEMPLATE_GENERAL_NOTES = [
     "XLSX: use the exact sheet names below. Row 1 is the header row; data starts in row 2.",
     "CSV: upload a .zip containing one .csv per sheet (Departments.csv, Rooms.csv, Subjects.csv, Sections.csv, Professors.csv). A single .csv file is not supported.",
-    "Leave 'id' blank to create a new record. Provide an existing id to update that record.",
-    "Foreign-key values must reference ids defined in the same workbook: department_id, professor_id, subject_id, section_id, assignment_id.",
+    "Leave ID blank to CREATE a new record. Select from dropdown or type existing ID to UPDATE.",
+    "A typed 'id' that does not exist in the database is rejected for that row; the other rows can still be imported.",
+    "You must upload Departments/Subjects first before uploading Rooms/Professors.",
+    "New professors can be added by leaving ID blank and typing a new email.",
+    "department_id (Rooms and Professors): pick from the dropdown fed by the hidden _Lists sheet, or type an id that already exists in the database. Legacy sheets also cross-reference professor_id, subject_id, section_id, and assignment_id within the same workbook.",
     "Every assignment must have at least one synchronous meeting: mode 'sync' or 'lab' (legacy sheets only).",
     "Delivery modes: async, sync, lab. Day values: 0-5 or Monday-Saturday. Times: 24-hour HH:MM (legacy sheets only).",
     "Capacity, headcount, units, max_hours, max_consecutive, order, and duration_slots must be positive integers.",
     "Rooms have no room-type column. Use descriptive names such as 'CS Lecture Room 1' or 'CS Computer Laboratory 1'.",
     "Sections 'program' is optional (max 20 characters): leave it blank to derive it from the section name (e.g., 'BSCS 3-A' becomes BSCS).",
     "Professors are matched by email (case-insensitive): a new email creates the login account and profile; an existing email updates that professor. Passwords are never set or reset by an import.",
-    "Read-only display columns such as 'department_name' (Rooms and Professors) are generated by formula; do not edit them.",
+    "The 'department_name' columns (Rooms and Professors) auto-fill by formula once a valid department_id is entered; do not edit them.",
     "Legacy 9-sheet workbooks that also include Assignments, Meetings, Availability, and BusyBlocks sheets are still accepted on upload.",
 ]
 
@@ -497,79 +286,202 @@ class ImportProcessor:
         else:
             raise ValueError("Unsupported file format. Use .xlsx or .zip (CSV)")
 
+    @staticmethod
+    def _parse_error(sheet: str, row: int, message: str) -> dict:
+        return {"sheet": sheet, "row": row, "field": "", "message": message}
+
     def _parse_xlsx(self, file) -> dict[str, list[dict]]:
         wb = load_workbook(file, data_only=True)
-        result = {}
+        result: dict[str, list[dict]] = {name: [] for name in SHEET_MODELS}
+        # Per-row parse failures (weird cell types, conversion errors) are
+        # captured here instead of aborting the whole file; validate_all
+        # drains them into structured errors.
+        parse_errors: list[dict] = []
+        result["_parse_errors"] = parse_errors
+        # Presence and normalized header rows are tracked separately from the
+        # row lists (which are pre-seeded empty for every known sheet), so
+        # validate_all can tell a missing sheet from an empty one.
+        present: list[str] = []
+        headers_map: dict[str, list[str]] = {}
         for sheet_name in SHEET_MODELS:
             if sheet_name not in wb.sheetnames:
-                result[sheet_name] = []
                 continue
+            present.append(sheet_name)
+            headers_map[sheet_name] = []
             ws = wb[sheet_name]
             editable = EDITABLE_COLUMNS[sheet_name]
-            rows = []
-            keep = []
+            rows = result[sheet_name]
+            keep: list[tuple[int, str]] = []
+            header_parsed = False
             for i, row in enumerate(ws.iter_rows(values_only=True), start=1):
-                if i == 1:
-                    # Normalize headers and keep only whitelisted input
-                    # columns; formula/display and unknown columns are
-                    # dropped before any cell value is read.
-                    headers = [str(c).strip().lower() if c else "" for c in row]
-                    keep = [(j, h) for j, h in enumerate(headers) if h in editable]
-                    continue
-                if not any(v is not None and v != "" for v in row):
-                    continue
-                row_dict = {}
-                for j, h in keep:
-                    if j < len(row):
-                        row_dict[h] = row[j]
-                row_dict["_row_num"] = i
-                rows.append(row_dict)
-            result[sheet_name] = rows
+                try:
+                    if i == 1:
+                        # Normalize headers and keep only whitelisted input
+                        # columns; formula/display and unknown columns are
+                        # dropped before any cell value is read.
+                        headers = [str(c).strip().lower() if c else "" for c in row]
+                        headers_map[sheet_name] = headers
+                        keep = [(j, h) for j, h in enumerate(headers) if h in editable]
+                        header_parsed = True
+                        continue
+                    if not any(v is not None and v != "" for v in row):
+                        continue
+                    row_dict = {}
+                    for j, h in keep:
+                        if j < len(row):
+                            row_dict[h] = row[j]
+                    row_dict["_row_num"] = i
+                    rows.append(row_dict)
+                except Exception as e:
+                    if not header_parsed:
+                        parse_errors.append(
+                            self._parse_error(
+                                sheet_name, i, f"Unreadable header, sheet skipped: {e}"
+                            )
+                        )
+                        break
+                    parse_errors.append(
+                        self._parse_error(sheet_name, i, f"Skipped malformed row: {e}")
+                    )
+        result["__present__"] = present
+        result["__headers__"] = headers_map
         return result
 
     def _parse_csv_zip(self, file) -> dict[str, list[dict]]:
-        result = {name: [] for name in SHEET_MODELS}
+        result: dict[str, list[dict]] = {name: [] for name in SHEET_MODELS}
+        parse_errors: list[dict] = []
+        result["_parse_errors"] = parse_errors
+        present: list[str] = []
+        headers_map: dict[str, list[str]] = {}
         with zipfile.ZipFile(file, "r") as zf:
             for sheet_name in SHEET_MODELS:
                 csv_name = f"{sheet_name}.csv"
                 if csv_name not in zf.namelist():
                     continue
+                present.append(sheet_name)
                 editable = EDITABLE_COLUMNS[sheet_name]
                 with zf.open(csv_name) as cf:
                     content = cf.read().decode("utf-8-sig")
                     reader = csv.DictReader(io.StringIO(content))
-                    for i, row in enumerate(reader, start=2):
-                        if not any(v is not None and v != "" for v in row.values()):
+                    headers_map[sheet_name] = [
+                        (h or "").strip().lower()
+                        for h in (reader.fieldnames or [])
+                    ]
+                    i = 1  # header row; data starts at row 2
+                    while True:
+                        try:
+                            row = next(reader, None)
+                        except csv.Error as e:
+                            i += 1
+                            parse_errors.append(
+                                self._parse_error(
+                                    sheet_name, i, f"Skipped malformed CSV row: {e}"
+                                )
+                            )
                             continue
-                        row = {
-                            k.strip().lower(): v
-                            for k, v in row.items()
-                            if k and k.strip().lower() in editable
-                        }
-                        row["_row_num"] = i
-                        result[sheet_name].append(row)
+                        if row is None:
+                            break
+                        i += 1
+                        try:
+                            if not any(v is not None and v != "" for v in row.values()):
+                                continue
+                            row = {
+                                k.strip().lower(): v
+                                for k, v in row.items()
+                                if k and k.strip().lower() in editable
+                            }
+                            row["_row_num"] = i
+                            result[sheet_name].append(row)
+                        except Exception as e:
+                            parse_errors.append(
+                                self._parse_error(
+                                    sheet_name, i, f"Skipped malformed row: {e}"
+                                )
+                            )
+        result["__present__"] = present
+        result["__headers__"] = headers_map
         return result
 
     def validate_all(self, parsed_data: dict[str, list[dict]]) -> ImportResult:
+        # Rows the parser could not read surface as structured row errors;
+        # the remaining rows keep flowing through normal validation.
+        parse_errors = parsed_data.pop("_parse_errors", [])
+        present = set(parsed_data.pop("__present__", []))
+        headers = parsed_data.pop("__headers__", {})
         result = ImportResult(valid=True, preview_token=str(uuid4()), parsed_data=parsed_data)
-        self._validate_structure(parsed_data, result)
-        if not result.valid:
+        for e in parse_errors:
+            result.valid = False
+            result.errors.append(
+                ImportError(e.get("sheet", ""), e.get("row", 0), e.get("field", ""), e.get("message", ""))
+            )
+        structure_ok = self._validate_structure(present, headers, result)
+        if not structure_ok:
+            # A structurally invalid workbook (missing core sheet/header) has
+            # no meaningful rows to import: never cache it, so it cannot be
+            # committed even if the caller reuses the preview token.
+            result.preview_token = ""
             return result
+        # Validate rows even when some sibling rows failed parsing, so the
+        # valid rows stay previewable and partially committable.
         self._validate_rows(parsed_data, result)
         self._validate_cross_model(parsed_data, result)
         self._compute_summary(parsed_data, result)
-        if result.valid:
-            cache.set(f"import_preview_{result.preview_token}", parsed_data, self.PREVIEW_TTL)
+        # Cache the non-error row keys alongside the parsed rows: commit must
+        # always exclude preview-errored rows, including selected_keys=None.
+        error_keys = sorted(
+            {f"{e.sheet}:{e.row}" for e in result.errors if e.row > 0}
+        )
+        cache.set(
+            f"import_preview_{result.preview_token}",
+            {"rows": parsed_data, "error_keys": error_keys},
+            self.PREVIEW_TTL,
+        )
         return result
 
-    def _validate_structure(self, parsed_data: dict, result: ImportResult):
+    def _validate_structure(self, present: set, headers: dict, result: ImportResult) -> bool:
         # Only the 5 core sheets are required; the legacy sheets
         # (Assignments/Meetings/Availability/BusyBlocks) are optional and
         # treated as empty when missing.
+        structure_ok = True
         for sheet_name in TEMPLATE_SHEETS:
-            if sheet_name not in parsed_data:
+            if sheet_name not in present:
+                structure_ok = False
                 result.valid = False
-                result.errors.append(ImportError(sheet_name, 0, "sheet", f"Missing sheet: {sheet_name}"))
+                result.errors.append(
+                    ImportError(sheet_name, 0, "sheet", f"Missing sheet: {sheet_name}")
+                )
+                continue
+            normalized = set(headers.get(sheet_name) or [])
+            if sheet_name == "Professors":
+                # Email is the canonical key, but legacy user_id workbooks
+                # remain uploadable.
+                if not ({"email", "user_id"} & normalized):
+                    structure_ok = False
+                    result.valid = False
+                    result.errors.append(
+                        ImportError(
+                            sheet_name,
+                            0,
+                            "sheet",
+                            "Missing required header(s): email or user_id",
+                        )
+                    )
+                continue
+            missing = [
+                col for col in REQUIRED_COLUMNS[sheet_name] if col not in normalized
+            ]
+            if missing:
+                structure_ok = False
+                result.valid = False
+                result.errors.append(
+                    ImportError(
+                        sheet_name,
+                        0,
+                        "sheet",
+                        f"Missing required header(s): {', '.join(missing)}",
+                    )
+                )
+        return structure_ok
 
     def _validate_rows(self, parsed_data: dict, result: ImportResult):
         for sheet_name in SHEET_MODELS:
@@ -583,7 +495,11 @@ class ImportProcessor:
                     if val is None or val == "":
                         result.valid = False
                         result.errors.append(ImportError(sheet_name, row_num, col, f"Required field '{col}' is empty"))
-                if sheet_name == "Professors" and not row.get("email") and not row.get("user_id"):
+                if (
+                    sheet_name == "Professors"
+                    and not normalize_email(str(row.get("email") or ""))
+                    and not row.get("user_id")
+                ):
                     result.valid = False
                     result.errors.append(
                         ImportError(
@@ -602,10 +518,14 @@ class ImportProcessor:
                             result.valid = False
                             result.errors.append(ImportError(sheet_name, row_num, col, "Capacity must be positive integer"))
                     elif sheet_name == "Subjects" and col == "units":
-                        ival = parse_int(val)
-                        if ival is not None and ival <= 0:
-                            result.valid = False
-                            result.errors.append(ImportError(sheet_name, row_num, col, "Units must be positive integer"))
+                        if val is not None and str(val).strip() != "":
+                            ival = parse_int(val)
+                            if ival is None:
+                                result.valid = False
+                                result.errors.append(ImportError(sheet_name, row_num, col, "Units must be an integer"))
+                            elif ival <= 0:
+                                result.valid = False
+                                result.errors.append(ImportError(sheet_name, row_num, col, "Units must be positive integer"))
                     elif sheet_name == "Sections" and col == "headcount":
                         ival = parse_int(val)
                         if ival is None or ival <= 0:
@@ -638,7 +558,7 @@ class ImportProcessor:
                             result.valid = False
                             result.errors.append(ImportError(sheet_name, row_num, col, "Must be true/false"))
                     elif sheet_name == "Professors" and col == "email":
-                        sval = str(val).strip() if val is not None else ""
+                        sval = normalize_email(str(val) if val is not None else "")
                         if sval:
                             try:
                                 validate_email(sval)
@@ -657,10 +577,14 @@ class ImportProcessor:
                     elif sheet_name == "Professors" and col in ("max_hours", "max_daily_hours", "max_consecutive"):
                         # max_hours is the canonical sheet header for
                         # Professors.max_daily_hours; legacy header accepted.
-                        ival = parse_int(val)
-                        if ival is not None and ival < 1:
-                            result.valid = False
-                            result.errors.append(ImportError(sheet_name, row_num, col, "Must be positive integer"))
+                        if val is not None and str(val).strip() != "":
+                            ival = parse_int(val)
+                            if ival is None:
+                                result.valid = False
+                                result.errors.append(ImportError(sheet_name, row_num, col, "Must be an integer"))
+                            elif ival < 1:
+                                result.valid = False
+                                result.errors.append(ImportError(sheet_name, row_num, col, "Must be positive integer"))
                     elif sheet_name == "Sections" and col == "program":
                         sval = str(val).strip() if val is not None else ""
                         if len(sval) > 20:
@@ -670,7 +594,12 @@ class ImportProcessor:
                             )
 
     def _validate_cross_model(self, parsed_data: dict, result: ImportResult):
-        dept_ids = {r.get("id") for r in parsed_data.get("Departments", []) if r.get("id")}
+        from catalog.models import Department
+
+        # department_id must reference a department that already exists in
+        # the database. Ids defined only in this workbook's Departments sheet
+        # are rejected: upload Departments first, then Rooms/Professors.
+        db_dept_ids = set(Department.objects.values_list("id", flat=True))
         room_names = {r.get("name") for r in parsed_data.get("Rooms", []) if r.get("name")}
         subject_codes = {r.get("code") for r in parsed_data.get("Subjects", []) if r.get("code")}
         section_names = {r.get("name") for r in parsed_data.get("Sections", []) if r.get("name")}
@@ -701,7 +630,7 @@ class ImportProcessor:
         seen_emails = {}
         for row in parsed_data.get("Professors", []):
             row_num = row.get("_row_num", 0)
-            email = str(row.get("email") or "").strip().lower()
+            email = normalize_email(str(row.get("email") or ""))
             if email:
                 if email in seen_emails:
                     result.valid = False
@@ -718,7 +647,7 @@ class ImportProcessor:
             pid = parse_int(row.get("id"))
             if pid and email:
                 prof = Professors.objects.filter(id=pid).select_related("user").first()
-                if prof and (prof.user.email or "").strip().lower() != email:
+                if prof and normalize_email(prof.user.email or "") != email:
                     result.valid = False
                     result.errors.append(
                         ImportError(
@@ -729,17 +658,32 @@ class ImportProcessor:
                         )
                     )
 
-        for row in parsed_data.get("Rooms", []):
-            did = row.get("department_id")
-            if did and did not in dept_ids:
-                result.valid = False
-                result.errors.append(ImportError("Rooms", row.get("_row_num", 0), "department_id", f"Department {did} not found"))
-
-        for row in parsed_data.get("Professors", []):
-            did = row.get("department_id")
-            if did and did not in dept_ids:
-                result.valid = False
-                result.errors.append(ImportError("Professors", row.get("_row_num", 0), "department_id", f"Department {did} not found"))
+        for sheet_name in ("Rooms", "Professors"):
+            for row in parsed_data.get(sheet_name, []):
+                raw = row.get("department_id")
+                if raw is None or str(raw).strip() == "":
+                    continue
+                did = parse_int(raw)
+                if did is None:
+                    result.valid = False
+                    result.errors.append(
+                        ImportError(
+                            sheet_name,
+                            row.get("_row_num", 0),
+                            "department_id",
+                            f"department_id '{raw}' must be an integer",
+                        )
+                    )
+                elif did not in db_dept_ids:
+                    result.valid = False
+                    result.errors.append(
+                        ImportError(
+                            sheet_name,
+                            row.get("_row_num", 0),
+                            "department_id",
+                            f"Department {did} not found in database",
+                        )
+                    )
 
         for row in parsed_data.get("Assignments", []):
             pid = row.get("professor_id")
@@ -845,19 +789,52 @@ class ImportProcessor:
             updates = 0
             items = []
 
+            # Core template sheets: a typed id must exist in the database
+            # (blank id = create with a DB-generated pk). Legacy sheets keep
+            # the previous behavior for old 9-sheet workbooks.
+            enforce_id_exists = sheet_name in TEMPLATE_SHEETS
+
             for row in parsed_data.get(sheet_name, []):
                 row_num = row.get("_row_num", 0)
-                row_errors = error_lookup.get((sheet_name, row_num), [])
+                row_errors = list(error_lookup.get((sheet_name, row_num), []))
+                pk_raw = row.get(pk_field)
+                pk_num = parse_int(pk_raw) if pk_raw not in (None, "") else None
+                email_value = normalize_email(str(row.get("email") or ""))
 
                 if row_errors:
                     action = "error"
-                elif sheet_name == "Professors" and row.get("email"):
+                elif enforce_id_exists and pk_raw not in (None, "") and pk_num is None:
+                    err = ImportError(
+                        sheet_name,
+                        row_num,
+                        "id",
+                        f"Invalid id '{pk_raw}': must be a whole number",
+                    )
+                    result.valid = False
+                    result.errors.append(err)
+                    row_errors.append(err.message)
+                    action = "error"
+                elif enforce_id_exists and pk_num is not None:
+                    if model.objects.filter(**{pk_field: pk_num}).exists():
+                        action = "update"
+                        updates += 1
+                    else:
+                        err = ImportError(
+                            sheet_name,
+                            row_num,
+                            "id",
+                            f"id {pk_num} does not exist. Leave id blank to create a new record.",
+                        )
+                        result.valid = False
+                        result.errors.append(err)
+                        row_errors.append(err.message)
+                        action = "error"
+                elif sheet_name == "Professors" and email_value:
                     # Email rows: an existing user WITH a Professors profile
                     # is an update; anything else (new email, or existing
                     # user without a profile) creates the profile.
-                    email = str(row.get("email") or "").strip().lower()
-                    has_user = User.objects.filter(email__iexact=email).exists()
-                    has_prof = Professors.objects.filter(user__email__iexact=email).exists()
+                    has_user = User.objects.filter(email__iexact=email_value).exists()
+                    has_prof = Professors.objects.filter(user__email__iexact=email_value).exists()
                     if has_user and has_prof:
                         action = "update"
                         updates += 1
@@ -905,21 +882,50 @@ class ImportProcessor:
                     "count": creates + updates,
                 })
 
+    @staticmethod
+    def _ensure_pk_exists(model, pk) -> int:
+        """Defensive guard: a provided id must reference an existing row.
+
+        The preview already flags nonexistent ids as row errors; this last
+        check raises inside the atomic transaction so a stale or hand-crafted
+        commit payload can never insert a record with an arbitrary pk — the
+        whole import rolls back instead.
+        """
+        pk_num = parse_int(pk)
+        if pk_num is None or not model.objects.filter(id=pk_num).exists():
+            raise ValueError(f"{model.__name__} id {pk} does not exist")
+        return pk_num
+
     def commit(self, preview_token: str, selected_keys: list[str] | None = None) -> CommitResult:
-        parsed_data = cache.get(f"import_preview_{preview_token}")
-        if not parsed_data:
+        cached = cache.get(f"import_preview_{preview_token}")
+        if not cached:
             return CommitResult(committed=False, errors=[{"message": "Preview token expired or invalid"}])
 
-        if selected_keys is not None:
-            selected = set(selected_keys)
-            parsed_data = {
-                sheet: [
-                    row
-                    for row in rows
-                    if f"{sheet}:{row.get('_row_num', 0)}" in selected
-                ]
-                for sheet, rows in parsed_data.items()
-            }
+        # New cache shape: {"rows": ..., "error_keys": [...]}. Tolerate the
+        # old bare-dict shape defensively (e.g. tokens cached before deploy).
+        if isinstance(cached, dict) and "rows" in cached:
+            parsed_data = cached.get("rows") or {}
+            error_keys = set(cached.get("error_keys") or [])
+        else:
+            parsed_data = cached
+            error_keys = set()
+
+        selected = set(selected_keys) if selected_keys is not None else None
+        # Never commit preview-errored rows: selected_keys=None means "all
+        # non-error rows", and an explicit selection cannot opt an error row
+        # back in. Build fresh lists so the cached payload is never mutated.
+        parsed_data = {
+            sheet: [
+                row
+                for row in rows
+                if f"{sheet}:{row.get('_row_num', 0)}" not in error_keys
+                and (
+                    selected is None
+                    or f"{sheet}:{row.get('_row_num', 0)}" in selected
+                )
+            ]
+            for sheet, rows in parsed_data.items()
+        }
 
         result = CommitResult(committed=True)
         try:
@@ -936,6 +942,8 @@ class ImportProcessor:
                 # Departments
                 for row in parsed_data.get("Departments", []):
                     pk = row.get("id")
+                    if pk not in (None, ""):
+                        self._ensure_pk_exists(Department, pk)
                     defaults = {"name": row["name"]}
                     if pk:
                         obj, created = Department.objects.update_or_create(id=pk, defaults=defaults)
@@ -950,6 +958,8 @@ class ImportProcessor:
                 # Rooms
                 for row in parsed_data.get("Rooms", []):
                     pk = row.get("id")
+                    if pk not in (None, ""):
+                        self._ensure_pk_exists(Room, pk)
                     defaults = {
                         "name": row["name"],
                         "capacity": parse_int(row["capacity"]),
@@ -968,6 +978,8 @@ class ImportProcessor:
                 # Subjects
                 for row in parsed_data.get("Subjects", []):
                     pk = row.get("id")
+                    if pk not in (None, ""):
+                        self._ensure_pk_exists(Subject, pk)
                     defaults = {
                         "code": row["code"],
                         "title": row["title"],
@@ -986,6 +998,8 @@ class ImportProcessor:
                 # Sections
                 for row in parsed_data.get("Sections", []):
                     pk = row.get("id")
+                    if pk not in (None, ""):
+                        self._ensure_pk_exists(Section, pk)
                     defaults = {
                         "name": row["name"],
                         "headcount": parse_int(row["headcount"]),
@@ -1005,11 +1019,14 @@ class ImportProcessor:
 
                 # Professors
                 for row in parsed_data.get("Professors", []):
-                    email = str(row.get("email") or "").strip()
+                    email = normalize_email(str(row.get("email") or ""))
                     if email:
                         # Email-based provisioning (max_hours is the canonical
                         # header for Professors.max_daily_hours; legacy
                         # max_daily_hours still accepted).
+                        pk = row.get("id")
+                        if pk not in (None, ""):
+                            self._ensure_pk_exists(Professors, pk)
                         provisioned = provision_professor(
                             email=email,
                             first_name=row.get("first_name") or "",
@@ -1031,6 +1048,8 @@ class ImportProcessor:
                     # previous behavior of validating the user and updating or
                     # creating the profile by id/user_id.
                     pk = row.get("id")
+                    if pk not in (None, ""):
+                        self._ensure_pk_exists(Professors, pk)
                     user_id = parse_int(row.get("user_id"))
                     if not user_id or not User.objects.filter(id=user_id).exists():
                         raise ValueError(f"User {user_id} does not exist")
@@ -1049,7 +1068,7 @@ class ImportProcessor:
                     else:
                         result.summary["updates"] += 1
 
-                # Assignments
+                # Assignments (legacy sheet: a typed id creates that record)
                 for row in parsed_data.get("Assignments", []):
                     pk = row.get("id")
                     defaults = {
@@ -1140,64 +1159,21 @@ class ImportProcessor:
             result.errors.append({"message": str(e)})
             return result
 
-    def _template_rows(self, sheet_name: str) -> tuple[list[str], list[dict]]:
-        """Build template columns and rows for one sheet from the live DB.
+    def _write_department_list_sheet(self, wb) -> None:
+        """Hidden `_Lists` sheet holding the live department ids.
 
-        Falls back to sample rows when the table is empty; the Professors
-        sheet falls back to header-only (no sample rows) when the DB has no
-        professors.
+        Column A feeds the department_id dropdowns on Rooms and Professors;
+        column B repeats the department name for readability.
         """
-        from catalog.models import Department, Room, Subject, Section
-        from users.models import Professors
+        from catalog.models import Department
 
-        columns = TEMPLATE_COLUMNS[sheet_name]
-        rows: list[dict] = []
-        if sheet_name == "Departments":
-            rows = [{"id": d.id, "name": d.name} for d in Department.objects.all()]
-        elif sheet_name == "Rooms":
-            rows = [
-                {
-                    "id": r.id,
-                    "name": r.name,
-                    "capacity": r.capacity,
-                    "department_id": r.department_id,
-                }
-                for r in Room.objects.select_related("department")
-            ]
-        elif sheet_name == "Subjects":
-            rows = [
-                {"id": s.id, "code": s.code, "title": s.title, "units": s.units}
-                for s in Subject.objects.all()
-            ]
-        elif sheet_name == "Sections":
-            rows = [
-                {
-                    "id": s.id,
-                    "name": s.name,
-                    "headcount": s.headcount,
-                    "program": s.program,
-                }
-                for s in Section.objects.all()
-            ]
-        elif sheet_name == "Professors":
-            rows = [
-                {
-                    "id": p.id,
-                    "email": p.user.email or "",
-                    "first_name": p.user.first_name,
-                    "last_name": p.user.last_name,
-                    "department_id": p.department_id,
-                    "max_hours": p.max_daily_hours,
-                    "max_consecutive": p.max_consecutive,
-                }
-                for p in Professors.objects.select_related("user", "department")
-            ]
-
-        if rows:
-            return columns, rows
-        if sheet_name == "Professors":
-            return columns, []  # header-only fallback
-        return columns, [dict(sample) for sample in TEMPLATE_SAMPLE_ROWS.get(sheet_name, [])]
+        ws = wb.create_sheet(LISTS_SHEET_NAME)
+        ws.sheet_state = "hidden"
+        ws.append(["department_id", "department_name"])
+        for dept_id, dept_name in Department.objects.order_by("id").values_list(
+            "id", "name"
+        ):
+            ws.append([dept_id, dept_name])
 
     def generate_template_xlsx(self) -> bytes:
         wb = Workbook()
@@ -1214,13 +1190,15 @@ class ImportProcessor:
             else:
                 ws = wb.create_sheet(sheet_name)
 
-            columns, rows = self._template_rows(sheet_name)
+            # Headers only: no database rows and no sample rows, so the
+            # template stays identical whether or not the database is empty.
+            columns = TEMPLATE_COLUMNS[sheet_name]
             ws.append(columns)
 
-            for data in rows:
-                ws.append([data.get(col, "") for col in columns])
-
-            # Read-only display column appended after the input columns.
+            # Read-only display column appended after the input columns,
+            # auto-filled for TEMPLATE_FORMULA_ROWS regardless of data. It
+            # evaluates to blank until a valid department_id is typed or
+            # picked from the dropdown.
             display = TEMPLATE_DISPLAY_COLUMNS.get(sheet_name)
             total_columns = len(columns)
             all_names = list(columns)
@@ -1228,7 +1206,7 @@ class ImportProcessor:
                 display_name, ref_col = display
                 display_idx = total_columns + 1
                 ws.cell(row=1, column=display_idx, value=display_name)
-                for i in range(2, len(rows) + 2):
+                for i in range(2, TEMPLATE_FORMULA_ROWS + 2):
                     formula = (
                         f'=IFERROR(IF(${ref_col}{i}="","",'
                         f"INDEX(Departments!$B:$B,"
@@ -1257,6 +1235,8 @@ class ImportProcessor:
 
             self._add_template_validations(ws, columns, sheet_name)
 
+        self._write_department_list_sheet(wb)
+
         instructions = wb.create_sheet("Instructions")
         self._write_instructions_sheet(
             instructions, header_fill, header_font, section_fill, section_font
@@ -1271,16 +1251,12 @@ class ImportProcessor:
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for sheet_name in TEMPLATE_SHEETS:
-                # Input columns only: the formula display columns exist only
-                # in the XLSX template.
-                columns, rows = self._template_rows(sheet_name)
+                # Header rows only (no sample data). Input columns only: the
+                # formula display columns exist only in the XLSX template.
+                columns = TEMPLATE_COLUMNS[sheet_name]
                 output = io.StringIO()
                 writer = csv.writer(output)
                 writer.writerow(columns)
-                for data in rows:
-                    writer.writerow(
-                        [data.get(col, "") for col in columns]
-                    )
                 zf.writestr(f"{sheet_name}.csv", output.getvalue())
 
             zf.writestr(
@@ -1290,25 +1266,27 @@ class ImportProcessor:
         return buf.read()
 
     @staticmethod
-    def _add_list_validation(
-        ws,
-        columns: list[str],
-        field_name: str,
-        values: str,
-        title: str,
-        message: str,
-    ):
-        col_idx = columns.index(field_name) + 1
+    def _add_department_dropdown(ws, columns: list[str]):
+        """List validation fed by the hidden _Lists sheet.
+
+        Only department ids that exist in the database appear in the
+        dropdown; the generous fixed range keeps working as departments are
+        added without regenerating the template.
+        """
+        col_idx = columns.index("department_id") + 1
         col_letter = ws.cell(row=1, column=col_idx).column_letter
         dv = DataValidation(
             type="list",
-            formula1=f'"{values}"',
+            formula1=DEPT_DROPDOWN_FORMULA,
             allow_blank=True,
             showErrorMessage=True,
         )
-        dv.error = message
-        dv.errorTitle = title
-        dv.add(f"{col_letter}2:{col_letter}200")
+        dv.errorTitle = "Invalid department id"
+        dv.error = (
+            "Pick a department id from the dropdown (fed by the hidden "
+            "_Lists sheet) or leave the cell blank."
+        )
+        dv.add(f"{col_letter}2:{col_letter}{TEMPLATE_FORMULA_ROWS + 1}")
         ws.add_data_validation(dv)
 
     @staticmethod
@@ -1346,6 +1324,7 @@ class ImportProcessor:
                 "Invalid capacity",
                 "Capacity must be a positive integer.",
             )
+            self._add_department_dropdown(ws, columns)
 
         if sheet_name == "Sections":
             self._add_positive_int_validation(
@@ -1366,6 +1345,7 @@ class ImportProcessor:
             )
 
         if sheet_name == "Professors":
+            self._add_department_dropdown(ws, columns)
             self._add_positive_int_validation(
                 ws,
                 columns,
@@ -1399,10 +1379,7 @@ class ImportProcessor:
         ws.cell(
             row=row,
             column=1,
-            value=(
-                "Schedule Import Template - CvSU Imus "
-                "(Computer Science sample)"
-            ),
+            value="Schedule Import Template - CvSU Imus",
         ).font = Font(bold=True, size=14, color="1B5E20")
         ws.merge_cells(
             start_row=row, start_column=1, end_row=row, end_column=4
@@ -1410,9 +1387,8 @@ class ImportProcessor:
 
         row += 2
         intro_lines = [
-            "Use this workbook as a starting point. Rows below each header come from your current database, or from realistic CvSU-Imus Computer Science examples when a sheet is empty:",
-            "Departments, lecture/laboratory rooms, CS subjects, sections, and professors.",
-            "Replace or extend the rows with your own data. Leave 'id' blank to create new records.",
+            "Use this workbook as a starting point. Every sheet is header-only: type your data starting in row 2.",
+            "Departments, rooms, subjects, sections, and professors. The hidden _Lists sheet feeds the department_id dropdowns on Rooms and Professors.",
             "Sheet order (the importer processes sheets in this order): "
             + " -> ".join(TEMPLATE_SHEETS),
             "Legacy 9-sheet workbooks that also include Assignments, Meetings, Availability, and BusyBlocks sheets are still accepted on upload.",
@@ -1487,9 +1463,9 @@ class ImportProcessor:
 
     def _template_instructions_text(self) -> str:
         lines = [
-            "Schedule Import Template - CvSU Imus (Computer Science sample)",
+            "Schedule Import Template - CvSU Imus",
             "",
-            "CSV bundle: this ZIP contains one CSV file per sheet. A single .csv upload is not supported.",
+            "CSV bundle: this ZIP contains one CSV file per sheet, headers only. A single .csv upload is not supported.",
             "Keep the exact file names: "
             + ", ".join(f"{name}.csv" for name in TEMPLATE_SHEETS)
             + ".",
