@@ -11,6 +11,8 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
 
 from django.core.cache import cache
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import validate_email
 
 
 SHEET_MODELS = [
@@ -25,12 +27,17 @@ SHEET_MODELS = [
     "BusyBlocks",
 ]
 
+# The generated template contains only the 5 core sheets (+ Instructions).
+# The 4 legacy sheets remain accepted on upload for older 9-sheet workbooks.
+TEMPLATE_SHEETS = ["Departments", "Rooms", "Subjects", "Sections", "Professors"]
+
 REQUIRED_COLUMNS = {
     "Departments": ["name"],
     "Rooms": ["name", "capacity"],
     "Subjects": ["code", "title"],
     "Sections": ["name", "headcount"],
-    "Professors": ["user_id"],
+    # Professors rows need email OR (legacy) user_id; enforced in _validate_rows.
+    "Professors": [],
     "Assignments": ["professor_id", "subject_id", "section_id"],
     "Meetings": ["assignment_id", "order", "mode"],
     "Availability": ["professor_id", "day", "start_time", "end_time"],
@@ -41,8 +48,17 @@ OPTIONAL_COLUMNS = {
     "Departments": [],
     "Rooms": ["department_id"],
     "Subjects": ["units"],
-    "Sections": [],
-    "Professors": ["department_id", "max_daily_hours", "max_consecutive"],
+    "Sections": ["program"],
+    "Professors": [
+        "email",
+        "first_name",
+        "last_name",
+        "department_id",
+        "max_hours",
+        "max_daily_hours",
+        "max_consecutive",
+        "user_id",
+    ],
     "Assignments": ["term_id"],
     "Meetings": ["duration_slots"],
     "Availability": ["is_preferred"],
@@ -51,6 +67,12 @@ OPTIONAL_COLUMNS = {
 
 ALL_COLUMNS = {k: REQUIRED_COLUMNS[k] + OPTIONAL_COLUMNS[k] for k in SHEET_MODELS}
 
+# Input whitelist: only these columns are read from uploaded workbooks.
+# Formula/display columns (e.g. department_name) and unknown columns are
+# discarded before any cell value is read, so missing cached formula values
+# in LibreOffice/Google Sheets exports can never break an import.
+EDITABLE_COLUMNS = {name: {"id", *ALL_COLUMNS[name]} for name in SHEET_MODELS}
+
 VALID_MODES = {"async", "sync", "lab"}
 VALID_DAYS = {0, 1, 2, 3, 4, 5}
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
@@ -58,7 +80,32 @@ DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 # The import parser accepts an optional "id" column on every sheet so existing
 # records can be updated. Include it in downloaded templates even though it is
 # not part of ALL_COLUMNS (which drives validation, not the workbook layout).
-TEMPLATE_COLUMNS = {name: ["id", *ALL_COLUMNS[name]] for name in SHEET_MODELS}
+# Templates only cover the 5 core sheets; legacy sheets are upload-only.
+TEMPLATE_COLUMNS = {
+    name: ["id", *ALL_COLUMNS[name]]
+    for name in TEMPLATE_SHEETS
+    if name != "Professors"
+}
+# Professors templates are email-based; the legacy max_daily_hours and
+# user_id headers remain accepted on upload but are not in the template.
+TEMPLATE_COLUMNS["Professors"] = [
+    "id",
+    "email",
+    "first_name",
+    "last_name",
+    "department_id",
+    "max_hours",
+    "max_consecutive",
+]
+
+# Read-only display columns appended AFTER the input columns in the XLSX
+# template only (never in CSV uploads). Each holds an INDEX/MATCH formula
+# against the Departments tab; the parser ignores them because they are not
+# in EDITABLE_COLUMNS.
+TEMPLATE_DISPLAY_COLUMNS = {
+    "Rooms": ("department_name", "D"),  # department_id is column D
+    "Professors": ("department_name", "E"),  # department_id is column E
+}
 
 # Realistic CvSU - Imus (Computer Science) sample rows. Sample ids are
 # deliberately high so they are easy to replace; cross-references must stay
@@ -113,23 +160,29 @@ TEMPLATE_SAMPLE_ROWS = {
         {"id": 9206, "code": "CS 401", "title": "Software Engineering", "units": 3},
     ],
     "Sections": [
-        {"id": 9301, "name": "BSCS 3-A", "headcount": 40},
-        {"id": 9302, "name": "BSCS 3-B", "headcount": 38},
-        {"id": 9303, "name": "BSCS 2-A", "headcount": 42},
+        {"id": 9301, "name": "BSCS 3-A", "headcount": 40, "program": "BSCS"},
+        {"id": 9302, "name": "BSCS 3-B", "headcount": 38, "program": "BSCS"},
+        {"id": 9303, "name": "BSCS 2-A", "headcount": 42, "program": "BSCS"},
     ],
+    # Only used when the DB has professors AND samples are requested; the
+    # template Professors fallback is header-only when the DB is empty.
     "Professors": [
         {
             "id": 9501,
-            "user_id": 1,
+            "email": "juan.delacruz@cvsu-imus.example",
+            "first_name": "Juan",
+            "last_name": "Dela Cruz",
             "department_id": 9001,
-            "max_daily_hours": 8,
+            "max_hours": 8,
             "max_consecutive": 4,
         },
         {
             "id": 9502,
-            "user_id": 2,
+            "email": "maria.santos@cvsu-imus.example",
+            "first_name": "Maria",
+            "last_name": "Santos",
             "department_id": 9001,
-            "max_daily_hours": 8,
+            "max_hours": 8,
             "max_consecutive": 4,
         },
     ],
@@ -277,12 +330,15 @@ TEMPLATE_COLUMN_GUIDE = {
         ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
         ("name", "Required", "Unique section name (max 50 characters). Sample: BSCS 3-A."),
         ("headcount", "Required", "Positive integer number of students."),
+        ("program", "Optional", "Program code such as BSCS or BSIT (max 20 characters). Leave blank to derive it from the section name."),
     ],
     "Professors": [
         ("id", "Optional", "Integer primary key. Leave blank to create; provide an existing id to update."),
-        ("user_id", "Required", "Integer id of an existing auth user (not the professor profile id). Replace the sample values with real user ids."),
+        ("email", "Required", "Professor's email address (case-insensitive). A new email creates the login account and profile; an existing email updates that professor. Passwords are never set or reset."),
+        ("first_name", "Optional", "First name; only applied when provided."),
+        ("last_name", "Optional", "Last name; only applied when provided."),
         ("department_id", "Optional", "Integer id from the Departments sheet."),
-        ("max_daily_hours", "Optional", "Positive integer; defaults to 8."),
+        ("max_hours", "Optional", "Maximum teaching hours per day; positive integer, defaults to 8."),
         ("max_consecutive", "Optional", "Positive integer; defaults to 4."),
     ],
     "Assignments": [
@@ -318,14 +374,17 @@ TEMPLATE_COLUMN_GUIDE = {
 
 TEMPLATE_GENERAL_NOTES = [
     "XLSX: use the exact sheet names below. Row 1 is the header row; data starts in row 2.",
-    "CSV: upload a .zip containing one .csv per sheet (Departments.csv, Rooms.csv, ..., BusyBlocks.csv). A single .csv file is not supported.",
+    "CSV: upload a .zip containing one .csv per sheet (Departments.csv, Rooms.csv, Subjects.csv, Sections.csv, Professors.csv). A single .csv file is not supported.",
     "Leave 'id' blank to create a new record. Provide an existing id to update that record.",
     "Foreign-key values must reference ids defined in the same workbook: department_id, professor_id, subject_id, section_id, assignment_id.",
-    "Every assignment must have at least one synchronous meeting: mode 'sync' or 'lab'.",
-    "Delivery modes: async, sync, lab. Day values: 0-5 or Monday-Saturday. Times: 24-hour HH:MM.",
-    "Capacity, headcount, units, max_daily_hours, max_consecutive, order, and duration_slots must be positive integers.",
+    "Every assignment must have at least one synchronous meeting: mode 'sync' or 'lab' (legacy sheets only).",
+    "Delivery modes: async, sync, lab. Day values: 0-5 or Monday-Saturday. Times: 24-hour HH:MM (legacy sheets only).",
+    "Capacity, headcount, units, max_hours, max_consecutive, order, and duration_slots must be positive integers.",
     "Rooms have no room-type column. Use descriptive names such as 'CS Lecture Room 1' or 'CS Computer Laboratory 1'.",
-    "The sample professor user_id values (1 and 2) are placeholders. Replace them with existing auth user ids before importing.",
+    "Sections 'program' is optional (max 20 characters): leave it blank to derive it from the section name (e.g., 'BSCS 3-A' becomes BSCS).",
+    "Professors are matched by email (case-insensitive): a new email creates the login account and profile; an existing email updates that professor. Passwords are never set or reset by an import.",
+    "Read-only display columns such as 'department_name' (Rooms and Professors) are generated by formula; do not edit them.",
+    "Legacy 9-sheet workbooks that also include Assignments, Meetings, Availability, and BusyBlocks sheets are still accepted on upload.",
 ]
 
 
@@ -446,18 +505,23 @@ class ImportProcessor:
                 result[sheet_name] = []
                 continue
             ws = wb[sheet_name]
+            editable = EDITABLE_COLUMNS[sheet_name]
             rows = []
-            headers = None
+            keep = []
             for i, row in enumerate(ws.iter_rows(values_only=True), start=1):
                 if i == 1:
-                    headers = [str(c).strip() if c else "" for c in row]
+                    # Normalize headers and keep only whitelisted input
+                    # columns; formula/display and unknown columns are
+                    # dropped before any cell value is read.
+                    headers = [str(c).strip().lower() if c else "" for c in row]
+                    keep = [(j, h) for j, h in enumerate(headers) if h in editable]
                     continue
                 if not any(v is not None and v != "" for v in row):
                     continue
                 row_dict = {}
-                for j, val in enumerate(row):
-                    if j < len(headers) and headers[j]:
-                        row_dict[headers[j]] = val
+                for j, h in keep:
+                    if j < len(row):
+                        row_dict[h] = row[j]
                 row_dict["_row_num"] = i
                 rows.append(row_dict)
             result[sheet_name] = rows
@@ -470,13 +534,18 @@ class ImportProcessor:
                 csv_name = f"{sheet_name}.csv"
                 if csv_name not in zf.namelist():
                     continue
+                editable = EDITABLE_COLUMNS[sheet_name]
                 with zf.open(csv_name) as cf:
                     content = cf.read().decode("utf-8-sig")
                     reader = csv.DictReader(io.StringIO(content))
                     for i, row in enumerate(reader, start=2):
                         if not any(v is not None and v != "" for v in row.values()):
                             continue
-                        row = {k.strip(): v for k, v in row.items() if k}
+                        row = {
+                            k.strip().lower(): v
+                            for k, v in row.items()
+                            if k and k.strip().lower() in editable
+                        }
                         row["_row_num"] = i
                         result[sheet_name].append(row)
         return result
@@ -494,7 +563,10 @@ class ImportProcessor:
         return result
 
     def _validate_structure(self, parsed_data: dict, result: ImportResult):
-        for sheet_name in SHEET_MODELS:
+        # Only the 5 core sheets are required; the legacy sheets
+        # (Assignments/Meetings/Availability/BusyBlocks) are optional and
+        # treated as empty when missing.
+        for sheet_name in TEMPLATE_SHEETS:
             if sheet_name not in parsed_data:
                 result.valid = False
                 result.errors.append(ImportError(sheet_name, 0, "sheet", f"Missing sheet: {sheet_name}"))
@@ -511,6 +583,16 @@ class ImportProcessor:
                     if val is None or val == "":
                         result.valid = False
                         result.errors.append(ImportError(sheet_name, row_num, col, f"Required field '{col}' is empty"))
+                if sheet_name == "Professors" and not row.get("email") and not row.get("user_id"):
+                    result.valid = False
+                    result.errors.append(
+                        ImportError(
+                            sheet_name,
+                            row_num,
+                            "email",
+                            "Professors row requires 'email' (or legacy 'user_id')",
+                        )
+                    )
                 for col, val in row.items():
                     if col == "_row_num" or col not in all_cols:
                         continue
@@ -555,11 +637,37 @@ class ImportProcessor:
                         if parse_bool(val) is None:
                             result.valid = False
                             result.errors.append(ImportError(sheet_name, row_num, col, "Must be true/false"))
-                    elif sheet_name == "Professors" and col in ("max_daily_hours", "max_consecutive"):
+                    elif sheet_name == "Professors" and col == "email":
+                        sval = str(val).strip() if val is not None else ""
+                        if sval:
+                            try:
+                                validate_email(sval)
+                            except DjangoValidationError:
+                                result.valid = False
+                                result.errors.append(
+                                    ImportError(sheet_name, row_num, col, f"Invalid email '{val}'")
+                                )
+                    elif sheet_name == "Professors" and col in ("first_name", "last_name"):
+                        sval = str(val).strip() if val is not None else ""
+                        if len(sval) > 150:
+                            result.valid = False
+                            result.errors.append(
+                                ImportError(sheet_name, row_num, col, "Must be 150 characters or fewer")
+                            )
+                    elif sheet_name == "Professors" and col in ("max_hours", "max_daily_hours", "max_consecutive"):
+                        # max_hours is the canonical sheet header for
+                        # Professors.max_daily_hours; legacy header accepted.
                         ival = parse_int(val)
                         if ival is not None and ival < 1:
                             result.valid = False
                             result.errors.append(ImportError(sheet_name, row_num, col, "Must be positive integer"))
+                    elif sheet_name == "Sections" and col == "program":
+                        sval = str(val).strip() if val is not None else ""
+                        if len(sval) > 20:
+                            result.valid = False
+                            result.errors.append(
+                                ImportError(sheet_name, row_num, col, "Program must be 20 characters or fewer")
+                            )
 
     def _validate_cross_model(self, parsed_data: dict, result: ImportResult):
         dept_ids = {r.get("id") for r in parsed_data.get("Departments", []) if r.get("id")}
@@ -567,19 +675,59 @@ class ImportProcessor:
         subject_codes = {r.get("code") for r in parsed_data.get("Subjects", []) if r.get("code")}
         section_names = {r.get("name") for r in parsed_data.get("Sections", []) if r.get("name")}
         prof_ids = {r.get("id") for r in parsed_data.get("Professors", []) if r.get("id")}
-        prof_user_ids = {r.get("user_id") for r in parsed_data.get("Professors", []) if r.get("user_id")}
+        prof_user_ids = {
+            uid
+            for uid in (parse_int(r.get("user_id")) for r in parsed_data.get("Professors", []))
+            if uid
+        }
         assignment_ids = {r.get("id") for r in parsed_data.get("Assignments", []) if r.get("id")}
         assignment_keys = set()
 
-        # Validate professor user_ids exist in database
+        # Validate professor user_ids exist in database (legacy user_id rows)
         from django.contrib.auth import get_user_model
+        from users.models import Professors
         User = get_user_model()
         existing_user_ids = set(User.objects.filter(id__in=prof_user_ids).values_list("id", flat=True))
         for row in parsed_data.get("Professors", []):
-            user_id = row.get("user_id")
-            if user_id and int(user_id) not in existing_user_ids:
+            user_id = parse_int(row.get("user_id"))
+            if user_id and user_id not in existing_user_ids:
                 result.valid = False
                 result.errors.append(ImportError("Professors", row.get("_row_num", 0), "user_id", f"User {user_id} does not exist"))
+
+        # Duplicate emails within the workbook (case-insensitive) and the
+        # id/email precedence rule: a row carrying both an existing professor
+        # id and an email must match that professor's user email, so one
+        # professor's row cannot hijack another user's account.
+        seen_emails = {}
+        for row in parsed_data.get("Professors", []):
+            row_num = row.get("_row_num", 0)
+            email = str(row.get("email") or "").strip().lower()
+            if email:
+                if email in seen_emails:
+                    result.valid = False
+                    result.errors.append(
+                        ImportError(
+                            "Professors",
+                            row_num,
+                            "email",
+                            f"Duplicate email '{email}' in workbook (also on row {seen_emails[email]})",
+                        )
+                    )
+                else:
+                    seen_emails[email] = row_num
+            pid = parse_int(row.get("id"))
+            if pid and email:
+                prof = Professors.objects.filter(id=pid).select_related("user").first()
+                if prof and (prof.user.email or "").strip().lower() != email:
+                    result.valid = False
+                    result.errors.append(
+                        ImportError(
+                            "Professors",
+                            row_num,
+                            "email",
+                            f"Email '{email}' does not match the existing professor {pid} account email",
+                        )
+                    )
 
         for row in parsed_data.get("Rooms", []):
             did = row.get("department_id")
@@ -656,6 +804,9 @@ class ImportProcessor:
         from catalog.models import Department, Room, Subject, Section
         from users.models import Professors
         from timetable.models import Assignment, MeetingSlot, AvailabilityWindow, BusyBlock
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
 
         model_map = {
             "Departments": (Department, "id"),
@@ -680,7 +831,7 @@ class ImportProcessor:
             "Rooms": ["name", "capacity", "department_id"],
             "Subjects": ["code", "title", "units"],
             "Sections": ["name", "headcount", "program", "year_level", "term_id"],
-            "Professors": ["user_id", "department_id", "max_daily_hours", "max_consecutive"],
+            "Professors": ["email", "first_name", "last_name", "department_id", "max_hours"],
             "Assignments": ["professor_id", "subject_id", "section_id", "term_id"],
             "Meetings": ["assignment_id", "order", "mode", "duration_slots"],
             "Availability": ["professor_id", "day", "start_time", "end_time", "is_preferred"],
@@ -700,6 +851,19 @@ class ImportProcessor:
 
                 if row_errors:
                     action = "error"
+                elif sheet_name == "Professors" and row.get("email"):
+                    # Email rows: an existing user WITH a Professors profile
+                    # is an update; anything else (new email, or existing
+                    # user without a profile) creates the profile.
+                    email = str(row.get("email") or "").strip().lower()
+                    has_user = User.objects.filter(email__iexact=email).exists()
+                    has_prof = Professors.objects.filter(user__email__iexact=email).exists()
+                    if has_user and has_prof:
+                        action = "update"
+                        updates += 1
+                    else:
+                        action = "create"
+                        creates += 1
                 else:
                     pk_val = row.get(pk_field)
                     if pk_val:
@@ -762,6 +926,7 @@ class ImportProcessor:
             from django.db import transaction
             from catalog.models import Department, Room, Subject, Section
             from users.models import Professors
+            from users.services import provision_professor
             from timetable.models import Assignment, MeetingSlot, AvailabilityWindow, BusyBlock
             from django.contrib.auth import get_user_model
 
@@ -825,6 +990,8 @@ class ImportProcessor:
                         "name": row["name"],
                         "headcount": parse_int(row["headcount"]),
                         "term_id": parse_int(row.get("term_id")) or None,
+                        # Blank program is derived from the name by Section.save().
+                        "program": (row.get("program") or "").strip(),
                     }
                     if pk:
                         obj, created = Section.objects.update_or_create(id=pk, defaults=defaults)
@@ -838,9 +1005,34 @@ class ImportProcessor:
 
                 # Professors
                 for row in parsed_data.get("Professors", []):
+                    email = str(row.get("email") or "").strip()
+                    if email:
+                        # Email-based provisioning (max_hours is the canonical
+                        # header for Professors.max_daily_hours; legacy
+                        # max_daily_hours still accepted).
+                        provisioned = provision_professor(
+                            email=email,
+                            first_name=row.get("first_name") or "",
+                            last_name=row.get("last_name") or "",
+                            department_id=parse_int(row.get("department_id")) or None,
+                            max_daily_hours=(
+                                parse_int(row.get("max_hours"))
+                                or parse_int(row.get("max_daily_hours"))
+                                or None
+                            ),
+                            max_consecutive=parse_int(row.get("max_consecutive")) or None,
+                        )
+                        if provisioned.action == "created":
+                            result.summary["creates"] += 1
+                        else:
+                            result.summary["updates"] += 1
+                        continue
+                    # Legacy user_id-based row (pre-email workbooks): keep the
+                    # previous behavior of validating the user and updating or
+                    # creating the profile by id/user_id.
                     pk = row.get("id")
-                    user_id = parse_int(row["user_id"])
-                    if not User.objects.filter(id=user_id).exists():
+                    user_id = parse_int(row.get("user_id"))
+                    if not user_id or not User.objects.filter(id=user_id).exists():
                         raise ValueError(f"User {user_id} does not exist")
                     defaults = {
                         "user_id": user_id,
@@ -851,8 +1043,7 @@ class ImportProcessor:
                     if pk:
                         obj, created = Professors.objects.update_or_create(id=pk, defaults=defaults)
                     else:
-                        obj = Professors.objects.create(**defaults)
-                        created = True
+                        obj, created = Professors.objects.update_or_create(user_id=user_id, defaults=defaults)
                     if created:
                         result.summary["creates"] += 1
                     else:
@@ -949,25 +1140,103 @@ class ImportProcessor:
             result.errors.append({"message": str(e)})
             return result
 
+    def _template_rows(self, sheet_name: str) -> tuple[list[str], list[dict]]:
+        """Build template columns and rows for one sheet from the live DB.
+
+        Falls back to sample rows when the table is empty; the Professors
+        sheet falls back to header-only (no sample rows) when the DB has no
+        professors.
+        """
+        from catalog.models import Department, Room, Subject, Section
+        from users.models import Professors
+
+        columns = TEMPLATE_COLUMNS[sheet_name]
+        rows: list[dict] = []
+        if sheet_name == "Departments":
+            rows = [{"id": d.id, "name": d.name} for d in Department.objects.all()]
+        elif sheet_name == "Rooms":
+            rows = [
+                {
+                    "id": r.id,
+                    "name": r.name,
+                    "capacity": r.capacity,
+                    "department_id": r.department_id,
+                }
+                for r in Room.objects.select_related("department")
+            ]
+        elif sheet_name == "Subjects":
+            rows = [
+                {"id": s.id, "code": s.code, "title": s.title, "units": s.units}
+                for s in Subject.objects.all()
+            ]
+        elif sheet_name == "Sections":
+            rows = [
+                {
+                    "id": s.id,
+                    "name": s.name,
+                    "headcount": s.headcount,
+                    "program": s.program,
+                }
+                for s in Section.objects.all()
+            ]
+        elif sheet_name == "Professors":
+            rows = [
+                {
+                    "id": p.id,
+                    "email": p.user.email or "",
+                    "first_name": p.user.first_name,
+                    "last_name": p.user.last_name,
+                    "department_id": p.department_id,
+                    "max_hours": p.max_daily_hours,
+                    "max_consecutive": p.max_consecutive,
+                }
+                for p in Professors.objects.select_related("user", "department")
+            ]
+
+        if rows:
+            return columns, rows
+        if sheet_name == "Professors":
+            return columns, []  # header-only fallback
+        return columns, [dict(sample) for sample in TEMPLATE_SAMPLE_ROWS.get(sheet_name, [])]
+
     def generate_template_xlsx(self) -> bytes:
         wb = Workbook()
         header_fill = PatternFill("solid", fgColor="1E7145")
         header_font = Font(bold=True, color="FFFFFF")
         section_fill = PatternFill("solid", fgColor="E8F5E9")
         section_font = Font(bold=True, color="1B5E20")
+        ro_fill = PatternFill("solid", fgColor="ECEFF1")
 
-        for sheet_name in SHEET_MODELS:
-            if sheet_name == SHEET_MODELS[0]:
+        for sheet_name in TEMPLATE_SHEETS:
+            if sheet_name == TEMPLATE_SHEETS[0]:
                 ws = wb.active
                 ws.title = sheet_name
             else:
                 ws = wb.create_sheet(sheet_name)
 
-            columns = TEMPLATE_COLUMNS[sheet_name]
+            columns, rows = self._template_rows(sheet_name)
             ws.append(columns)
 
-            for sample in TEMPLATE_SAMPLE_ROWS.get(sheet_name, []):
-                ws.append([sample.get(col, "") for col in columns])
+            for data in rows:
+                ws.append([data.get(col, "") for col in columns])
+
+            # Read-only display column appended after the input columns.
+            display = TEMPLATE_DISPLAY_COLUMNS.get(sheet_name)
+            total_columns = len(columns)
+            all_names = list(columns)
+            if display:
+                display_name, ref_col = display
+                display_idx = total_columns + 1
+                ws.cell(row=1, column=display_idx, value=display_name)
+                for i in range(2, len(rows) + 2):
+                    formula = (
+                        f'=IFERROR(IF(${ref_col}{i}="","",'
+                        f"INDEX(Departments!$B:$B,"
+                        f"MATCH(${ref_col}{i},Departments!$A:$A,0))),\"\")"
+                    )
+                    ws.cell(row=i, column=display_idx, value=formula).fill = ro_fill
+                total_columns = display_idx
+                all_names.append(display_name)
 
             for cell in ws[1]:
                 cell.font = header_font
@@ -978,10 +1247,10 @@ class ImportProcessor:
 
             ws.freeze_panes = "A2"
             ws.auto_filter.ref = (
-                f"A1:{ws.cell(row=1, column=len(columns)).coordinate}"
+                f"A1:{ws.cell(row=1, column=total_columns).coordinate}"
             )
 
-            for col_idx, col_name in enumerate(columns, start=1):
+            for col_idx, col_name in enumerate(all_names, start=1):
                 ws.column_dimensions[
                     ws.cell(row=1, column=col_idx).column_letter
                 ].width = max(12, len(col_name) + 4)
@@ -1001,14 +1270,16 @@ class ImportProcessor:
     def generate_template_csv_zip(self) -> bytes:
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for sheet_name in SHEET_MODELS:
-                columns = TEMPLATE_COLUMNS[sheet_name]
+            for sheet_name in TEMPLATE_SHEETS:
+                # Input columns only: the formula display columns exist only
+                # in the XLSX template.
+                columns, rows = self._template_rows(sheet_name)
                 output = io.StringIO()
                 writer = csv.writer(output)
                 writer.writerow(columns)
-                for sample in TEMPLATE_SAMPLE_ROWS.get(sheet_name, []):
+                for data in rows:
                     writer.writerow(
-                        [sample.get(col, "") for col in columns]
+                        [data.get(col, "") for col in columns]
                     )
                 zf.writestr(f"{sheet_name}.csv", output.getvalue())
 
@@ -1065,50 +1336,8 @@ class ImportProcessor:
     def _add_template_validations(
         self, ws, columns: list[str], sheet_name: str
     ):
-        if sheet_name == "Meetings":
-            self._add_list_validation(
-                ws,
-                columns,
-                "mode",
-                "async,sync,lab",
-                "Invalid delivery mode",
-                "Mode must be async, sync, or lab.",
-            )
-            self._add_positive_int_validation(
-                ws,
-                columns,
-                "order",
-                "Invalid meeting order",
-                "Order must be a positive integer.",
-            )
-            self._add_positive_int_validation(
-                ws,
-                columns,
-                "duration_slots",
-                "Invalid duration",
-                "Duration slots must be a positive integer.",
-            )
-
-        if sheet_name in ("Availability", "BusyBlocks"):
-            self._add_list_validation(
-                ws,
-                columns,
-                "day",
-                "0,1,2,3,4,5",
-                "Invalid day",
-                "Day must be 0-5 (Monday-Saturday).",
-            )
-
-        if sheet_name == "Availability":
-            self._add_list_validation(
-                ws,
-                columns,
-                "is_preferred",
-                "true,false",
-                "Invalid preference",
-                "is_preferred must be true or false.",
-            )
-
+        # Validations only cover the 5 template sheets; legacy sheets
+        # (Meetings/Availability/BusyBlocks) are validated on upload.
         if sheet_name == "Rooms":
             self._add_positive_int_validation(
                 ws,
@@ -1140,7 +1369,7 @@ class ImportProcessor:
             self._add_positive_int_validation(
                 ws,
                 columns,
-                "max_daily_hours",
+                "max_hours",
                 "Invalid daily hours",
                 "Max daily hours must be a positive integer.",
             )
@@ -1181,11 +1410,12 @@ class ImportProcessor:
 
         row += 2
         intro_lines = [
-            "Use this workbook as a starting point. Rows below each header contain realistic CvSU-Imus Computer Science examples:",
-            "Departments, lecture/laboratory rooms, CS subjects, BSCS sections, professors, assignments, meetings, availability, and busy blocks.",
-            "Replace or extend the sample rows with your own data. Leave 'id' blank to create new records.",
+            "Use this workbook as a starting point. Rows below each header come from your current database, or from realistic CvSU-Imus Computer Science examples when a sheet is empty:",
+            "Departments, lecture/laboratory rooms, CS subjects, sections, and professors.",
+            "Replace or extend the rows with your own data. Leave 'id' blank to create new records.",
             "Sheet order (the importer processes sheets in this order): "
-            + " -> ".join(SHEET_MODELS),
+            + " -> ".join(TEMPLATE_SHEETS),
+            "Legacy 9-sheet workbooks that also include Assignments, Meetings, Availability, and BusyBlocks sheets are still accepted on upload.",
         ]
         for line in intro_lines:
             cell = ws.cell(row=row, column=1, value=line)
@@ -1240,7 +1470,7 @@ class ImportProcessor:
             header_cell.alignment = Alignment(vertical="center")
         row += 1
 
-        for sheet_name in SHEET_MODELS:
+        for sheet_name in TEMPLATE_SHEETS:
             for col_name, required, description in TEMPLATE_COLUMN_GUIDE[
                 sheet_name
             ]:
@@ -1261,18 +1491,19 @@ class ImportProcessor:
             "",
             "CSV bundle: this ZIP contains one CSV file per sheet. A single .csv upload is not supported.",
             "Keep the exact file names: "
-            + ", ".join(f"{name}.csv" for name in SHEET_MODELS)
+            + ", ".join(f"{name}.csv" for name in TEMPLATE_SHEETS)
             + ".",
             "Row 1 is the header row; data starts in row 2.",
             "Sheet order: "
-            + " -> ".join(SHEET_MODELS),
+            + " -> ".join(TEMPLATE_SHEETS),
+            "Legacy 9-sheet workbooks (Assignments/Meetings/Availability/BusyBlocks sheets) are still accepted on upload.",
             "",
             "General rules:",
         ]
         lines.extend(f"- {note}" for note in TEMPLATE_GENERAL_NOTES)
         lines.extend(["", "Column guide:"])
 
-        for sheet_name in SHEET_MODELS:
+        for sheet_name in TEMPLATE_SHEETS:
             lines.extend(["", f"[{sheet_name}]"])
             for col_name, required, description in TEMPLATE_COLUMN_GUIDE[
                 sheet_name
