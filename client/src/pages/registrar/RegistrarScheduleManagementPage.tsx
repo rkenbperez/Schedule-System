@@ -76,22 +76,14 @@ const FORMAT_GUIDE_SHEETS = [
   'Subjects',
   'Sections',
   'Professors',
-  'Assignments',
-  'Meetings',
-  'Availability',
-  'BusyBlocks',
 ];
 
 const FORMAT_GUIDE_COLUMNS = [
   'Departments: name',
-  'Rooms: name, capacity',
-  'Subjects: code, title',
-  'Sections: name, headcount',
-  'Professors: user_id',
-  'Assignments: professor_id, subject_id, section_id',
-  'Meetings: assignment_id, order, mode',
-  'Availability: professor_id, day, start_time, end_time',
-  'BusyBlocks: professor_id, day, start_time, end_time',
+  'Rooms: name, capacity, department_id',
+  'Subjects: code, title, units',
+  'Sections: name, headcount, program',
+  'Professors: email, first_name, last_name, department_id, max_hours',
 ];
 
 function validateFile(file: File) {
@@ -177,8 +169,11 @@ function detailSegments(sheet: string, item: ImportPreviewItem): string[] {
 
   switch (sheet) {
     case 'Professors':
-      if (d.user_id !== undefined) parts.push(`User #${d.user_id}`);
+      if (d.email !== undefined) parts.push(String(d.email));
+      if (d.first_name !== undefined || d.last_name !== undefined)
+        parts.push([d.first_name, d.last_name].filter(Boolean).join(' '));
       if (d.department_id !== undefined) parts.push(`Dept #${d.department_id}`);
+      if (d.user_id !== undefined) parts.push(`User #${d.user_id}`);
       break;
     case 'Subjects':
       if (d.code !== undefined) parts.push(String(d.code));
@@ -187,6 +182,8 @@ function detailSegments(sheet: string, item: ImportPreviewItem): string[] {
     case 'Sections':
       if (d.name !== undefined) parts.push(String(d.name));
       if (d.headcount !== undefined) parts.push(`${d.headcount} students`);
+      if (d.program !== undefined && d.program !== '')
+        parts.push(String(d.program));
       break;
     case 'Rooms':
       if (d.name !== undefined) parts.push(String(d.name));
@@ -736,7 +733,26 @@ export default function RegistrarScheduleManagementPage() {
                         </span>{' '}
                         (24-hour)
                       </li>
-                      <li>Capacity, headcount, units: positive integers</li>
+                      <li>
+                        Capacity, headcount, units, max_hours: positive
+                        integers
+                      </li>
+                      <li>
+                        Professor rows are keyed by email (lowercase); a new
+                        email auto-creates the user account (no password — they
+                        use password reset)
+                      </li>
+                      <li>
+                        <span className='font-mono text-text-primary'>
+                          program
+                        </span>{' '}
+                        is optional on Sections; blank derives it from the
+                        section name
+                      </li>
+                      <li>
+                        Legacy workbooks containing Assignments, Meetings,
+                        Availability, or BusyBlocks sheets are still accepted
+                      </li>
                       <li>
                         Leave{' '}
                         <span className='font-mono text-text-primary'>id</span>{' '}

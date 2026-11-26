@@ -435,6 +435,176 @@ class ImportCommitTests(ImportTestCase):
         self.assertFalse(Department.objects.filter(name="Valid Dept").exists())
 
 
+class ImportEmailProfessorsTests(ImportTestCase):
+    """Email-based Professors rows plus legacy user_id compatibility."""
+
+    def _core_sheets(self, professors_rows, professors_headers=None):
+        if professors_headers is None:
+            professors_headers = [
+                "id", "email", "first_name", "last_name",
+                "department_id", "max_hours", "max_consecutive",
+            ]
+        return {
+            "Departments": [["id", "name"], [self.dept.id, "CS"]],
+            "Rooms": [["id", "name", "capacity"]],
+            "Subjects": [["id", "code", "title"]],
+            "Sections": [["id", "name", "headcount"]],
+            "Professors": [professors_headers, *professors_rows],
+        }
+
+    def test_email_row_creates_new_professor(self):
+        self.auth(self.reg_token)
+        sheets = self._core_sheets([
+            [None, "New.Prof@Example.COM", "New", "Prof", self.dept.id, 6, 3],
+        ])
+        xlsx = self._make_xlsx(sheets)
+        response = self.client.post(self.url_preview, {"file": xlsx}, format="multipart")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["valid"])
+        self.assertEqual(response.data["summary"]["creates"], 1)  # professor create
+        self.assertEqual(response.data["summary"]["updates"], 1)  # department update
+
+        token = response.data["preview_token"]
+        commit = self.client.post(self.url_commit, {"preview_token": token}, format="json")
+        self.assertEqual(commit.status_code, 200)
+        self.assertTrue(commit.data["committed"])
+        self.assertEqual(commit.data["summary"]["creates"], 1)
+        self.assertEqual(commit.data["summary"]["updates"], 1)
+
+        user = User.objects.filter(email__iexact="new.prof@example.com").first()
+        self.assertIsNotNone(user)
+        self.assertEqual(user.email, "new.prof@example.com")  # lowercased
+        self.assertFalse(user.has_usable_password())
+        prof = Professors.objects.get(user=user)
+        self.assertEqual(prof.department, self.dept)
+        self.assertEqual(prof.max_daily_hours, 6)
+        self.assertEqual(prof.max_consecutive, 3)
+
+    def test_email_row_updates_existing_professor(self):
+        self.auth(self.reg_token)
+        self.prof_user.email = "prof1@example.com"
+        self.prof_user.save()
+        old_password = self.prof_user.password
+
+        sheets = self._core_sheets([
+            [self.prof.id, "PROF1@EXAMPLE.COM", "Updated", "Name", self.dept.id, 5, 2],
+        ])
+        xlsx = self._make_xlsx(sheets)
+        response = self.client.post(self.url_preview, {"file": xlsx}, format="multipart")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["valid"])
+        self.assertEqual(response.data["summary"]["updates"], 2)  # dept + professor
+
+        token = response.data["preview_token"]
+        commit = self.client.post(self.url_commit, {"preview_token": token}, format="json")
+        self.assertTrue(commit.data["committed"])
+        self.assertEqual(commit.data["summary"]["updates"], 2)
+        self.assertEqual(commit.data["summary"]["creates"], 0)
+
+        self.prof_user.refresh_from_db()
+        self.assertEqual(self.prof_user.password, old_password)  # no reset
+        self.assertTrue(self.prof_user.check_password("pass12345"))
+        self.assertEqual(self.prof_user.email, "prof1@example.com")
+        self.assertEqual(self.prof_user.first_name, "Updated")
+        # No new user was created for the existing email.
+        self.assertEqual(User.objects.filter(email__iexact="prof1@example.com").count(), 1)
+        self.assertEqual(Professors.objects.count(), 2)
+        prof = Professors.objects.get(user=self.prof_user)
+        self.assertEqual(prof.max_daily_hours, 5)
+        self.assertEqual(prof.max_consecutive, 2)
+
+    def test_legacy_user_id_row_still_previews_and_commits(self):
+        self.auth(self.reg_token)
+        new_user = User.objects.create_user(username="legacyprof", password="pass12345")
+        sheets = self._core_sheets(
+            [[None, new_user.id, self.dept.id, 7, 3]],
+            professors_headers=["id", "user_id", "department_id", "max_daily_hours", "max_consecutive"],
+        )
+        xlsx = self._make_xlsx(sheets)
+        response = self.client.post(self.url_preview, {"file": xlsx}, format="multipart")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["valid"])
+        self.assertEqual(response.data["summary"]["creates"], 1)  # professor create
+        self.assertEqual(response.data["summary"]["updates"], 1)  # department update
+
+        token = response.data["preview_token"]
+        commit = self.client.post(self.url_commit, {"preview_token": token}, format="json")
+        self.assertTrue(commit.data["committed"])
+        prof = Professors.objects.get(user=new_user)
+        self.assertEqual(prof.department, self.dept)
+        self.assertEqual(prof.max_daily_hours, 7)
+
+    def test_max_hours_maps_to_max_daily_hours(self):
+        self.auth(self.reg_token)
+        sheets = self._core_sheets(
+            [
+                [None, "hours1@example.com", None, None, None, 5, None],
+                [None, "hours2@example.com", None, None, None, None, 7],
+            ],
+            professors_headers=["id", "email", "first_name", "last_name",
+                                "department_id", "max_hours", "max_daily_hours"],
+        )
+        xlsx = self._make_xlsx(sheets)
+        response = self.client.post(self.url_preview, {"file": xlsx}, format="multipart")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["valid"])
+
+        token = response.data["preview_token"]
+        commit = self.client.post(self.url_commit, {"preview_token": token}, format="json")
+        self.assertTrue(commit.data["committed"])
+
+        prof1 = Professors.objects.get(user__email="hours1@example.com")
+        self.assertEqual(prof1.max_daily_hours, 5)  # canonical max_hours
+        prof2 = Professors.objects.get(user__email="hours2@example.com")
+        self.assertEqual(prof2.max_daily_hours, 7)  # legacy header accepted
+
+    def test_duplicate_emails_in_workbook_rejected(self):
+        self.auth(self.reg_token)
+        sheets = self._core_sheets([
+            [None, "dup@example.com", None, None, None, None, None],
+            [None, "DUP@example.com", None, None, None, None, None],
+        ])
+        xlsx = self._make_xlsx(sheets)
+        response = self.client.post(self.url_preview, {"file": xlsx}, format="multipart")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["valid"])
+        self.assertTrue(
+            any(
+                e["field"] == "email" and "email" in e["message"].lower()
+                for e in response.data["errors"]
+            )
+        )
+
+
+class ImportSectionProgramTests(ImportTestCase):
+    def test_supplied_program_persists_and_blank_derives(self):
+        self.auth(self.reg_token)
+        sheets = {
+            "Departments": [["id", "name"], [self.dept.id, "CS"]],
+            "Rooms": [["id", "name", "capacity"]],
+            "Subjects": [["id", "code", "title"]],
+            "Sections": [
+                ["id", "name", "headcount", "program"],
+                [None, "BSCS 3-C", 30, "BSCS"],
+                [None, "BSIT 3-A", 25, ""],
+            ],
+            "Professors": [["id", "email"]],
+        }
+        xlsx = self._make_xlsx(sheets)
+        response = self.client.post(self.url_preview, {"file": xlsx}, format="multipart")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["valid"])
+
+        token = response.data["preview_token"]
+        commit = self.client.post(self.url_commit, {"preview_token": token}, format="json")
+        self.assertTrue(commit.data["committed"])
+
+        supplied = Section.objects.get(name="BSCS 3-C")
+        self.assertEqual(supplied.program, "BSCS")
+        derived = Section.objects.get(name="BSIT 3-A")
+        self.assertEqual(derived.program, "BSIT")  # derived from the name
+
+
 class ImportTemplateTests(ImportTestCase):
     def test_xlsx_template_download(self):
         self.auth(self.reg_token)
@@ -446,21 +616,26 @@ class ImportTemplateTests(ImportTestCase):
         content = b"".join(response.streaming_content)
         wb = load_workbook(BytesIO(content))
         self.assertEqual(set(wb.sheetnames), set([
-            "Departments", "Rooms", "Subjects", "Sections", "Professors",
-            "Assignments", "Meetings", "Availability", "BusyBlocks", "Instructions"
+            "Departments", "Rooms", "Subjects", "Sections", "Professors", "Instructions"
         ]))
 
-        for sheet_name in ["Departments", "Rooms", "Subjects", "Sections", "Professors",
-                           "Assignments", "Meetings", "Availability", "BusyBlocks"]:
+        for sheet_name in ["Departments", "Rooms", "Subjects", "Sections", "Professors"]:
             ws = wb[sheet_name]
-            self.assertGreaterEqual(ws.max_row, 2)  # header + sample rows
+            self.assertGreaterEqual(ws.max_row, 2)  # header + DB/sample rows
             self.assertEqual(ws.cell(row=1, column=1).value, "id")
 
+        # Professors sheet is email-based; Sections has the program column.
+        prof_headers = [cell.value for cell in wb["Professors"][1]]
+        self.assertIn("email", prof_headers)
+        self.assertNotIn("user_id", prof_headers)
+        self.assertIn("program", [cell.value for cell in wb["Sections"][1]])
+
+        # Rows come from the live database (setUp creates BSIT-3A).
         sections = [
             row[1]
             for row in wb["Sections"].iter_rows(min_row=2, values_only=True)
         ]
-        self.assertIn("BSCS 3-A", sections)
+        self.assertIn("BSIT-3A", sections)
 
     def test_data_transfer_template_defaults_to_xlsx(self):
         self.auth(self.reg_token)
@@ -505,10 +680,10 @@ class ImportTemplateTests(ImportTestCase):
         content = b"".join(response.streaming_content)
         with zipfile.ZipFile(BytesIO(content), "r") as zf:
             names = zf.namelist()
-            for sheet in ["Departments", "Rooms", "Subjects", "Sections", "Professors",
-                          "Assignments", "Meetings", "Availability", "BusyBlocks"]:
+            for sheet in ["Departments", "Rooms", "Subjects", "Sections", "Professors"]:
                 self.assertIn(f"{sheet}.csv", names)
             self.assertIn("Instructions.txt", names)
+            self.assertEqual(len(names), 6)  # 5 CSVs + Instructions.txt
 
     def test_professor_cannot_access_template(self):
         self.auth(Token.objects.create(user=self.prof_user))
@@ -543,13 +718,13 @@ class ImportProcessorUnitTests(ImportTestCase):
         content = processor.generate_template_xlsx()
         wb = load_workbook(BytesIO(content))
         self.assertEqual(set(wb.sheetnames), set([
-            "Departments", "Rooms", "Subjects", "Sections", "Professors",
-            "Assignments", "Meetings", "Availability", "BusyBlocks", "Instructions"
+            "Departments", "Rooms", "Subjects", "Sections", "Professors", "Instructions"
         ]))
 
         sections_ws = wb["Sections"]
         headers = [cell.value for cell in sections_ws[1]]
         self.assertIn("headcount", headers)
+        self.assertIn("program", headers)
         sample_headcount = [
             row[headers.index("headcount")]
             for row in sections_ws.iter_rows(min_row=2, values_only=True)
@@ -561,10 +736,10 @@ class ImportProcessorUnitTests(ImportTestCase):
         content = processor.generate_template_csv_zip()
         with zipfile.ZipFile(BytesIO(content), "r") as zf:
             names = zf.namelist()
-            for sheet in ["Departments", "Rooms", "Subjects", "Sections", "Professors",
-                          "Assignments", "Meetings", "Availability", "BusyBlocks"]:
+            for sheet in ["Departments", "Rooms", "Subjects", "Sections", "Professors"]:
                 self.assertIn(f"{sheet}.csv", names)
             self.assertIn("Instructions.txt", names)
+            self.assertEqual(len(names), 6)  # 5 CSVs + Instructions.txt
 
     def test_csv_zip_parsing(self):
         sheets = {
@@ -583,3 +758,80 @@ class ImportProcessorUnitTests(ImportTestCase):
         parsed = processor.parse_file(csv_zip)
         self.assertEqual(len(parsed["Departments"]), 1)
         self.assertEqual(parsed["Departments"][0]["name"], "Physics")
+
+
+class ImportTemplateBehaviorTests(ImportTestCase):
+    def test_roundtrip_generated_template_previews_valid(self):
+        self.auth(self.reg_token)
+        # Give the professors emails so the generated Professors rows
+        # satisfy the email-or-user_id rule.
+        self.prof_user.email = "prof1@example.com"
+        self.prof_user.save()
+        self.prof_user2.email = "prof2@example.com"
+        self.prof_user2.save()
+
+        # openpyxl-generated formulas carry no cached values; the parser
+        # must ignore the read-only display columns regardless.
+        content = processor.generate_template_xlsx()
+        buf = BytesIO(content)
+        buf.name = "template.xlsx"
+        response = self.client.post(self.url_preview, {"file": buf}, format="multipart")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["valid"], response.data.get("errors"))
+        self.assertEqual(response.data["summary"]["updates"], 6)
+        self.assertEqual(response.data["summary"]["creates"], 0)
+
+    def test_template_professors_header_only_when_db_empty(self):
+        Professors.objects.all().delete()
+        Room.objects.all().delete()
+        Subject.objects.all().delete()
+        Section.objects.all().delete()
+        Department.objects.all().delete()
+
+        content = processor.generate_template_xlsx()
+        wb = load_workbook(BytesIO(content))
+
+        prof_ws = wb["Professors"]
+        self.assertEqual(prof_ws.cell(row=1, column=1).value, "id")
+        self.assertIn("email", [c.value for c in prof_ws[1]])
+        self.assertEqual(prof_ws.max_row, 1)  # header row only, no data rows
+
+        # Other sheets fall back to the sample rows.
+        for sheet_name in ["Departments", "Rooms", "Subjects", "Sections"]:
+            self.assertGreaterEqual(wb[sheet_name].max_row, 2)
+        self.assertIn(
+            "BSCS 3-A",
+            [
+                row[1]
+                for row in wb["Sections"].iter_rows(min_row=2, values_only=True)
+            ],
+        )
+
+    def test_template_rooms_include_db_rows_and_formula(self):
+        content = processor.generate_template_xlsx()
+        wb = load_workbook(BytesIO(content))
+
+        rooms_ws = wb["Rooms"]
+        headers = [c.value for c in rooms_ws[1]]
+        self.assertEqual(
+            headers,
+            ["id", "name", "capacity", "department_id", "department_name"],
+        )
+        room_row = next(
+            row
+            for row in rooms_ws.iter_rows(min_row=2, values_only=True)
+            if row[1] == self.room.name
+        )
+        self.assertEqual(room_row[0], self.room.id)
+        self.assertEqual(room_row[3], self.dept.id)
+        self.assertTrue(str(room_row[4]).startswith("=IFERROR("))
+
+        prof_headers = [c.value for c in wb["Professors"][1]]
+        self.assertEqual(
+            prof_headers,
+            [
+                "id", "email", "first_name", "last_name", "department_id",
+                "max_hours", "max_consecutive", "department_name",
+            ],
+        )
