@@ -12,6 +12,7 @@ import TeacherRoomPage from './pages/teacher/TeacherRoomPage';
 import TeacherRoomDetailPage from './pages/teacher/TeacherRoomDetailPage';
 import TeacherSchedulesPage from './pages/teacher/TeacherSchedulesPage';
 import TeacherProfilePage from './pages/teacher/TeacherProfilePage';
+import TeacherDepartmentPage from './pages/teacher/DepartmentPage';
 import StudentScheduleLookupPage from './pages/student/StudentScheduleLookupPage';
 import RegistrarDashboardPage from './pages/registrar/RegistrarDashboardPage';
 import RegistrarScheduleManagementPage from './pages/registrar/RegistrarScheduleManagementPage';
@@ -89,6 +90,14 @@ const Router = createBrowserRouter([
         element: (
           <RequireAuth requiredRole='professor'>
             <TeacherProfilePage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: 'department',
+        element: (
+          <RequireAuth requiredRole='professor'>
+            <TeacherDepartmentPage />
           </RequireAuth>
         ),
       },

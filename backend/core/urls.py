@@ -3,7 +3,13 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 
-from catalog.views import DepartmentViewSet, RoomViewSet, SectionViewSet, SubjectViewSet
+from catalog.views import (
+    DepartmentViewSet,
+    RoomViewSet,
+    SectionSubjectViewSet,
+    SectionViewSet,
+    SubjectViewSet,
+)
 from core.views import HealthView
 from timetable.views import AssignmentViewSet, AvailabilityWindowViewSet, BusyBlockViewSet
 from users.views import ProfessorsViewSet
@@ -14,6 +20,7 @@ router.register("profs", ProfessorsViewSet, basename="prof")
 router.register("rooms", RoomViewSet, basename="room")
 router.register("subjects", SubjectViewSet, basename="subject")
 router.register("sections", SectionViewSet, basename="section")
+router.register("section-subjects", SectionSubjectViewSet, basename="section-subject")
 router.register("departments", DepartmentViewSet, basename="department")
 router.register("assignments", AssignmentViewSet, basename="assignment")
 router.register(

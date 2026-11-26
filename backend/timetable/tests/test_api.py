@@ -74,6 +74,7 @@ class AuthTests(ApiTestCase):
                 "assignments",
                 "availability-windows",
                 "busy-blocks",
+                "section-subjects",
             },
         )
 

@@ -5,6 +5,7 @@ import {
   Calendar,
   CalendarCheck,
   LayoutDashboard,
+  Users,
 } from 'lucide-react';
 import { AppShell, type AppNavItem } from '../components/layout/AppShell';
 import { useMe } from '../hooks/useAuth';
@@ -57,6 +58,11 @@ export default function TeacherLayout() {
       icon: Building2,
       label: 'Rooms',
       to: `/teacher/${teacher}/rooms`,
+    },
+    {
+      icon: Users,
+      label: 'Department',
+      to: `/teacher/${teacher}/department`,
     },
   ];
 

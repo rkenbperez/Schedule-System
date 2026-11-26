@@ -59,6 +59,10 @@ class AcademicTerm(models.Model):
 
 
 class Assignment(models.Model):
+    class Source(models.TextChoices):
+        MANUAL = "manual", "Manual"
+        AUTO = "auto", "Auto-assigned"
+
     prof = models.ForeignKey(
         Professors,
         on_delete=models.CASCADE,
@@ -80,6 +84,11 @@ class Assignment(models.Model):
         related_name="assignments",
         null=True,
         blank=True,
+    )
+    source = models.CharField(
+        max_length=10,
+        choices=Source.choices,
+        default=Source.MANUAL,
     )
 
     class Meta:

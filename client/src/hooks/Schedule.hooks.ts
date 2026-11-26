@@ -175,10 +175,13 @@ export function useUsers(opts?: { enabled?: boolean }) {
   });
 }
 
-export function useDepartments(opts?: { enabled?: boolean }) {
+export function useDepartments(opts?: {
+  headed?: 'me';
+  enabled?: boolean;
+}) {
   return useQuery({
-    queryKey: ['departments'],
-    queryFn: () => scheduleService.getDepartments(),
+    queryKey: ['departments', opts?.headed],
+    queryFn: () => scheduleService.getDepartments({ headed: opts?.headed }),
     enabled: opts?.enabled ?? true,
   });
 }
@@ -360,6 +363,7 @@ export function useCreateRoom() {
       capacity: number;
       department?: number | null;
       building?: string;
+      room_type?: string;
     }) => scheduleService.createRoom(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rooms'] });
@@ -377,6 +381,7 @@ export function useUpdateRoom() {
         capacity: number;
         department: number | null;
         building: string;
+        room_type: string;
       }>;
     }) => scheduleService.updateRoom(id, payload),
     onSuccess: () => {
@@ -398,8 +403,13 @@ export function useDeleteRoom() {
 export function useCreateSubject() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { code: string; title: string; units: number }) =>
-      scheduleService.createSubject(payload),
+    mutationFn: (payload: {
+      code: string;
+      title: string;
+      units: number;
+      lec_hours?: number;
+      lab_hours?: number;
+    }) => scheduleService.createSubject(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['courses'] });
     },
@@ -411,7 +421,13 @@ export function useUpdateSubject() {
   return useMutation({
     mutationFn: ({ id, payload }: {
       id: number;
-      payload: Partial<{ code: string; title: string; units: number }>;
+      payload: Partial<{
+        code: string;
+        title: string;
+        units: number;
+        lec_hours: number;
+        lab_hours: number;
+      }>;
     }) => scheduleService.updateSubject(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['courses'] });
@@ -516,6 +532,127 @@ export function useDeleteProfessor() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['teachers'] });
       queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+}
+
+export function useCreateDepartment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { name: string; head?: number | null }) =>
+      scheduleService.createDepartment(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['departments'] });
+    },
+  });
+}
+
+export function useUpdateDepartment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: number;
+      payload: Partial<{ name: string; head: number | null }>;
+    }) => scheduleService.updateDepartment(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['departments'] });
+    },
+  });
+}
+
+export function useDeleteDepartment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => scheduleService.deleteDepartment(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['departments'] });
+      queryClient.invalidateQueries({ queryKey: ['teachers'] });
+    },
+  });
+}
+
+export function useProfessorSubjects(departmentId?: number) {
+  return useQuery({
+    queryKey: ['professor-subjects', departmentId],
+    queryFn: () => scheduleService.getProfessorSubjects(departmentId as number),
+    enabled: Boolean(departmentId),
+  });
+}
+
+export function useCreateProfessorSubject(departmentId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      professor_id: number;
+      subject_id: number;
+      is_preferred?: boolean;
+    }) => scheduleService.createProfessorSubject(departmentId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['professor-subjects', departmentId],
+      });
+    },
+  });
+}
+
+export function useDeleteProfessorSubject(departmentId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (assignmentId: number) =>
+      scheduleService.deleteProfessorSubject(departmentId, assignmentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['professor-subjects', departmentId],
+      });
+    },
+  });
+}
+
+export function useSectionSubjects(sectionId?: number) {
+  return useQuery({
+    queryKey: ['section-subjects', sectionId],
+    queryFn: () => scheduleService.getSectionSubjects(sectionId),
+    enabled: Boolean(sectionId),
+  });
+}
+
+export function useCreateSectionSubject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { section: number; subject: number }) =>
+      scheduleService.createSectionSubject(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['section-subjects'] });
+    },
+  });
+}
+
+export function useDeleteSectionSubject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => scheduleService.deleteSectionSubject(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['section-subjects'] });
+    },
+  });
+}
+
+export function useAutoAssign() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload?: {
+      term_id?: number | null;
+      replace_auto?: boolean;
+    }) => scheduleService.autoAssign(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['all-assignments'] });
+      queryClient.invalidateQueries({ queryKey: ['schedule-runs'] });
+      queryClient.invalidateQueries({ queryKey: ['schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['course-assignments'] });
+      queryClient.invalidateQueries({ queryKey: ['registrar-all-schedules'] });
     },
   });
 }

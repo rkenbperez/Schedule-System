@@ -1,5 +1,6 @@
 import re
 
+from django.conf import settings
 from django.db import models
 
 
@@ -13,12 +14,40 @@ class Subject(models.Model):
     code = models.CharField(max_length=20, unique=True)
     title = models.CharField(max_length=200)
     units = models.PositiveSmallIntegerField(default=3)
+    lec_hours = models.PositiveSmallIntegerField(default=0)
+    lab_hours = models.PositiveSmallIntegerField(default=0)
 
     class Meta:
         ordering = ["code"]
 
     def __str__(self):
         return f"{self.code} - {self.title}"
+
+
+class ProfessorSubject(models.Model):
+    professor = models.ForeignKey(
+        "users.Professors",
+        on_delete=models.CASCADE,
+        related_name="qualified_subjects",
+    )
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.CASCADE,
+        related_name="qualified_professors",
+    )
+    is_preferred = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["professor_id", "subject__code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["professor", "subject"],
+                name="unique_professor_subject",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.professor} - {self.subject}"
 
 
 class Section(models.Model):
@@ -46,8 +75,40 @@ class Section(models.Model):
         return self.name
 
 
+class SectionSubject(models.Model):
+    section = models.ForeignKey(
+        Section,
+        on_delete=models.CASCADE,
+        related_name="subject_requirements",
+    )
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.CASCADE,
+        related_name="section_requirements",
+    )
+
+    class Meta:
+        ordering = ["section_id", "subject__code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["section", "subject"],
+                name="unique_section_subject",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.section} - {self.subject}"
+
+
 class Department(models.Model):
     name = models.CharField(max_length=100, unique=True)
+    head = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="headed_departments",
+    )
 
     class Meta:
         ordering = ["name"]
@@ -57,6 +118,11 @@ class Department(models.Model):
 
 
 class Room(models.Model):
+    class RoomType(models.TextChoices):
+        LECTURE = "lecture", "Lecture"
+        LABORATORY = "laboratory", "Laboratory"
+        GENERAL = "general", "General"
+
     name = models.CharField(max_length=50, unique=True)
     capacity = models.PositiveIntegerField()
     department = models.ForeignKey(
@@ -67,6 +133,11 @@ class Room(models.Model):
         related_name="rooms",
     )
     building = models.CharField(max_length=100, blank=True, default="")
+    room_type = models.CharField(
+        max_length=20,
+        choices=RoomType.choices,
+        default=RoomType.GENERAL,
+    )
 
     def __str__(self):
         return f"{self.name} (cap {self.capacity})"

@@ -27,6 +27,7 @@ from .models import (
     ConflictResolution, GlobalSettings, MeetingSlot, ScheduledClass, ScheduleRun
 )
 from .scenario_builder import build_scenario
+from .services.auto_assign import auto_assign_professors
 from .analytics.conflicts import audit_conflicts
 from .serializers import (
     AssignmentSerializer,
@@ -159,10 +160,61 @@ class BusyBlockViewSet(viewsets.ModelViewSet):
 @extend_schema(
     tags=["schedules"],
     request=inline_serializer(
+        name="AutoAssignRequest",
+        fields={
+            "term_id": serializers.IntegerField(required=False),
+            "replace_auto": serializers.BooleanField(required=False),
+        },
+    ),
+    responses={
+        200: OpenApiResponse(description="Auto-assignment completed"),
+        400: OpenApiResponse(description="No active academic term found"),
+    },
+)
+class AutoAssignView(APIView):
+    permission_classes = [IsRegistrar]
+
+    def post(self, request):
+        term = AcademicTerm.objects.filter(is_active=True).first()
+        term_id = request.data.get("term_id")
+        if term_id:
+            try:
+                term = AcademicTerm.objects.get(pk=int(term_id))
+            except (AcademicTerm.DoesNotExist, ValueError, TypeError):
+                return Response(
+                    {"error": f"Academic term {term_id} not found."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        elif term is None:
+            return Response(
+                {"error": "No active academic term found. Please set a term as active."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        stats = auto_assign_professors(
+            term,
+            replace_auto=bool(request.data.get("replace_auto", False)),
+        )
+        return Response(
+            {
+                "term_id": term.id,
+                "term": str(term),
+                **stats,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+@extend_schema(
+    tags=["schedules"],
+    request=inline_serializer(
         name="ScheduleGenerateRequest",
         fields={
             "algorithm": serializers.CharField(),
             "time_limit_s": serializers.FloatField(required=False),
+            "term_id": serializers.IntegerField(required=False),
+            "auto_assign": serializers.BooleanField(required=False),
+            "replace_auto": serializers.BooleanField(required=False),
         },
     ),
     responses={
@@ -212,6 +264,30 @@ class ScheduleGenerateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        auto_assign = request.data.get("auto_assign", True)
+        if isinstance(auto_assign, str):
+            auto_assign = auto_assign.strip().lower() not in {
+                "0",
+                "false",
+                "no",
+                "off",
+            }
+        replace_auto = request.data.get("replace_auto", False)
+        if isinstance(replace_auto, str):
+            replace_auto = replace_auto.strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+
+        auto_stats = None
+        if auto_assign:
+            auto_stats = auto_assign_professors(
+                term,
+                replace_auto=replace_auto,
+            )
+
         scenario = build_scenario(term=term)
         result = run(algorithm, scenario, time_limit_s=time_limit)
 
@@ -246,20 +322,21 @@ class ScheduleGenerateView(APIView):
                 ]
             )
 
-        return Response(
-            {
-                "run_id": run_obj.id,
-                "algorithm": algorithm,
-                "status": run_obj.status,
-                "feasible": result.feasible,
-                "runtime_ms": result.runtime_ms,
-                "soft_score": result.soft_score,
-                "class_count": len(result.classes),
-                "violations": result.violations,
-                "unplaced": result.unplaced,
-            },
-            status=status.HTTP_201_CREATED,
-        )
+        payload = {
+            "run_id": run_obj.id,
+            "algorithm": algorithm,
+            "status": run_obj.status,
+            "feasible": result.feasible,
+            "runtime_ms": result.runtime_ms,
+            "soft_score": result.soft_score,
+            "class_count": len(result.classes),
+            "violations": result.violations,
+            "unplaced": result.unplaced,
+        }
+        if auto_stats is not None:
+            payload["auto_assign"] = auto_stats
+
+        return Response(payload, status=status.HTTP_201_CREATED)
 
 
 @extend_schema(tags=["schedules"])
