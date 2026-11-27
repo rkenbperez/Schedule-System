@@ -491,3 +491,52 @@ class PreferenceReviewFlowTests(APITestCase):
         self.assertEqual(self.pref.status, "rejected")
         self.assertEqual(item.action, "reject")
         self.assertEqual(item.notes, "No.")
+
+
+class ProfessorPreferenceNullSectionTests(APITestCase):
+    """Imported preferred-subject rows have section=None; the API contract
+    must serialize them instead of dropping the field."""
+
+    def setUp(self):
+        dept = Department.objects.create(name="Null Section Dept")
+        prof_user = User.objects.create_user(
+            username="nullsec", email="nullsec@example.com", password="pass12345"
+        )
+        self.prof = Professors.objects.create(user=prof_user, department=dept)
+        self.term = AcademicTerm.objects.create(
+            year=2027,
+            semester=1,
+            start_date=date(2027, 1, 1),
+            end_date=date(2027, 5, 1),
+        )
+        self.pref = ProfessorPreference.objects.create(
+            professor=self.prof,
+            subject=Subject.objects.create(code="CS999", title="Elective"),
+            section=None,
+            term=self.term,
+        )
+
+    def test_list_serializer_returns_null_section_name(self):
+        from .serializers import ProfessorPreferenceListSerializer
+
+        data = ProfessorPreferenceListSerializer(self.pref).data
+        self.assertIsNone(data["section_name"])
+        self.assertIsNone(data["section"])
+
+    def test_detail_serializer_returns_null_section_name(self):
+        from .serializers import ProfessorPreferenceSerializer
+
+        data = ProfessorPreferenceSerializer(self.pref).data
+        self.assertIsNone(data["section_name"])
+
+    def test_duplicate_unsectioned_preference_rejected(self):
+        self.client.force_authenticate(user=self.prof.user)
+        url = reverse("professor-preference-list")
+        payload = {
+            "subject": self.pref.subject_id,
+            "term": self.term.id,
+            "meetings": [{"mode": "sync", "duration_slots": 2}],
+        }
+        response = self.client.post(url, payload, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already exists", str(response.data))
