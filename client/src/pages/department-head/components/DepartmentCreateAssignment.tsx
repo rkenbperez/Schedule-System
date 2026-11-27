@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Building2, ClipboardList, Trash2 } from 'lucide-react';
 import {
   useDepartments,
   useProfessorSubjects,
@@ -8,6 +8,24 @@ import {
   useProfessorsByDepartment,
   useSubjectsByDepartment,
 } from '../../../hooks/Schedule.hooks';
+import {
+  Alert,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  CardTitle,
+  EmptyState,
+  IconButton,
+  SelectField,
+  Table,
+  TableContainer,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+} from '../../../components/ui';
 import { ConfirmDialog } from '../../../components/shared/ConfirmDialog';
 import { useToast } from '../../../hooks/useToast';
 
@@ -52,6 +70,14 @@ export default function DepartmentCreateAssignment() {
     const professorId = Number(formData.get('professor_id'));
     const subjectId = Number(formData.get('subject_id'));
 
+    if (!professorId || !subjectId) {
+      toast.addToast({
+        type: 'warning',
+        title: 'Select a professor and a subject.',
+      });
+      return;
+    }
+
     try {
       await createProfSubj.mutateAsync({
         professor_id: professorId,
@@ -78,225 +104,215 @@ export default function DepartmentCreateAssignment() {
   };
 
   const currentDept = deptList.find((d) => d.id === effectiveDeptId);
+  const canSubmit =
+    Boolean(effectiveDeptId) &&
+    !isLoadingProfessors &&
+    !isLoadingSubjects &&
+    professors.length > 0 &&
+    subjects.length > 0;
 
   if (departments.isLoading) {
     return (
-      <section className='w-full space-y-6'>
-        <div className='text-center py-12 text-text-secondary'>
-          Loading departments…
-        </div>
-      </section>
+      <Card>
+        <CardBody className='flex flex-col items-center gap-3 py-14'>
+          <div className='h-8 w-8 animate-spin rounded-full border-2 border-border border-t-apple-green-600' />
+          <p className='text-body-sm text-text-secondary'>Loading departments…</p>
+        </CardBody>
+      </Card>
     );
   }
 
   if (departments.isError) {
     return (
-      <section className='w-full space-y-6'>
-        <div className='text-center py-12'>
-          <h2 className='text-xl font-medium text-text-primary'>
-            Unable to load departments
-          </h2>
-          <p className='text-text-secondary mt-2'>
-            Please try again later.
-          </p>
-        </div>
-      </section>
+      <Alert tone='danger' title='Unable to load departments'>
+        Please try again later.
+      </Alert>
     );
   }
 
   if (deptList.length === 0) {
     return (
-      <section className='w-full space-y-6'>
-        <div className='text-center py-12'>
-          <h2 className='text-xl font-medium text-text-primary'>
-            No department assigned
-          </h2>
-          <p className='text-text-secondary mt-2'>
-            You are not assigned as head of any department.
-          </p>
-        </div>
-      </section>
+      <EmptyState
+        icon={Building2}
+        title='No department assigned'
+        description='You are not assigned as head of any department.'
+      />
     );
   }
 
   return (
     <section className='w-full space-y-6'>
-      <div className='flex items-center justify-between'>
-        <div>
-          <h2 className='text-lg font-medium text-text-primary'>
-            {currentDept?.name} Department
-          </h2>
-          <p className='text-body-sm text-text-secondary mt-1'>
-            Manage professor–subject assignments
-          </p>
-        </div>
+      <div>
+        <h2 className='text-h3 text-text-primary'>
+          {currentDept?.name ?? 'Department'} assignments
+        </h2>
+        <p className='mt-1 text-body-sm text-text-secondary'>
+          Manage professor–subject qualifications for your department.
+        </p>
       </div>
 
-      <div className='grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-2'>
-        {/* Left: Current Assignments */}
-        <div className='space-y-4 flex flex-col items-center gap-4 px-4 lg:px-8'>
-          <div className='rounded-card border border-border bg-surface p-4 w-full'>
-            <div className='flex items-center justify-between mb-3'>
-              <h3 className='text-xs font-medium text-text-secondary uppercase tracking-wider'>
-                Current Assignments
-              </h3>
+      <div className='grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]'>
+        <Card className='flex min-w-0 flex-col'>
+          <CardHeader>
+            <div>
+              <CardTitle>Current assignments</CardTitle>
+              <p className='mt-1 text-body-sm text-text-secondary'>
+                {assignments.length} assignment
+                {assignments.length !== 1 ? 's' : ''} on record
+              </p>
             </div>
-            <div className='overflow-y-auto max-h-[calc(100vh-28rem)] border border-border rounded-lg'>
-              <table className='w-full text-xs border-collapse'>
-                <thead className='sticky top-0 z-10 bg-surface'>
-                  <tr className='border-b border-border text-left text-[10px] text-text-secondary uppercase'>
-                    <th className='px-3 py-2'>Professor</th>
-                    <th className='px-3 py-2'>Subject</th>
-                    <th className='px-3 py-2 text-right'>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {assignments.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={3}
-                        className='px-3 py-8 text-center text-text-secondary'
-                      >
-                        No assignments found.
-                      </td>
-                    </tr>
-                  ) : (
-                    assignments.map((ps) => (
-                      <tr
-                        key={ps.id}
-                        className='border-b border-border-light hover:bg-surface-secondary'
-                      >
-                        <td className='px-3 py-1 text-text-primary truncate'>
-                          {ps.professor_name}
-                        </td>
-                        <td className='px-3 py-1 text-text-secondary truncate'>
-                          {ps.subject_code} – {ps.subject_title}
-                        </td>
-                        <td className='px-3 py-1 text-right'>
-                          <button
-                            type='button'
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteTarget({
-                                id: ps.id,
-                                label: ps.subject_title,
-                              });
-                            }}
-                            className='w-7 h-7 rounded border border-red-200 bg-red-50 text-red-600 flex items-center justify-center text-[9px] transition hover:bg-red-100 hover:text-red-700'
-                            title='Delete'
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
+          </CardHeader>
 
-        {/* Right: Add Assignment */}
-        <div className='space-y-4'>
-          <div className='rounded-card border border-border bg-surface p-4'>
-            <div className='flex flex-col gap-3'>
-              <h3 className='text-xs font-medium text-text-secondary uppercase tracking-wider'>
-                Add Assignment
-              </h3>
-              <div className='flex flex-col gap-2'>
-                <label className='text-xs font-medium text-text-secondary'>
-                  Department
-                </label>
-                <select
-                  value={String(effectiveDeptId ?? '')}
-                  onChange={(e) => {
-                    const id = Number(e.target.value) || null;
-                    setSelectedDeptId(id);
-                  }}
-                  className='h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
-                >
-                  {deptList.map((d) => (
-                    <option key={d.id} value={String(d.id)}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <form onSubmit={handleSave} className='flex flex-col gap-2'>
-                <div className='flex flex-col gap-1.5'>
-                  <label className='text-xs font-medium text-text-secondary'>
-                    Professor
-                  </label>
-                  {isLoadingProfessors ? (
-                    <div className='h-9 rounded-lg border border-border bg-surface px-2 flex items-center text-[10px] text-text-tertiary animate-pulse'>
-                      Loading professors…
-                    </div>
-                  ) : (
-                    <select
-                      name='professor_id'
-                      className='h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
-                      required
-                      disabled={!professors || professors.length === 0}
-                    >
-                      <option value=''>Select professor</option>
-                      {professors.map((t) => (
-                        <option key={t.id} value={String(t.id)}>
-                          {t.full_name} ({t.username})
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-                <div className='flex flex-col gap-1.5'>
-                  <label className='text-xs font-medium text-text-secondary'>
-                    Subject
-                  </label>
-                  {isLoadingSubjects ? (
-                    <div className='h-9 rounded-lg border border-border bg-surface px-2 flex items-center text-[10px] text-text-tertiary animate-pulse'>
-                      Loading subjects…
-                    </div>
-                  ) : (
-                    <select
-                      name='subject_id'
-                      className='h-9 rounded-lg border border-border bg-surface px-2 text-xs text-text-primary outline-none focus:border-apple-green-400'
-                      required
-                      disabled={!subjects || subjects.length === 0}
-                    >
-                      <option value=''>Select subject</option>
-                      {subjects.map((s) => (
-                        <option key={s.id} value={String(s.id)}>
-                          {s.code} – {s.title}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-                <button
-                  type='submit'
-                  disabled={
-                    createProfSubj.isPending ||
-                    !effectiveDeptId ||
-                    isLoadingProfessors ||
-                    isLoadingSubjects ||
-                    professors.length === 0 ||
-                    subjects.length === 0
-                  }
-                  className='h-9 rounded-lg bg-apple-green-600 px-3 text-xs font-medium text-white transition hover:bg-apple-green-700 disabled:opacity-50 disabled:cursor-not-allowed'
-                >
-                  {createProfSubj.isPending ? 'Saving…' : 'Save'}
-                </button>
-              </form>
+          {assignments.length === 0 ? (
+            <EmptyState
+              className='py-14'
+              icon={ClipboardList}
+              title='No assignments yet'
+              description='Add a professor–subject assignment using the form.'
+            />
+          ) : (
+            <div className='max-h-[28rem] overflow-y-auto'>
+              <TableContainer className='rounded-none border-0'>
+                <Table aria-label='Current professor assignments'>
+                  <THead>
+                    <TR>
+                      <TH>Professor</TH>
+                      <TH>Subject</TH>
+                      <TH className='w-16 text-right'>Action</TH>
+                    </TR>
+                  </THead>
+                  <TBody>
+                    {assignments.map((assignment) => (
+                      <TR key={assignment.id}>
+                        <TD className='font-medium'>
+                          {assignment.professor_name}
+                        </TD>
+                        <TD>
+                          <div className='font-medium text-text-primary'>
+                            {assignment.subject_code}
+                          </div>
+                          <div className='text-caption text-text-tertiary'>
+                            {assignment.subject_title}
+                          </div>
+                        </TD>
+                        <TD>
+                          <div className='flex justify-end'>
+                            <IconButton
+                              label={`Delete assignment for ${assignment.professor_name}`}
+                              variant='ghost'
+                              size='sm'
+                              className='text-text-tertiary hover:text-danger'
+                              onClick={() =>
+                                setDeleteTarget({
+                                  id: assignment.id,
+                                  label: `${assignment.professor_name} · ${assignment.subject_code}`,
+                                })
+                              }
+                            >
+                              <Trash2 size={16} />
+                            </IconButton>
+                          </div>
+                        </TD>
+                      </TR>
+                    ))}
+                  </TBody>
+                </Table>
+              </TableContainer>
             </div>
-          </div>
-        </div>
+          )}
+        </Card>
+
+        <Card className='h-fit'>
+          <CardHeader>
+            <div>
+              <CardTitle>Add assignment</CardTitle>
+              <p className='mt-1 text-body-sm text-text-secondary'>
+                Link a professor to a subject they can teach.
+              </p>
+            </div>
+          </CardHeader>
+          <CardBody>
+            <form onSubmit={handleSave} className='space-y-4'>
+              <SelectField
+                id='assignment-department'
+                label='Department'
+                value={String(effectiveDeptId ?? '')}
+                onChange={(e) => {
+                  const id = Number(e.target.value) || null;
+                  setSelectedDeptId(id);
+                }}
+              >
+                {deptList.map((dept) => (
+                  <option key={dept.id} value={String(dept.id)}>
+                    {dept.name}
+                  </option>
+                ))}
+              </SelectField>
+
+              <SelectField
+                id='assignment-professor'
+                name='professor_id'
+                label='Professor'
+                required
+                disabled={!canSubmit || isLoadingProfessors}
+                hint={
+                  isLoadingProfessors
+                    ? 'Loading professors…'
+                    : professors.length === 0
+                      ? 'No professors available for this department.'
+                      : undefined
+                }
+                defaultValue=''
+              >
+                <option value=''>Select professor</option>
+                {professors.map((professor) => (
+                  <option key={professor.id} value={String(professor.id)}>
+                    {professor.full_name} ({professor.username})
+                  </option>
+                ))}
+              </SelectField>
+
+              <SelectField
+                id='assignment-subject'
+                name='subject_id'
+                label='Subject'
+                required
+                disabled={!canSubmit || isLoadingSubjects}
+                hint={
+                  isLoadingSubjects
+                    ? 'Loading subjects…'
+                    : subjects.length === 0
+                      ? 'No subjects available for this department.'
+                      : undefined
+                }
+                defaultValue=''
+              >
+                <option value=''>Select subject</option>
+                {subjects.map((subject) => (
+                  <option key={subject.id} value={String(subject.id)}>
+                    {subject.code} – {subject.title}
+                  </option>
+                ))}
+              </SelectField>
+
+              <Button
+                type='submit'
+                className='w-full'
+                loading={createProfSubj.isPending}
+                disabled={!canSubmit}
+              >
+                Save assignment
+              </Button>
+            </form>
+          </CardBody>
+        </Card>
       </div>
 
       <ConfirmDialog
-        isOpen={!!deleteTarget}
+        isOpen={Boolean(deleteTarget)}
         onCancel={closeDelete}
-        title='Delete Assignment'
-        message='Are you sure you want to delete this assignment?'
+        title='Delete assignment'
+        message={`Delete the assignment for ${deleteTarget?.label ?? 'this professor'}? This cannot be undone.`}
         onConfirm={handleDelete}
         confirmText='Delete'
       />
