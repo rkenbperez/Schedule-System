@@ -735,6 +735,21 @@ class ImportProcessor:
                 ).values_list("user__email", flat=True)
             }
             known_emails.discard("")
+            # Preference submissions are grouped per department, so a
+            # preference for a professor without one cannot be submitted.
+            workbook_prof_depts = {}
+            for prof_row in parsed_data.get("Professors", []):
+                prof_email = normalize_email(str(prof_row.get("email") or ""))
+                if prof_email:
+                    workbook_prof_depts[prof_email] = parse_int(
+                        prof_row.get("department_id")
+                    )
+            db_prof_depts = {
+                normalize_email(email): dept_id
+                for email, dept_id in Professors.objects.filter(
+                    user__email__isnull=False
+                ).values_list("user__email", "department_id")
+            }
             known_codes = {
                 str(row.get("code") or "").strip().casefold()
                 for row in parsed_data.get("Subjects", [])
@@ -756,6 +771,20 @@ class ImportProcessor:
                             row_num,
                             "professor_email",
                             f"Professor with email '{email}' not found",
+                        )
+                    )
+                elif email and not (
+                    workbook_prof_depts.get(email) or db_prof_depts.get(email)
+                ):
+                    result.valid = False
+                    result.errors.append(
+                        ImportError(
+                            "ProfessorPreferences",
+                            row_num,
+                            "department_id",
+                            f"Professor '{email}' has no department; set "
+                            "department_id on the Professors sheet so the "
+                            "preference can be submitted.",
                         )
                     )
                 if code and code.casefold() not in known_codes:
@@ -1338,22 +1367,27 @@ class ImportProcessor:
                         else:
                             result.summary["updates"] += 1
 
-                        if prof.department_id:
-                            submission = submissions.get(prof.department_id)
-                            if submission is None:
-                                submission, _ = (
-                                    PreferenceSubmission.objects.get_or_create(
-                                        department_id=prof.department_id,
-                                        term=active_term,
-                                        defaults={"submitted_by": submitted_by},
-                                    )
-                                )
-                                submissions[prof.department_id] = submission
-                            SubmissionItem.objects.update_or_create(
-                                submission=submission,
-                                preference=pref,
-                                defaults={"action": "publish", "notes": ""},
+                        if not prof.department_id:
+                            raise ValueError(
+                                f"Professor with email '{email}' has no "
+                                "department; the preference cannot be "
+                                "submitted without one."
                             )
+                        submission = submissions.get(prof.department_id)
+                        if submission is None:
+                            submission, _ = (
+                                PreferenceSubmission.objects.get_or_create(
+                                    department_id=prof.department_id,
+                                    term=active_term,
+                                    defaults={"submitted_by": submitted_by},
+                                )
+                            )
+                            submissions[prof.department_id] = submission
+                        SubmissionItem.objects.update_or_create(
+                            submission=submission,
+                            preference=pref,
+                            defaults={"action": "publish", "notes": ""},
+                        )
 
                 # Assignments (legacy sheet: a typed id creates that record)
                 for row in parsed_data.get("Assignments", []):

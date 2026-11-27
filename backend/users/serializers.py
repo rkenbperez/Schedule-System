@@ -239,7 +239,9 @@ class ProfessorPreferenceSerializer(serializers.ModelSerializer):
     professor_name = serializers.CharField(source="professor.user.get_full_name", read_only=True)
     subject_code = serializers.CharField(source="subject.code", read_only=True)
     subject_title = serializers.CharField(source="subject.title", read_only=True)
-    section_name = serializers.CharField(source="section.name", read_only=True)
+    section_name = serializers.CharField(
+        source="section.name", read_only=True, allow_null=True
+    )
     term_code = serializers.CharField(source="term.code", read_only=True)
     meetings_validated = MeetingPreferenceSerializer(many=True, source="meetings", read_only=True)
     professor_department = serializers.CharField(source="professor.department.name", read_only=True, allow_null=True)
@@ -270,6 +272,10 @@ class ProfessorPreferenceSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+        # The default UniqueTogetherValidator (professor, subject, section,
+        # term) demands a section value even though imported preferences have
+        # none; validate() below covers the same rule for NULL sections.
+        validators = []
         read_only_fields = [
             "id",
             "professor",
@@ -300,6 +306,11 @@ class ProfessorPreferenceSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         professor = attrs.get("professor") or (self.instance.professor if self.instance else None)
+        if professor is None:
+            # perform_create injects the professor after validation; read it
+            # from the request so create-time duplicate checks still run.
+            user = getattr(self.context.get("request"), "user", None)
+            professor = getattr(user, "prof", None)
         term = attrs.get("term") or (self.instance.term if self.instance else None)
 
         if professor and term:
@@ -308,7 +319,9 @@ class ProfessorPreferenceSerializer(serializers.ModelSerializer):
                 qs = qs.exclude(pk=self.instance.pk)
             subject = attrs.get("subject") or (self.instance.subject if self.instance else None)
             section = attrs.get("section") or (self.instance.section if self.instance else None)
-            if subject and section:
+            if subject:
+                # section may be None (imported preferred-subject rows); the
+                # conditional unique constraint treats NULL as one section.
                 if qs.filter(subject=subject, section=section).exists():
                     raise serializers.ValidationError(
                         "A preference for this subject and section already exists for this term."
@@ -322,7 +335,9 @@ class ProfessorPreferenceListSerializer(serializers.ModelSerializer):
     professor_name = serializers.CharField(source="professor.user.get_full_name", read_only=True)
     subject_code = serializers.CharField(source="subject.code", read_only=True)
     subject_title = serializers.CharField(source="subject.title", read_only=True)
-    section_name = serializers.CharField(source="section.name", read_only=True)
+    section_name = serializers.CharField(
+        source="section.name", read_only=True, allow_null=True
+    )
     term_code = serializers.CharField(source="term.code", read_only=True)
     meeting_count = serializers.SerializerMethodField()
     total_duration = serializers.SerializerMethodField()

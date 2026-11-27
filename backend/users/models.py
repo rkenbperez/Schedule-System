@@ -123,6 +123,17 @@ class ProfessorPreference(models.Model):
 
     class Meta:
         unique_together = ["professor", "subject", "section", "term"]
+        # PostgreSQL treats NULLs as distinct, so unique_together does not
+        # deduplicate imported rows whose section is blank. This partial
+        # constraint keeps update_or_create() safe and makes re-imports
+        # idempotent.
+        constraints = [
+            models.UniqueConstraint(
+                fields=["professor", "subject", "term"],
+                condition=models.Q(section__isnull=True),
+                name="unique_unsectioned_professor_preference",
+            ),
+        ]
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["term", "status"]),

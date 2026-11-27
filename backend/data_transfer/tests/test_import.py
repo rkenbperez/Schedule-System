@@ -1603,3 +1603,98 @@ class ImportProfessorPreferencesTests(ImportTestCase):
         self.assertFalse(Department.objects.filter(name="Rollback Dept").exists())
         self.assertFalse(User.objects.filter(email__iexact="rb.prof@example.com").exists())
         self.assertEqual(ProfessorPreference.objects.count(), 0)
+
+    def test_professor_without_department_is_rejected(self):
+        self.auth(self.reg_token)
+        self._active_term()
+        orphan_user = get_user_model().objects.create_user(
+            username="orphan.prof", email="orphan.prof@example.com"
+        )
+        Professors.objects.create(user=orphan_user)
+        sheets = self._sheets(
+            [
+                ["orphan.prof@example.com", "CS101", 1],
+                ["new.prof@example.com", "CS101", 1],
+            ],
+            professor_rows=[[None, "new.prof@example.com", None]],
+        )
+        xlsx = self._make_xlsx(sheets)
+        response = self.client.post(self.url_preview, {"file": xlsx}, format="multipart")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["valid"])
+        fields = {
+            e["field"]
+            for e in response.data["errors"]
+            if e["sheet"] == "ProfessorPreferences"
+        }
+        self.assertIn("department_id", fields)
+        self.assertEqual(ProfessorPreference.objects.count(), 0)
+
+    def test_null_section_duplicates_blocked_at_db_level(self):
+        from django.db import IntegrityError, transaction
+
+        self.auth(self.reg_token)
+        term = self._active_term()
+        sheets = self._sheets(
+            [["pref.prof@example.com", "CS101", None]],
+            professor_rows=[[None, "pref.prof@example.com", self.dept.id]],
+        )
+        xlsx = self._make_xlsx(sheets)
+        first = self.client.post(self.url_preview, {"file": xlsx}, format="multipart")
+        self.assertEqual(first.status_code, 200, first.data.get("errors"))
+        commit = self.client.post(
+            self.url_commit, {"preview_token": first.data["preview_token"]}, format="json"
+        )
+        self.assertEqual(commit.status_code, 200, commit.data.get("errors"))
+        pref = ProfessorPreference.objects.get(
+            professor__user__email__iexact="pref.prof@example.com",
+            term=term,
+            section__isnull=True,
+        )
+        # PostgreSQL treats NULLs as distinct in plain unique_together; the
+        # conditional constraint must still reject a second sectionless row.
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                ProfessorPreference.objects.create(
+                    professor=pref.professor,
+                    subject=pref.subject,
+                    section=None,
+                    term=term,
+                    priority=9,
+                )
+
+    def test_reimport_updates_instead_of_duplicating(self):
+        self.auth(self.reg_token)
+        term = self._active_term()
+        sheets = self._sheets(
+            [["pref.prof@example.com", "CS101", None]],
+            professor_rows=[[None, "pref.prof@example.com", self.dept.id]],
+        )
+        xlsx = self._make_xlsx(sheets)
+        first = self.client.post(self.url_preview, {"file": xlsx}, format="multipart")
+        self.assertEqual(first.status_code, 200, first.data.get("errors"))
+        commit = self.client.post(
+            self.url_commit, {"preview_token": first.data["preview_token"]}, format="json"
+        )
+        self.assertEqual(commit.status_code, 200, commit.data.get("errors"))
+
+        # A fresh upload handle: the first BytesIO was consumed by the first POST.
+        second_preview = self.client.post(
+            self.url_preview, {"file": self._make_xlsx(sheets)}, format="multipart"
+        )
+        self.assertEqual(second_preview.status_code, 200, second_preview.data.get("errors"))
+        items = second_preview.data["preview_items"]["ProfessorPreferences"]
+        self.assertEqual([i["action"] for i in items], ["update"])
+        second_commit = self.client.post(
+            self.url_commit,
+            {"preview_token": second_preview.data["preview_token"]},
+            format="json",
+        )
+        self.assertEqual(second_commit.status_code, 200, second_commit.data.get("errors"))
+
+        prof = Professors.objects.get(user__email__iexact="pref.prof@example.com")
+        self.assertEqual(
+            ProfessorPreference.objects.filter(professor=prof, term=term).count(), 1
+        )
+        submission = PreferenceSubmission.objects.get(term=term, department=self.dept)
+        self.assertEqual(SubmissionItem.objects.filter(submission=submission).count(), 1)
