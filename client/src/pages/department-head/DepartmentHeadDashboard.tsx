@@ -169,11 +169,11 @@ export default function DepartmentHeadDashboard() {
     batchMutation.mutate(
       { preferenceIds: selectedIds, action: 'publish', notes: '' },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
           toast.addToast({
             type: 'success',
             title: 'Preferences published',
-            description: `${selectedIds.length} preference${selectedIds.length !== 1 ? 's' : ''} published.`,
+            description: `${result.updated} preference${result.updated !== 1 ? 's' : ''} published.`,
           });
           refetch();
           setSelectedIds([]);
@@ -198,11 +198,11 @@ export default function DepartmentHeadDashboard() {
     batchMutation.mutate(
       { preferenceIds: ids, action: 'reject', notes: '' },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
           toast.addToast({
             type: 'success',
             title: 'Preferences rejected',
-            description: `${ids.length} preference${ids.length !== 1 ? 's' : ''} returned to the professor.`,
+            description: `${result.updated} preference${result.updated !== 1 ? 's' : ''} returned to the professor.`,
           });
           refetch();
           setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
@@ -222,6 +222,7 @@ export default function DepartmentHeadDashboard() {
       {
         onSuccess: () => {
           toast.addToast({ type: 'success', title: 'Preference published' });
+          setSelectedIds((prev) => prev.filter((id) => id !== pref.id));
           refetch();
         },
         onError: () =>

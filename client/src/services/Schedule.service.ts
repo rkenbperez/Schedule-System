@@ -895,7 +895,9 @@ class ScheduleService {
   /* ---------- Department Head ---------- */
 
   async getDepartmentHeadSubmissions(): Promise<PreferenceSubmission[]> {
-    const data: PreferenceSubmission[] = await apiJson(
+    // The endpoint is a paginated DRF ViewSet ({count, next, results});
+    // apiAllPages unwraps it and fetches every page.
+    const data: PreferenceSubmission[] = await apiAllPages(
       `${BASE_URL}/api/department-head/submissions/`
     );
     return data;

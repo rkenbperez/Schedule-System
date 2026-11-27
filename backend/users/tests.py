@@ -1,3 +1,5 @@
+from datetime import date
+
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.test import TestCase
@@ -8,7 +10,12 @@ from rest_framework.test import APITestCase
 from catalog.models import Department, Section, Subject
 from timetable.models import AcademicTerm, Assignment
 
-from .models import Professors
+from .models import (
+    PreferenceSubmission,
+    ProfessorPreference,
+    Professors,
+    SubmissionItem,
+)
 from .services import provision_professor
 
 
@@ -357,3 +364,130 @@ class ProfessorsViewSetFilterTests(APITestCase):
         self._assign_active_term()
         ids = self._listed_ids({"department": "not-a-number"})
         self.assertEqual(ids, {self.prof_a1.id})
+
+
+class PreferenceReviewFlowTests(APITestCase):
+    """Professor submit -> head review -> reject -> resubmit -> publish."""
+
+    def setUp(self):
+        self.dept = Department.objects.create(name="Review Dept")
+        self.head = User.objects.create_user(
+            username="reviewhead", email="head@example.com", password="pass12345"
+        )
+        self.dept.head = self.head
+        self.dept.save()
+        prof_user = User.objects.create_user(
+            username="reviewprof", email="prof@example.com", password="pass12345"
+        )
+        self.prof = Professors.objects.create(user=prof_user, department=self.dept)
+        self.term = AcademicTerm.objects.create(
+            year=2026,
+            semester=1,
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 5, 1),
+            is_active=True,
+        )
+        subject = Subject.objects.create(code="CS101", title="Intro to CS")
+        section = Section.objects.create(name="BSCS 1-A", headcount=30)
+        self.pref = ProfessorPreference.objects.create(
+            professor=self.prof,
+            subject=subject,
+            section=section,
+            term=self.term,
+            meetings=[{"mode": "sync", "duration_slots": 2}],
+        )
+        self.submit_url = reverse("professor-preference-submit", args=[self.pref.id])
+        self.publish_url = reverse("department-head-publish", args=[self.pref.id])
+        self.submissions_url = reverse("department-head-submissions")
+        self.prof_prefs_url = reverse("professor-preference-list")
+
+    def _submit(self):
+        self.client.force_authenticate(user=self.prof.user)
+        return self.client.post(self.submit_url)
+
+    def test_submit_creates_department_head_queue_item(self):
+        response = self._submit()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(PreferenceSubmission.objects.count(), 1)
+        self.assertEqual(SubmissionItem.objects.count(), 1)
+        item = SubmissionItem.objects.get()
+        self.assertEqual(item.action, "publish")
+        self.assertEqual(item.submission.department, self.dept)
+        self.assertEqual(item.submission.term, self.term)
+
+        self.client.force_authenticate(user=self.head)
+        response = self.client.get(self.submissions_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        items = [i for sub in response.data["results"] for i in sub["items"]]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["preference"]["status"], "submitted")
+
+    def test_reject_persists_notes_and_syncs_submission_item(self):
+        self._submit()
+        self.client.force_authenticate(user=self.head)
+        response = self.client.post(
+            self.publish_url,
+            {"action": "reject", "notes": "Lab hours exceed policy."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.pref.refresh_from_db()
+        item = SubmissionItem.objects.get()
+        self.assertEqual(self.pref.status, "rejected")
+        self.assertEqual(self.pref.review_notes, "Lab hours exceed policy.")
+        self.assertEqual(item.action, "reject")
+        self.assertEqual(item.notes, "Lab hours exceed policy.")
+
+        # The professor sees the reviewer notes in the list payload.
+        self.client.force_authenticate(user=self.prof.user)
+        response = self.client.get(self.prof_prefs_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        row = response.data["results"][0]
+        self.assertEqual(row["status"], "rejected")
+        self.assertEqual(row["review_notes"], "Lab hours exceed policy.")
+
+    def test_resubmit_clears_stale_rejection_state_without_duplicates(self):
+        self._submit()
+        self.client.force_authenticate(user=self.head)
+        self.client.post(
+            self.publish_url,
+            {"action": "reject", "notes": "Needs changes."},
+            format="json",
+        )
+
+        response = self._submit()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.pref.refresh_from_db()
+        item = SubmissionItem.objects.get()
+        self.assertEqual(self.pref.status, "submitted")
+        self.assertEqual(self.pref.review_notes, "")
+        # Upsert, not duplicate: same submission/item rows are reused.
+        self.assertEqual(PreferenceSubmission.objects.count(), 1)
+        self.assertEqual(SubmissionItem.objects.count(), 1)
+        self.assertEqual(item.action, "publish")
+        self.assertEqual(item.notes, "")
+
+    def test_publish_syncs_submission_item(self):
+        self._submit()
+        self.client.force_authenticate(user=self.head)
+        response = self.client.post(self.publish_url, {"action": "publish"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.pref.refresh_from_db()
+        item = SubmissionItem.objects.get()
+        self.assertEqual(self.pref.status, "published")
+        self.assertEqual(item.action, "publish")
+
+    def test_batch_reject_syncs_submission_items(self):
+        self._submit()
+        self.client.force_authenticate(user=self.head)
+        response = self.client.post(
+            reverse("department-head-batch-publish"),
+            {"preference_ids": [self.pref.id], "action": "reject", "notes": "No."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.pref.refresh_from_db()
+        item = SubmissionItem.objects.get()
+        self.assertEqual(self.pref.status, "rejected")
+        self.assertEqual(item.action, "reject")
+        self.assertEqual(item.notes, "No.")

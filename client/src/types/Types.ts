@@ -491,6 +491,8 @@ export interface ProfessorPreferenceListItem {
   status: 'draft' | 'submitted' | 'published' | 'rejected';
   submitted_at: string | null;
   published_at: string | null;
+  reviewed_by: number | null;
+  review_notes: string;
   created_at: string;
   updated_at: string;
 }

@@ -346,6 +346,8 @@ class ProfessorPreferenceListSerializer(serializers.ModelSerializer):
             "status",
             "submitted_at",
             "published_at",
+            "reviewed_by",
+            "review_notes",
             "created_at",
             "updated_at",
         ]
