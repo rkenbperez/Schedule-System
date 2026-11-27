@@ -1,4 +1,5 @@
-import { Trash2, Check } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Check, Trash2 } from 'lucide-react';
 import {
   useProfessorAvailability,
   useCreateProfessorAvailability,
@@ -6,7 +7,7 @@ import {
   useDeleteProfessorAvailability,
 } from '../../../hooks/Professor.hooks';
 import type { AvailabilityWindow } from '../../../types/Types';
-import { Card, Tooltip } from '../../../components/ui';
+import { Card, CardBody, CardHeader, CardTitle } from '../../../components/ui';
 
 const DAYS = [
   { index: 0, name: 'Monday', short: 'Mon' },
@@ -56,50 +57,73 @@ function TimeBlock({ day, hour, availability, onToggle, onDelete, readOnly }: Ti
       timeToSlot(a.end_time) >= slotEnd
   );
 
-  if (!matching) {
-    return (
-      <Tooltip content="Click to add availability">
-        <div
-          className='h-10 border border-dashed border-border rounded-md bg-surface transition-colors hover:bg-surface-secondary hover:border-apple-green-300 cursor-pointer'
-          onClick={() => !readOnly && onToggle(day, slotToTime(slotStart), slotToTime(slotEnd), true)}
-        />
-      </Tooltip>
-    );
-  }
+  const dayName = DAYS[day].name;
+  const timeLabel = formatHour(hour);
+  const isPreferred = matching?.is_preferred ?? false;
 
-  const isPreferred = matching.is_preferred;
+  const stateClass = !matching
+    ? 'border border-dashed border-border bg-surface hover:border-apple-green-300 hover:bg-apple-green-50'
+    : isPreferred
+      ? 'border border-apple-green-600 bg-apple-green-500 text-white hover:bg-apple-green-600'
+      : 'border border-apple-green-300 bg-apple-green-50 hover:bg-apple-green-100';
+
+  const label = !matching
+    ? `Add availability on ${dayName} at ${timeLabel}`
+    : isPreferred
+      ? `${dayName} at ${timeLabel} is preferred. Click to mark as available.`
+      : `${dayName} at ${timeLabel} is available. Click to mark as preferred.`;
 
   return (
-    <Tooltip content={isPreferred ? 'Preferred time - click to make available' : 'Available time - click to make preferred'}>
-      <div
-        className={`h-10 rounded-md border-2 transition-all cursor-pointer ${
-          isPreferred
-            ? 'bg-apple-green-100 border-apple-green-400 hover:bg-apple-green-200'
-            : 'bg-blue-50 border-blue-300 hover:bg-blue-100'
-        }`}
+    <div className='group relative h-10'>
+      <button
+        type='button'
+        disabled={readOnly}
+        aria-pressed={Boolean(matching) && isPreferred}
+        aria-label={label}
+        title={label}
         onClick={() =>
-          !readOnly && onToggle(day, matching.start_time, matching.end_time, !isPreferred)
+          !readOnly &&
+          onToggle(
+            day,
+            matching ? matching.start_time : slotToTime(slotStart),
+            matching ? matching.end_time : slotToTime(slotEnd),
+            matching ? !isPreferred : true
+          )
         }
+        className={`absolute inset-0 flex items-center justify-center rounded-control transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-apple-green-400 focus-visible:ring-offset-1 ${stateClass}`}
       >
-        <div className='flex items-center justify-between p-1 h-full'>
-          {isPreferred && (
-            <Check className='text-apple-green-600 text-xs shrink-0' aria-hidden='true' />
-          )}
-          {!readOnly && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete(matching.id);
-              }}
-              className='text-red-500 hover:text-red-700 text-xs p-0.5 rounded'
-              aria-label='Delete availability'
-            >
-              <Trash2 size={12} aria-hidden='true' />
-            </button>
-          )}
-        </div>
+        {isPreferred && <Check size={14} className='opacity-90' aria-hidden='true' />}
+      </button>
+
+      {matching && !readOnly && (
+        <button
+          type='button'
+          onClick={() => onDelete(matching.id)}
+          aria-label={`Remove availability on ${dayName} at ${timeLabel}`}
+          title='Remove availability'
+          className={`absolute right-0.5 top-1/2 z-10 -translate-y-1/2 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 ${
+            isPreferred
+              ? 'text-white/80 hover:bg-white/20 hover:text-white focus-visible:ring-white'
+              : 'text-apple-green-700 hover:bg-apple-green-100 focus-visible:ring-apple-green-400'
+          }`}
+        >
+          <Trash2 size={12} aria-hidden='true' />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function GridShell({ children, label }: { children: ReactNode; label: string }) {
+  return (
+    <div className='overflow-x-auto'>
+      <div
+        className='grid min-w-[720px] grid-cols-[4.5rem_repeat(5,minmax(0,1fr))] gap-1.5'
+        aria-label={label}
+      >
+        {children}
       </div>
-    </Tooltip>
+    </div>
   );
 }
 
@@ -142,66 +166,87 @@ export default function ProfessorAvailabilityGrid({
     deleteMutation.mutate(id, { onSuccess: () => onChange?.() });
   };
 
+  const isSaving =
+    createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
+
+  const header = (
+    <CardHeader className='items-center'>
+      <div>
+        <CardTitle>Weekly Availability</CardTitle>
+        <p className='mt-1 text-body-sm text-text-secondary'>
+          Click a slot to mark it available. Click again to switch between preferred and
+          available.
+        </p>
+      </div>
+      <div className='flex flex-wrap items-center gap-x-4 gap-y-1.5 text-caption text-text-secondary'>
+        <span className='flex items-center gap-1.5'>
+          <span className='h-3 w-3 rounded-sm border border-apple-green-600 bg-apple-green-500' />
+          Preferred
+        </span>
+        <span className='flex items-center gap-1.5'>
+          <span className='h-3 w-3 rounded-sm border border-apple-green-300 bg-apple-green-50' />
+          Available
+        </span>
+        <span className='flex items-center gap-1.5'>
+          <span className='h-3 w-3 rounded-sm border border-dashed border-border bg-surface' />
+          Unavailable
+        </span>
+      </div>
+    </CardHeader>
+  );
+
   if (isLoading) {
     return (
-      <Card className='space-y-3'>
-        <div className='grid grid-cols-15 gap-1'>
-          <div className='col-span-3 font-medium text-text-secondary'>Time</div>
-          {DAYS.map((d) => (
-            <div key={d.index} className='text-center font-medium text-text-secondary'>
-              {d.short}
-            </div>
-          ))}
-        </div>
-        {Array.from({ length: END_HOUR - START_HOUR }).map((_, i) => (
-          <div key={i} className='grid grid-cols-15 gap-1'>
-            <div className='col-span-3 text-right pr-2 text-caption text-text-tertiary'>
-              {formatHour(START_HOUR + i)}
-            </div>
+      <Card>
+        {header}
+        <CardBody>
+          <GridShell label='Loading availability'>
+            <div aria-hidden='true' />
             {DAYS.map((d) => (
               <div
                 key={d.index}
-                className='h-10 border border-dashed border-border rounded-md bg-surface animate-pulse'
-              />
+                className='pb-1 text-center text-caption font-medium text-text-secondary'
+              >
+                {d.short}
+              </div>
             ))}
-          </div>
-        ))}
+            {Array.from({ length: END_HOUR - START_HOUR }).map((_, i) => (
+              <div key={i} className='contents'>
+                <div className='self-center pr-1 text-right text-caption text-text-tertiary'>
+                  {formatHour(START_HOUR + i)}
+                </div>
+                {DAYS.map((d) => (
+                  <div
+                    key={d.index}
+                    className='h-10 animate-pulse rounded-control border border-dashed border-border bg-surface'
+                  />
+                ))}
+              </div>
+            ))}
+          </GridShell>
+        </CardBody>
       </Card>
     );
   }
 
   return (
-    <Card className='space-y-3'>
-      <div className='flex flex-wrap items-center justify-between gap-2'>
-        <h3 className='text-h3 text-text-primary'>Weekly Availability</h3>
-        <div className='flex items-center gap-4 text-caption'>
-          <span className='flex items-center gap-1'>
-            <span className='w-3 h-3 rounded bg-apple-green-200 border border-apple-green-400' />
-            Preferred
-          </span>
-          <span className='flex items-center gap-1'>
-            <span className='w-3 h-3 rounded bg-blue-50 border border-blue-300' />
-            Available
-          </span>
-          <span className='flex items-center gap-1'>
-            <span className='w-3 h-3 rounded border border-dashed border-border bg-surface' />
-            Unavailable
-          </span>
-        </div>
-      </div>
-
-      <div className='overflow-x-auto'>
-        <div className='grid grid-cols-15 gap-1 min-w-[900px]'>
-          <div className='col-span-3 font-medium text-text-secondary' />
+    <Card>
+      {header}
+      <CardBody>
+        <GridShell label='Weekly availability grid'>
+          <div aria-hidden='true' />
           {DAYS.map((d) => (
-            <div key={d.index} className='text-center font-medium text-text-secondary py-2'>
+            <div
+              key={d.index}
+              className='pb-1 text-center text-caption font-medium text-text-secondary'
+            >
               {d.name}
             </div>
           ))}
 
           {Array.from({ length: END_HOUR - START_HOUR }).map((_, i) => (
             <div key={i} className='contents'>
-              <div className='col-span-3 text-right pr-2 text-caption text-text-tertiary pt-2'>
+              <div className='self-center pr-1 text-right text-caption text-text-tertiary'>
                 {formatHour(START_HOUR + i)}
               </div>
               {DAYS.map((d) => (
@@ -217,14 +262,12 @@ export default function ProfessorAvailabilityGrid({
               ))}
             </div>
           ))}
-        </div>
-      </div>
+        </GridShell>
 
-      {(createMutation.isPending || updateMutation.isPending || deleteMutation.isPending) && (
-        <div className='text-caption text-text-tertiary text-center py-2'>
-          Saving...
-        </div>
-      )}
+        {isSaving && (
+          <p className='mt-3 text-center text-caption text-text-tertiary'>Saving…</p>
+        )}
+      </CardBody>
     </Card>
   );
 }

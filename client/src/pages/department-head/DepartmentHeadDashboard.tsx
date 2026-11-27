@@ -1,85 +1,232 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Clock, CheckCircle, XCircle, Eye, Check, X, ClipboardList } from 'lucide-react';
-import { useDepartmentHeadSubmissions, usePublishPreference, useBatchPublishPreferences } from '../../hooks/Professor.hooks';
+import {
+  Check,
+  CheckCircle,
+  ClipboardList,
+  Clock,
+  Eye,
+  Search,
+  X,
+  XCircle,
+} from 'lucide-react';
+import {
+  useDepartmentHeadSubmissions,
+  usePublishPreference,
+  useBatchPublishPreferences,
+} from '../../hooks/Professor.hooks';
 import type { ProfessorPreferenceListItem } from '../../types/Types';
 import {
-  Card,
+  Alert,
   Badge,
   Button,
-  Table,
-  THead,
-  TBody,
-  TR,
-  TH,
-  TD,
-  Modal,
-  StatCard,
-  Separator,
-  Tooltip,
+  Card,
   EmptyState,
+  IconButton,
+  Input,
+  Modal,
+  PageHeader,
+  SegmentedControl,
+  Separator,
+  StatCard,
+  Table,
+  TableContainer,
+  TBody,
+  TD,
+  TextareaField,
+  TH,
+  THead,
+  TR,
+  type SegmentedOption,
 } from '../../components/ui';
-import { cn } from '../../lib/cn';
+import { ConfirmDialog } from '../../components/shared/ConfirmDialog';
+import { useToast } from '../../hooks/useToast';
 import DepartmentCreateAssignment from './components/DepartmentCreateAssignment';
 
-function StatusBadge({ status }: { status: string }) {
-  const config = {
-    draft: { tone: 'neutral' as const, label: 'Draft' },
-    submitted: { tone: 'warning' as const, label: 'Submitted' },
-    published: { tone: 'success' as const, label: 'Published' },
-    rejected: { tone: 'danger' as const, label: 'Rejected' },
-    pending: { tone: 'warning' as const, label: 'Pending' },
-    accepted: { tone: 'success' as const, label: 'Accepted' },
-  }[status] ?? { tone: 'neutral' as const, label: status };
+type View = 'submissions' | 'assignments';
+type StatusFilter = 'all' | 'submitted' | 'published' | 'rejected';
 
-  return <Badge tone={config.tone} size='sm'>{config.label}</Badge>;
+const STATUS_TONE = {
+  draft: 'neutral',
+  submitted: 'warning',
+  published: 'success',
+  rejected: 'danger',
+} as const;
+
+const MODE_LABEL: Record<string, string> = {
+  sync: 'Lecture',
+  lab: 'Lab',
+  async: 'Async',
+};
+
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function StatusBadge({ status }: { status: string }) {
+  const known = status in STATUS_TONE;
+  const tone = known
+    ? STATUS_TONE[status as keyof typeof STATUS_TONE]
+    : 'neutral';
+  return (
+    <Badge tone={tone} size='sm'>
+      {status.charAt(0).toUpperCase() + status.slice(1)}
+    </Badge>
+  );
 }
 
 export default function DepartmentHeadDashboard() {
-  const { data: submissions, isLoading, refetch } = useDepartmentHeadSubmissions({ enabled: true });
+  const toast = useToast();
+  const { data: submissions, isLoading, refetch } = useDepartmentHeadSubmissions({
+    enabled: true,
+  });
   const publishMutation = usePublishPreference();
   const batchMutation = useBatchPublishPreferences();
 
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
-  const [reviewPreference, setReviewPreference] = useState<ProfessorPreferenceListItem | null>(null);
+  const [reviewPreference, setReviewPreference] =
+    useState<ProfessorPreferenceListItem | null>(null);
   const [reviewAction, setReviewAction] = useState<'publish' | 'reject'>('publish');
   const [reviewNotes, setReviewNotes] = useState('');
+  const [rejectConfirm, setRejectConfirm] = useState<{
+    ids: number[];
+    label: string;
+  } | null>(null);
+
   const location = useLocation();
   const navigate = useNavigate();
-  // The active tab mirrors the route so the sidebar and tabs never disagree.
-  const view: 'submissions' | 'assignments' = location.pathname.endsWith(
-    '/assignments'
-  )
+  const view: View = location.pathname.endsWith('/assignments')
     ? 'assignments'
     : 'submissions';
 
+  const allItems = useMemo(
+    () => (submissions ?? []).flatMap((submission) => submission.items),
+    [submissions]
+  );
+
+  const submittedCount = allItems.filter(
+    (item) => item.preference.status === 'submitted'
+  ).length;
+  const publishedCount = allItems.filter(
+    (item) => item.preference.status === 'published'
+  ).length;
+  const rejectedCount = allItems.filter(
+    (item) => item.preference.status === 'rejected'
+  ).length;
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const items = allItems.filter((item) => {
+    const pref = item.preference;
+    const matchesStatus =
+      statusFilter === 'all' || pref.status === statusFilter;
+    const matchesQuery =
+      !normalizedQuery ||
+      pref.professor_name.toLowerCase().includes(normalizedQuery) ||
+      pref.subject_code.toLowerCase().includes(normalizedQuery) ||
+      pref.subject_title.toLowerCase().includes(normalizedQuery) ||
+      pref.section_name.toLowerCase().includes(normalizedQuery);
+    return matchesStatus && matchesQuery;
+  });
+
+  const selectableItems = items.filter(
+    (item) => item.preference.status === 'submitted'
+  );
+  const allSelectableSelected =
+    selectableItems.length > 0 &&
+    selectableItems.every((item) => selectedIds.includes(item.preference.id));
+  const someSelectableSelected = selectableItems.some((item) =>
+    selectedIds.includes(item.preference.id)
+  );
+  const headerCheckboxRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (headerCheckboxRef.current) {
+      headerCheckboxRef.current.indeterminate =
+        someSelectableSelected && !allSelectableSelected;
+    }
+  }, [someSelectableSelected, allSelectableSelected]);
+
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      const allIds = (submissions ?? []).flatMap((s) => s.items.map((i) => i.preference.id));
-      setSelectedIds(allIds);
-    } else {
-      setSelectedIds([]);
+      setSelectedIds(selectableItems.map((item) => item.preference.id));
+      return;
     }
+    const selectableIds = new Set(
+      selectableItems.map((item) => item.preference.id)
+    );
+    setSelectedIds((prev) => prev.filter((id) => !selectableIds.has(id)));
   };
 
   const handleSelect = (id: number, checked: boolean) => {
-    setSelectedIds((prev) => (checked ? [...prev, id] : prev.filter((i) => i !== id)));
+    setSelectedIds((prev) =>
+      checked ? [...prev, id] : prev.filter((itemId) => itemId !== id)
+    );
   };
 
   const handlePublishSelected = () => {
     if (selectedIds.length === 0) return;
     batchMutation.mutate(
       { preferenceIds: selectedIds, action: 'publish', notes: '' },
-      { onSuccess: () => { refetch(); setSelectedIds([]); } }
+      {
+        onSuccess: () => {
+          toast.addToast({
+            type: 'success',
+            title: 'Preferences published',
+            description: `${selectedIds.length} preference${selectedIds.length !== 1 ? 's' : ''} published.`,
+          });
+          refetch();
+          setSelectedIds([]);
+        },
+        onError: () =>
+          toast.addToast({ type: 'error', title: 'Could not publish preferences' }),
+      }
     );
   };
 
   const handleRejectSelected = () => {
     if (selectedIds.length === 0) return;
+    setRejectConfirm({
+      ids: selectedIds,
+      label: `${selectedIds.length} selected preference${selectedIds.length !== 1 ? 's' : ''}`,
+    });
+  };
+
+  const confirmReject = () => {
+    if (!rejectConfirm) return;
+    const { ids } = rejectConfirm;
     batchMutation.mutate(
-      { preferenceIds: selectedIds, action: 'reject', notes: '' },
-      { onSuccess: () => { refetch(); setSelectedIds([]); } }
+      { preferenceIds: ids, action: 'reject', notes: '' },
+      {
+        onSuccess: () => {
+          toast.addToast({
+            type: 'success',
+            title: 'Preferences rejected',
+            description: `${ids.length} preference${ids.length !== 1 ? 's' : ''} returned to the professor.`,
+          });
+          refetch();
+          setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
+          setRejectConfirm(null);
+        },
+        onError: () => {
+          toast.addToast({ type: 'error', title: 'Could not reject preferences' });
+          setRejectConfirm(null);
+        },
+      }
+    );
+  };
+
+  const handleQuickPublish = (pref: ProfessorPreferenceListItem) => {
+    publishMutation.mutate(
+      { id: pref.id, action: 'publish', notes: '' },
+      {
+        onSuccess: () => {
+          toast.addToast({ type: 'success', title: 'Preference published' });
+          refetch();
+        },
+        onError: () =>
+          toast.addToast({ type: 'error', title: 'Could not publish preference' }),
+      }
     );
   };
 
@@ -96,271 +243,377 @@ export default function DepartmentHeadDashboard() {
       { id: reviewPreference.id, action: reviewAction, notes: reviewNotes },
       {
         onSuccess: () => {
+          toast.addToast({
+            type: 'success',
+            title: reviewAction === 'publish' ? 'Preference published' : 'Preference rejected',
+          });
           refetch();
           setReviewModalOpen(false);
           setReviewPreference(null);
         },
+        onError: () =>
+          toast.addToast({
+            type: 'error',
+            title: 'Could not update preference',
+          }),
       }
     );
   };
 
-  const pendingCount = (submissions ?? []).flatMap((s) => s.items.filter((i) => i.preference.status === 'submitted').length).reduce((a, b) => a + b, 0);
-  const publishedCount = (submissions ?? []).flatMap((s) => s.items.filter((i) => i.preference.status === 'published').length).reduce((a, b) => a + b, 0);
-  const rejectedCount = (submissions ?? []).flatMap((s) => s.items.filter((i) => i.preference.status === 'rejected').length).reduce((a, b) => a + b, 0);
+  const viewOptions: SegmentedOption<View>[] = [
+    { value: 'submissions', label: 'Submissions' },
+    { value: 'assignments', label: 'Assignments' },
+  ];
+
+  const statusOptions: SegmentedOption<StatusFilter>[] = [
+    { value: 'all', label: 'All', count: allItems.length },
+    { value: 'submitted', label: 'Submitted', count: submittedCount },
+    { value: 'published', label: 'Published', count: publishedCount },
+    { value: 'rejected', label: 'Rejected', count: rejectedCount },
+  ];
 
   return (
     <section className='w-full space-y-6'>
-      <div className='flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4'>
-        <div>
-          <h1 className='text-h1 text-text-primary'>Department Head Dashboard</h1>
-          <p className='mt-1 text-body-sm text-text-secondary'>
-            Review and publish professor schedule preferences
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title='Department Head Dashboard'
+        description='Review and publish professor schedule preferences for your department.'
+      />
 
-      <div className='flex w-fit gap-1 rounded-control border border-border bg-surface p-1'>
-        <button
-          type='button'
-          onClick={() => navigate('/department-head')}
-          className={cn(
-            'rounded-control px-3 py-1.5 text-body-sm font-medium transition-colors',
-            view === 'submissions'
-              ? 'bg-apple-green-50 text-apple-green-800'
-              : 'text-text-secondary hover:text-text-primary'
-          )}
-        >
-          Submissions
-        </button>
-        <button
-          type='button'
-          onClick={() => navigate('/department-head/assignments')}
-          className={cn(
-            'rounded-control px-3 py-1.5 text-body-sm font-medium transition-colors',
-            view === 'assignments'
-              ? 'bg-apple-green-50 text-apple-green-800'
-              : 'text-text-secondary hover:text-text-primary'
-          )}
-        >
-          Assignments
-        </button>
-      </div>
+      <SegmentedControl
+        label='Dashboard sections'
+        options={viewOptions}
+        value={view}
+        onChange={(next) =>
+          navigate(next === 'assignments' ? '/department-head/assignments' : '/department-head')
+        }
+        className='w-fit'
+      />
 
       {view === 'assignments' ? (
         <DepartmentCreateAssignment />
       ) : (
         <>
-      <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
-        <StatCard
-          icon={Clock}
-          label='Pending Review'
-          value={pendingCount}
-          hint='Submitted by professors'
-        />
-        <StatCard
-          icon={CheckCircle}
-          label='Published'
-          value={publishedCount}
-          hint='Ready for registrar generation'
-        />
-        <StatCard
-          icon={XCircle}
-          label='Rejected'
-          value={rejectedCount}
-          hint='Returned to professors'
-        />
-      </div>
+          <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
+            <StatCard
+              icon={Clock}
+              label='Pending review'
+              value={submittedCount}
+              hint='Submitted by professors'
+            />
+            <StatCard
+              icon={CheckCircle}
+              label='Published'
+              value={publishedCount}
+              hint='Ready for registrar generation'
+            />
+            <StatCard
+              icon={XCircle}
+              label='Rejected'
+              value={rejectedCount}
+              hint='Returned to professors'
+            />
+          </div>
 
-      {selectedIds.length > 0 && (
-        <Card className='bg-apple-green-50 border-apple-green-200'>
-          <div className='flex items-center justify-between'>
-            <span className='text-body-sm font-medium text-apple-green-800'>
-              {selectedIds.length} preference{selectedIds.length !== 1 ? 's' : ''} selected
-            </span>
-            <div className='flex gap-2'>
-              <Button variant='primary' size='sm' onClick={handlePublishSelected} disabled={batchMutation.isPending}>
-                Publish Selected
-              </Button>
-              <Button variant='danger' size='sm' onClick={handleRejectSelected} disabled={batchMutation.isPending}>
-                Reject Selected
-              </Button>
-              <Button variant='secondary' size='sm' onClick={() => setSelectedIds([])}>
-                Clear
-              </Button>
+          <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+            <div className='relative w-full sm:max-w-xs'>
+              <Search
+                size={16}
+                aria-hidden='true'
+                className='pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary'
+              />
+              <Input
+                aria-label='Search submissions'
+                placeholder='Search professor, subject, section'
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className='pl-9'
+              />
             </div>
+            <SegmentedControl
+              label='Filter by status'
+              options={statusOptions}
+              value={statusFilter}
+              onChange={setStatusFilter}
+              className='w-full sm:w-auto'
+            />
           </div>
-        </Card>
-      )}
 
-      <Card>
-        {isLoading ? (
-          <div className='p-8 text-center'>
-            <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-apple-green-600 mx-auto' />
-            <p className='mt-4 text-text-secondary'>Loading submissions...</p>
-          </div>
-        ) : (
-          <>
-            <Table>
-              <THead>
-                <TR>
-                  <TH className='w-12'>
-                    <input
-                      type='checkbox'
-                      onChange={(e) => handleSelectAll(e.target.checked)}
-                      disabled={!submissions?.length}
-                    />
-                  </TH>
-                  <TH>Professor</TH>
-                  <TH>Subject / Section</TH>
-                  <TH>Meetings</TH>
-                  <TH>Total Hours</TH>
-                  <TH className='w-32'>Status</TH>
-                  <TH className='w-48'>Actions</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {submissions?.length === 0 ? (
-                  <TR>
-                    <TD colSpan={7}>
-                      <EmptyState
-                        icon={ClipboardList}
-                        title='No submissions for the active term'
-                        description='Professor preference submissions will appear here once professors submit their preferences for review.'
-                      />
-                    </TD>
-                  </TR>
-                ) : (
-                  (submissions ?? []).flatMap((submission) =>
-                    submission.items.map((item) => (
-                      <TR key={item.preference.id}>
-                        <TD>
-                          <input
-                            type='checkbox'
-                            checked={selectedIds.includes(item.preference.id)}
-                            onChange={(e) => handleSelect(item.preference.id, e.target.checked)}
-                            disabled={item.preference.status === 'published' || item.preference.status === 'rejected'}
-                          />
-                        </TD>
-                        <TD>
-                          <div className='font-medium text-text-primary'>{item.preference.professor_name}</div>
-                          <div className='text-caption text-text-tertiary'>
-                            Professor
-                          </div>
-                        </TD>
-                        <TD>
-                          <div className='font-medium text-text-primary'>
-                            {item.preference.subject_code} - {item.preference.subject_title}
-                          </div>
-                          <div className='text-caption text-text-tertiary'>
-                            Section: {item.preference.section_name}
-                          </div>
-                        </TD>
-                        <TD>
-                          <div className='flex flex-wrap gap-1'>
-                            {item.preference.meetings.map((m, idx) => (
-                              <Badge key={idx} tone='neutral' size='sm'>
-                                {m.mode} ({m.duration_slots}h)
-                              </Badge>
-                            ))}
-                          </div>
-                        </TD>
-                        <TD className='font-medium'>{item.preference.total_duration}h</TD>
-                        <TD>
-                          <StatusBadge status={item.preference.status} />
-                        </TD>
-                        <TD>
-                          <div className='flex items-center gap-2'>
-                            {item.preference.status === 'submitted' && (
-                              <>
-                                <Button variant='primary' size='sm' onClick={() => publishMutation.mutate({ id: item.preference.id, action: 'publish', notes: '' }, { onSuccess: () => refetch() })} disabled={publishMutation.isPending}>
-                                  <Check size={14} className='mr-1' />
-                                  Publish
-                                </Button>
-                                <Button variant='danger' size='sm' onClick={() => publishMutation.mutate({ id: item.preference.id, action: 'reject', notes: '' }, { onSuccess: () => refetch() })} disabled={publishMutation.isPending}>
-                                  <X size={14} className='mr-1' />
-                                  Reject
-                                </Button>
-                              </>
-                            )}
-                            {item.preference.status === 'draft' && (
-                              <Badge tone='neutral' size='sm'>Draft</Badge>
-                            )}
-                            {item.preference.status === 'published' && (
-                              <Badge tone='success' size='sm'>
-                                <CheckCircle size={12} className='mr-1' />
-                                Published
-                              </Badge>
-                            )}
-                            {item.preference.status === 'rejected' && (
-                              <Badge tone='danger' size='sm'>
-                                <XCircle size={12} className='mr-1' />
-                                Rejected
-                              </Badge>
-                            )}
-                            <Tooltip content='View details'>
-                              <Button variant='ghost' size='sm' onClick={() => handleOpenReview(item.preference)} disabled={item.preference.status === 'draft'}>
-                                <Eye size={14} />
-                              </Button>
-                            </Tooltip>
-                          </div>
-                        </TD>
-                      </TR>
-                    ))
-                  )
-                )}
-              </TBody>
-            </Table>
-          </>
-        )}
-      </Card>
+          {selectedIds.length > 0 && (
+            <Card className='border-apple-green-200 bg-apple-green-50'>
+              <div className='flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between'>
+                <span className='text-body-sm font-medium text-apple-green-800'>
+                  {selectedIds.length} preference
+                  {selectedIds.length !== 1 ? 's' : ''} selected
+                </span>
+                <div className='flex flex-wrap gap-2'>
+                  <Button
+                    size='sm'
+                    onClick={handlePublishSelected}
+                    disabled={batchMutation.isPending}
+                  >
+                    Publish selected
+                  </Button>
+                  <Button
+                    size='sm'
+                    variant='danger'
+                    onClick={handleRejectSelected}
+                    disabled={batchMutation.isPending}
+                  >
+                    Reject selected
+                  </Button>
+                  <Button
+                    size='sm'
+                    variant='secondary'
+                    onClick={() => setSelectedIds([])}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          <Card className='overflow-hidden'>
+            {isLoading ? (
+              <div className='flex flex-col items-center justify-center gap-3 py-16'>
+                <div className='h-8 w-8 animate-spin rounded-full border-2 border-border border-t-apple-green-600' />
+                <p className='text-body-sm text-text-secondary'>
+                  Loading submissions…
+                </p>
+              </div>
+            ) : items.length === 0 ? (
+              <EmptyState
+                className='py-14'
+                icon={ClipboardList}
+                title={
+                  allItems.length === 0
+                    ? 'No submissions for the active term'
+                    : 'No preferences match your filters'
+                }
+                description={
+                  allItems.length === 0
+                    ? 'Professor preference submissions will appear here once professors submit their preferences for review.'
+                    : 'Try a different search term or status filter.'
+                }
+                action={
+                  allItems.length > 0 ? (
+                    <Button
+                      variant='secondary'
+                      onClick={() => {
+                        setQuery('');
+                        setStatusFilter('all');
+                      }}
+                    >
+                      Clear filters
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <TableContainer className='rounded-none border-0'>
+                <Table aria-label='Professor preference submissions'>
+                  <THead>
+                    <TR>
+                      <TH className='w-12'>
+                        <input
+                          ref={headerCheckboxRef}
+                          type='checkbox'
+                          aria-label='Select all submitted preferences'
+                          checked={allSelectableSelected}
+                          onChange={(e) => handleSelectAll(e.target.checked)}
+                          disabled={selectableItems.length === 0}
+                          className='h-4 w-4 rounded border-border-control accent-apple-green-600'
+                        />
+                      </TH>
+                      <TH>Professor</TH>
+                      <TH>Subject / Section</TH>
+                      <TH>Meetings</TH>
+                      <TH>Total hours</TH>
+                      <TH className='w-28'>Status</TH>
+                      <TH className='w-36 text-right'>Actions</TH>
+                    </TR>
+                  </THead>
+                  <TBody>
+                    {items.map((item) => {
+                      const pref = item.preference;
+                      const selectable = pref.status === 'submitted';
+                      return (
+                        <TR key={pref.id}>
+                          <TD>
+                            <input
+                              type='checkbox'
+                              aria-label={`Select ${pref.professor_name}'s ${pref.subject_code} preference`}
+                              checked={
+                                selectable && selectedIds.includes(pref.id)
+                              }
+                              onChange={(e) =>
+                                handleSelect(pref.id, e.target.checked)
+                              }
+                              disabled={!selectable}
+                              className='h-4 w-4 rounded border-border-control accent-apple-green-600'
+                            />
+                          </TD>
+                          <TD className='font-medium'>{pref.professor_name}</TD>
+                          <TD>
+                            <div className='font-medium text-text-primary'>
+                              {pref.subject_code} · {pref.subject_title}
+                            </div>
+                            <div className='text-caption text-text-tertiary'>
+                              {pref.section_name}
+                            </div>
+                          </TD>
+                          <TD>
+                            <div className='flex flex-wrap gap-1'>
+                              {pref.meetings.map((meeting, index) => (
+                                <Badge key={index} tone='neutral' size='sm'>
+                                  {MODE_LABEL[meeting.mode] ?? meeting.mode} ·{' '}
+                                  {meeting.duration_slots}h
+                                </Badge>
+                              ))}
+                            </div>
+                          </TD>
+                          <TD className='font-medium'>{pref.total_duration}h</TD>
+                          <TD>
+                            <StatusBadge status={pref.status} />
+                          </TD>
+                          <TD>
+                            <div className='flex items-center justify-end gap-1'>
+                              <IconButton
+                                label='View details'
+                                size='sm'
+                                onClick={() => handleOpenReview(pref)}
+                                disabled={pref.status === 'draft'}
+                              >
+                                <Eye size={16} />
+                              </IconButton>
+                              {pref.status === 'submitted' && (
+                                <>
+                                  <IconButton
+                                    label='Publish preference'
+                                    size='sm'
+                                    variant='primary'
+                                    onClick={() => handleQuickPublish(pref)}
+                                    disabled={publishMutation.isPending}
+                                  >
+                                    <Check size={16} />
+                                  </IconButton>
+                                  <IconButton
+                                    label='Reject preference'
+                                    size='sm'
+                                    variant='danger'
+                                    onClick={() =>
+                                      setRejectConfirm({
+                                        ids: [pref.id],
+                                        label: `${pref.professor_name}'s ${pref.subject_code} preference`,
+                                      })
+                                    }
+                                    disabled={batchMutation.isPending}
+                                  >
+                                    <X size={16} />
+                                  </IconButton>
+                                </>
+                              )}
+                            </div>
+                          </TD>
+                        </TR>
+                      );
+                    })}
+                  </TBody>
+                </Table>
+              </TableContainer>
+            )}
+          </Card>
+        </>
+      )}
 
       <Modal
         open={reviewModalOpen}
         onClose={() => setReviewModalOpen(false)}
-        title='Review Preference'
+        title='Review preference'
+        description='Confirm the details before publishing or rejecting this preference.'
         size='lg'
+        footer={
+          <div className='flex justify-end gap-2'>
+            <Button
+              variant='secondary'
+              onClick={() => setReviewModalOpen(false)}
+              disabled={publishMutation.isPending}
+            >
+              Close
+            </Button>
+            {reviewPreference?.status === 'submitted' && (
+              <Button
+                variant={reviewAction === 'publish' ? 'primary' : 'danger'}
+                onClick={handleReviewConfirm}
+                loading={publishMutation.isPending}
+              >
+                {reviewAction === 'publish' ? 'Publish' : 'Reject'}
+              </Button>
+            )}
+          </div>
+        }
       >
         {reviewPreference && (
-          <div className='space-y-4'>
-            <div className='grid grid-cols-2 gap-4'>
+          <div className='space-y-5'>
+            <div className='grid grid-cols-1 gap-4 sm:grid-cols-2'>
               <div>
                 <p className='text-caption text-text-tertiary'>Professor</p>
-                <p className='font-medium'>{reviewPreference.professor_name}</p>
+                <p className='text-body-sm font-medium text-text-primary'>
+                  {reviewPreference.professor_name}
+                </p>
               </div>
               <div>
-                <p className='text-caption text-text-tertiary'>Professor ID</p>
-                <p className='font-medium'>{reviewPreference.professor}</p>
+                <p className='text-caption text-text-tertiary'>Term</p>
+                <p className='text-body-sm font-medium text-text-primary'>
+                  {reviewPreference.term_code}
+                </p>
               </div>
               <div>
                 <p className='text-caption text-text-tertiary'>Subject</p>
-                <p className='font-medium'>{reviewPreference.subject_code} - {reviewPreference.subject_title}</p>
+                <p className='text-body-sm font-medium text-text-primary'>
+                  {reviewPreference.subject_code} · {reviewPreference.subject_title}
+                </p>
               </div>
               <div>
                 <p className='text-caption text-text-tertiary'>Section</p>
-                <p className='font-medium'>{reviewPreference.section_name}</p>
+                <p className='text-body-sm font-medium text-text-primary'>
+                  {reviewPreference.section_name}
+                </p>
               </div>
             </div>
 
             <Separator />
 
             <div>
-              <h4 className='text-body-sm font-medium mb-2'>Meetings</h4>
+              <h4 className='mb-2 text-body-sm font-medium text-text-primary'>
+                Meetings
+              </h4>
               <div className='space-y-2'>
-                {reviewPreference.meetings.map((m, idx) => (
-                  <div key={idx} className='p-3 bg-surface-secondary rounded-lg text-sm'>
-                    <div className='flex items-center justify-between'>
-                      <span className='font-medium'>{m.mode.toUpperCase()}</span>
-                      <span className='text-text-tertiary'>{m.duration_slots} hours</span>
+                {reviewPreference.meetings.map((meeting, index) => (
+                  <div
+                    key={index}
+                    className='rounded-control border border-border bg-surface-secondary p-3'
+                  >
+                    <div className='flex items-center justify-between gap-2'>
+                      <span className='text-body-sm font-medium text-text-primary'>
+                        {MODE_LABEL[meeting.mode] ?? meeting.mode}
+                      </span>
+                      <span className='text-caption text-text-tertiary'>
+                        {meeting.duration_slots} hour
+                        {meeting.duration_slots !== 1 ? 's' : ''}
+                      </span>
                     </div>
-                    {m.preferred_days?.length && (
-                      <div className='text-caption text-text-secondary mt-1'>
-                        Days: {m.preferred_days.map((d) => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d]).join(', ')}
-                      </div>
+                    {meeting.preferred_days && meeting.preferred_days.length > 0 && (
+                      <p className='mt-1 text-caption text-text-secondary'>
+                        {meeting.preferred_days
+                          .map((day) => DAY_LABELS[day])
+                          .join(', ')}
+                      </p>
                     )}
-                    {m.preferred_start && m.preferred_end && (
-                      <div className='text-caption text-text-secondary'>
-                        Time: {m.preferred_start} - {m.preferred_end}
-                      </div>
+                    {meeting.preferred_start && meeting.preferred_end && (
+                      <p className='text-caption text-text-secondary'>
+                        {meeting.preferred_start} – {meeting.preferred_end}
+                      </p>
                     )}
                   </div>
                 ))}
@@ -369,63 +622,74 @@ export default function DepartmentHeadDashboard() {
 
             <Separator />
 
-            <div>
-              <label className='block text-body-sm font-medium mb-1'>Action</label>
-              <div className='flex gap-3'>
-                <label className='flex items-center gap-2 cursor-pointer'>
-                  <input
-                    type='radio'
-                    value='publish'
-                    checked={reviewAction === 'publish'}
-                    onChange={() => setReviewAction('publish')}
-                    className='text-apple-green-600'
-                  />
-                  <span className='text-text-primary'>Publish</span>
-                </label>
-                <label className='flex items-center gap-2 cursor-pointer'>
-                  <input
-                    type='radio'
-                    value='reject'
-                    checked={reviewAction === 'reject'}
-                    onChange={() => setReviewAction('reject')}
-                    className='text-red-600'
-                  />
-                  <span className='text-text-primary'>Reject</span>
-                </label>
-              </div>
-            </div>
+            {reviewPreference.status === 'submitted' ? (
+              <>
+                <fieldset>
+                  <legend className='mb-2 block text-body-sm font-medium text-text-primary'>
+                    Decision
+                  </legend>
+                  <div className='flex gap-5'>
+                    <label className='flex cursor-pointer items-center gap-2'>
+                      <input
+                        type='radio'
+                        name='review-action'
+                        value='publish'
+                        checked={reviewAction === 'publish'}
+                        onChange={() => setReviewAction('publish')}
+                        className='accent-apple-green-600'
+                      />
+                      <span className='text-body-sm text-text-primary'>Publish</span>
+                    </label>
+                    <label className='flex cursor-pointer items-center gap-2'>
+                      <input
+                        type='radio'
+                        name='review-action'
+                        value='reject'
+                        checked={reviewAction === 'reject'}
+                        onChange={() => setReviewAction('reject')}
+                        className='accent-danger'
+                      />
+                      <span className='text-body-sm text-danger'>Reject</span>
+                    </label>
+                  </div>
+                </fieldset>
 
-            <div>
-              <label htmlFor='review-notes' className='block text-body-sm font-medium mb-1'>
-                Review Notes (optional)
-              </label>
-              <textarea
-                id='review-notes'
-                value={reviewNotes}
-                onChange={(e) => setReviewNotes(e.target.value)}
-                rows={3}
-                className='w-full p-3 border border-border-control rounded-control text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-apple-green-400'
-                placeholder='Add notes for the professor...'
-              />
-            </div>
-
-            <div className='flex justify-end gap-3 pt-4'>
-              <Button variant='secondary' onClick={() => setReviewModalOpen(false)} disabled={publishMutation.isPending}>
-                Cancel
-              </Button>
-              <Button
-                variant={reviewAction === 'publish' ? 'primary' : 'danger'}
-                onClick={handleReviewConfirm}
-                disabled={publishMutation.isPending}
+                <TextareaField
+                  id='review-notes'
+                  label='Review notes'
+                  hint='Optional. Shared with the professor when rejecting.'
+                  rows={3}
+                  value={reviewNotes}
+                  onChange={(e) => setReviewNotes(e.target.value)}
+                  placeholder='Add notes for the professor…'
+                />
+              </>
+            ) : (
+              <Alert
+                tone={
+                  reviewPreference.status === 'published'
+                    ? 'success'
+                    : reviewPreference.status === 'rejected'
+                      ? 'danger'
+                      : 'info'
+                }
+                title={`This preference is ${reviewPreference.status}`}
               >
-                {reviewAction === 'publish' ? 'Publish' : 'Reject'}
-              </Button>
-            </div>
+                It is no longer awaiting review, so no decision is needed.
+              </Alert>
+            )}
           </div>
         )}
       </Modal>
-        </>
-      )}
+
+      <ConfirmDialog
+        isOpen={Boolean(rejectConfirm)}
+        title='Reject preferences'
+        message={`Reject ${rejectConfirm?.label ?? ''}? The professor will be able to revise and resubmit.`}
+        confirmText='Reject'
+        onCancel={() => setRejectConfirm(null)}
+        onConfirm={confirmReject}
+      />
     </section>
   );
 }

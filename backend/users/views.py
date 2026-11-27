@@ -338,7 +338,7 @@ class ProfessorPreferenceSubmitView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        if pref.status != "draft":
+        if pref.status not in ("draft", "rejected"):
             return Response(
                 {"detail": f"Cannot submit preference with status '{pref.status}'."},
                 status=status.HTTP_400_BAD_REQUEST,

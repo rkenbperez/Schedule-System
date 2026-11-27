@@ -368,8 +368,8 @@ export default function RegistrarMasterDataPage() {
                 <th className='px-3 py-2'>#</th>
                 {tab === 'Departments' && (
                   <>
-                    <th className='px-3 py-2'>Name</th>
-                    <th className='px-3 py-2'>Head</th>
+                    <th className='px-3 py-2 whitespace-nowrap'>Name</th>
+                    <th className='px-3 py-2 whitespace-nowrap'>Head</th>
                   </>
                 )}
                 {tab === 'Professors' && (
@@ -435,48 +435,11 @@ export default function RegistrarMasterDataPage() {
                           {String(row.name ?? '')}
                         </td>
                         <td className='px-3 py-1 text-text-secondary truncate'>
-                          {String(row.head_name ?? '—')}
+                          {String(row.head_name || '—')}
                         </td>
                       </>
                     )}
-{tab === 'Departments' && (
-              <>
-                <div className='space-y-4'>
-                  <div className='flex flex-col gap-1.5'>
-                    <label className='text-sm font-medium text-text-secondary'>Department Name</label>
-                    <input
-                      name='name'
-                      type='text'
-                      defaultValue={drawer.mode === 'edit' ? String(drawer.item?.name ?? '') : ''}
-                      required
-                      autoComplete='off'
-                      className='h-10 rounded-lg border border-border bg-surface px-3 text-sm text-text-primary outline-none focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100 transition-colors'
-                      placeholder='Computer Science'
-                    />
-                  </div>
-                  <div className='flex flex-col gap-1.5'>
-                    <label className='text-sm font-medium text-text-secondary'>Department Head</label>
-                    <select
-                      name='head'
-                      defaultValue={drawer.mode === 'edit' ? String(drawer.item?.head ?? '') : ''}
-                      className='h-10 rounded-lg border border-border bg-surface px-3 text-sm text-text-primary outline-none focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100 transition-colors appearance-none pr-10'
-                    >
-                      <option value=''>No head assigned</option>
-                      {userList.map((user) => {
-                        const isCurrentHead = drawer.mode === 'edit' && drawer.item?.head === user.id;
-                        return (
-                          <option key={user.id} value={user.id}>
-                            {user.username} ({user.email}) {isCurrentHead ? ' (current)' : ''}
-                          </option>
-                        );
-                      })}
-                    </select>
-                    <p className='text-[10px] text-text-tertiary'>Optional. Select a user to be the department head.</p>
-                  </div>
-                </div>
-              </>
-            )}
-            {tab === 'Professors' && (
+{tab === 'Professors' && (
                       <>
                         <td className='px-3 py-1.5 text-text-primary truncate font-medium'>
                           {String(row.full_name ?? '')}
@@ -773,6 +736,54 @@ export default function RegistrarMasterDataPage() {
                       />
                       <p id='max-consec-hint' className='text-[10px] text-text-tertiary'>Maximum consecutive teaching hours (1-8).</p>
                     </div>
+                  </div>
+                </div>
+              </>
+            )}
+            {tab === 'Departments' && (
+              <>
+                <div className='grid grid-cols-1 gap-4 sm:grid-cols-2'>
+                  <div className='flex flex-col gap-1.5 sm:col-span-2'>
+                    <label className='text-xs font-medium text-text-secondary'>
+                      Department name
+                    </label>
+                    <input
+                      name='name'
+                      type='text'
+                      defaultValue={
+                        drawer.mode === 'edit'
+                          ? String(drawer.item?.name ?? '')
+                          : ''
+                      }
+                      required
+                      autoComplete='off'
+                      placeholder='Computer Science'
+                      className='h-10 rounded-lg border border-border bg-surface px-3 text-sm text-text-primary outline-none focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100 transition-colors'
+                    />
+                  </div>
+                  <div className='flex flex-col gap-1.5 sm:col-span-2'>
+                    <label className='text-xs font-medium text-text-secondary'>
+                      Department head
+                    </label>
+                    <select
+                      name='head'
+                      defaultValue={
+                        drawer.mode === 'edit'
+                          ? String(drawer.item?.head ?? '')
+                          : ''
+                      }
+                      className='h-10 rounded-lg border border-border bg-surface px-3 text-sm text-text-primary outline-none focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100 transition-colors'
+                    >
+                      <option value=''>No head assigned</option>
+                      {userList.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.username} ({user.email})
+                        </option>
+                      ))}
+                    </select>
+                    <p className='text-[10px] text-text-tertiary'>
+                      Optional. Select a user to lead this department.
+                    </p>
                   </div>
                 </div>
               </>
