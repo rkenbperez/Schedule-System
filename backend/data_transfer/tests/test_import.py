@@ -478,11 +478,11 @@ class ImportCommitTests(ImportTestCase):
     def test_commit_atomic_rollback_on_error(self):
         self.auth(self.reg_token)
         sheets = {
-            "Departments": [["id", "name"], [1, "Valid Dept"]],
-            "Rooms": [["id", "name", "capacity"], [1, "R101", 40]],
-            "Subjects": [["id", "code", "title"], [1, "CS101", "Intro"]],
-            "Sections": [["id", "name", "headcount"], [1, "BSIT-3A", 30]],
-            "Professors": [["id", "user_id"], [1, self.prof_user.id]],
+            "Departments": [["id", "code", "name"], [1, "VDEPT", "Valid Dept"]],
+            "Rooms": [["id", "name", "capacity", "department_id"], [1, "R101", 40, 1]],
+            "Subjects": [["id", "code", "title", "department_id"], [1, "CS101", "Intro", 1]],
+            "Sections": [["id", "name", "headcount", "department_id"], [1, "BSIT-3A", 30, 1]],
+            "Professors": [["id", "user_id", "department_id"], [1, self.prof_user.id, 1]],
             "Assignments": [["id", "professor_id", "subject_id", "section_id"], [1, 1, 1, 1]],
             "Meetings": [["id", "assignment_id", "order", "mode"], [1, 1, 1, "sync"]],
             "Availability": [["id", "professor_id", "day", "start_time", "end_time"]],
