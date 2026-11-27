@@ -13,7 +13,13 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from core.permissions import IsRegistrarOrReadOnly
 
-from .models import PasswordResetToken, Professors, ProfessorPreference, PreferenceSubmission
+from .models import (
+    PasswordResetToken,
+    Professors,
+    ProfessorPreference,
+    PreferenceSubmission,
+    SubmissionItem,
+)
 from .serializers import (
     LoginSerializer,
     PasswordResetConfirmSerializer,
@@ -347,7 +353,33 @@ class ProfessorPreferenceSubmitView(APIView):
         from django.utils import timezone
         pref.status = "submitted"
         pref.submitted_at = timezone.now()
-        pref.save(update_fields=["status", "submitted_at", "updated_at"])
+        # Clear stale rejection state from a previous review round.
+        pref.reviewed_by = None
+        pref.review_notes = ""
+        pref.save(
+            update_fields=[
+                "status",
+                "submitted_at",
+                "reviewed_by",
+                "review_notes",
+                "updated_at",
+            ]
+        )
+
+        # Surface the preference on the department head's review queue.
+        # Idempotent upsert: resubmissions reuse the same submission/item
+        # instead of creating duplicates.
+        if pref.professor.department_id:
+            submission, _ = PreferenceSubmission.objects.get_or_create(
+                department=pref.professor.department,
+                term=pref.term,
+                defaults={"submitted_by": request.user},
+            )
+            SubmissionItem.objects.update_or_create(
+                submission=submission,
+                preference=pref,
+                defaults={"action": "publish", "notes": ""},
+            )
 
         serializer = ProfessorPreferenceSerializer(pref, context={"request": request})
         return Response(serializer.data)
@@ -488,6 +520,10 @@ class DepartmentHeadPublishView(APIView):
         pref.reviewed_by = user
         pref.review_notes = notes
         pref.save(update_fields=["status", "published_at", "reviewed_by", "review_notes", "updated_at"])
+        pref.submission_items.update(
+            action="publish" if action == "publish" else "reject",
+            notes=notes,
+        )
 
         serializer = ProfessorPreferenceSerializer(pref, context={"request": request})
         return Response(serializer.data)
@@ -559,6 +595,10 @@ class DepartmentHeadBatchPublishView(APIView):
                 pref.reviewed_by = user
                 pref.review_notes = notes
                 pref.save(update_fields=["status", "published_at", "reviewed_by", "review_notes", "updated_at"])
+                pref.submission_items.update(
+                    action="publish" if action == "publish" else "reject",
+                    notes=notes,
+                )
                 updated += 1
 
         serializer = ProfessorPreferenceSerializer(prefs, many=True, context={"request": request})

@@ -254,7 +254,7 @@ export default function DepartmentCreateAssignment() {
                 name='professor_id'
                 label='Professor'
                 required
-                disabled={!canSubmit || isLoadingProfessors}
+                disabled={isLoadingProfessors || professors.length === 0}
                 hint={
                   isLoadingProfessors
                     ? 'Loading professors…'
@@ -277,7 +277,7 @@ export default function DepartmentCreateAssignment() {
                 name='subject_id'
                 label='Subject'
                 required
-                disabled={!canSubmit || isLoadingSubjects}
+                disabled={isLoadingSubjects || subjects.length === 0}
                 hint={
                   isLoadingSubjects
                     ? 'Loading subjects…'
