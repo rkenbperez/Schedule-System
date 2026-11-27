@@ -2,7 +2,8 @@
 // Unified master data management for the registrar: Professors, Rooms,
 // Courses (Subjects) and Sections. Each tab is a searchable table with Add /
 // Edit / Delete via SlideOverDrawer and ConfirmDialog.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, Edit2, Search, X as XIcon, Mail, Lock, Building2, Clock, Timer } from 'lucide-react';
 import {
   useCourses,
@@ -46,10 +47,40 @@ type Tab =
   | 'Subjects'
   | 'Sections';
 
+const TAB_SLUGS: Record<Tab, string> = {
+  Departments: 'departments',
+  Professors: 'professors',
+  Rooms: 'rooms',
+  Subjects: 'subjects',
+  Sections: 'sections',
+};
+
+function tabFromSlug(value: string | null): Tab | null {
+  const slug = (value ?? '').toLowerCase();
+  const match = (Object.keys(TAB_SLUGS) as Tab[]).find(
+    (tab) => TAB_SLUGS[tab] === slug
+  );
+  return match ?? null;
+}
+
 type SimpleUser = { id: number; username: string; email: string };
 
 export default function RegistrarMasterDataPage() {
-  const [tab, setTab] = useState<Tab>('Professors');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const [tab, setTab] = useState<Tab>(
+    () => tabFromSlug(tabParam) ?? 'Professors'
+  );
+
+  useEffect(() => {
+    const next = tabFromSlug(tabParam);
+    if (next && next !== tab) setTab(next);
+  }, [tabParam, tab]);
+
+  const selectTab = (next: Tab) => {
+    setTab(next);
+    setSearchParams({ tab: TAB_SLUGS[next] });
+  };
   const [search, setSearch] = useState('');
   const [drawer, setDrawer] = useState<{
     open: boolean;
@@ -326,7 +357,7 @@ export default function RegistrarMasterDataPage() {
             <button
               key={t}
               type='button'
-              onClick={() => setTab(t as Tab)}
+              onClick={() => selectTab(t as Tab)}
               className={`px-3 py-1.5 text-xs font-medium rounded-md transition border ${
                 isActive(t as Tab)
                   ? 'bg-apple-green-100 text-apple-green-700 border-apple-green-200'

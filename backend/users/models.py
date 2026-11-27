@@ -88,6 +88,8 @@ class ProfessorPreference(models.Model):
         Section,
         on_delete=models.CASCADE,
         related_name="professor_preferences",
+        null=True,
+        blank=True,
     )
     term = models.ForeignKey(
         "timetable.AcademicTerm",
@@ -95,6 +97,7 @@ class ProfessorPreference(models.Model):
         related_name="professor_preferences",
     )
 
+    priority = models.PositiveSmallIntegerField(default=0)
     meetings = models.JSONField(default=list)
 
     status = models.CharField(
@@ -127,7 +130,8 @@ class ProfessorPreference(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.professor} - {self.subject.code} ({self.section.name}) [{self.status}]"
+        section = f" ({self.section.name})" if self.section_id else ""
+        return f"{self.professor} - {self.subject.code}{section} [{self.status}]"
 
     def clean(self):
         from django.core.exceptions import ValidationError
@@ -166,6 +170,8 @@ class PreferenceSubmission(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name="submitted_batches",
+        null=True,
+        blank=True,
     )
     submitted_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(

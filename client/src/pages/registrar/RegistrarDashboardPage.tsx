@@ -161,7 +161,7 @@ export default function RegistrarDashboardPage() {
         actions={
           <>
             <LinkButton
-              to='/registrar/master-data'
+              to='/registrar/master-data?tab=professors'
               variant='secondary'
               icon={<Plus size={17} aria-hidden='true' />}
             >

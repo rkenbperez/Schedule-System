@@ -26,15 +26,18 @@ SHEET_MODELS = [
     "Subjects",
     "Sections",
     "Professors",
+    "ProfessorPreferences",
     "Assignments",
     "Meetings",
     "Availability",
     "BusyBlocks",
 ]
 
-# The generated template contains only the 5 core sheets (+ Instructions).
+# The generated template contains the 5 core sheets plus the optional
+# ProfessorPreferences sheet (+ Instructions).
 # The 4 legacy sheets remain accepted on upload for older 9-sheet workbooks.
 TEMPLATE_SHEETS = ["Departments", "Rooms", "Subjects", "Sections", "Professors"]
+TEMPLATE_ALL_SHEETS = [*TEMPLATE_SHEETS, "ProfessorPreferences"]
 
 REQUIRED_COLUMNS = {
     "Departments": ["name"],
@@ -43,6 +46,7 @@ REQUIRED_COLUMNS = {
     "Sections": ["name", "headcount"],
     # Professors rows need email OR (legacy) user_id; enforced in _validate_rows.
     "Professors": [],
+    "ProfessorPreferences": ["professor_email", "subject_code"],
     "Assignments": ["professor_id", "subject_id", "section_id"],
     "Meetings": ["assignment_id", "order", "mode"],
     "Availability": ["professor_id", "day", "start_time", "end_time"],
@@ -64,6 +68,7 @@ OPTIONAL_COLUMNS = {
         "max_consecutive",
         "user_id",
     ],
+    "ProfessorPreferences": ["priority"],
     "Assignments": ["term_id"],
     "Meetings": ["duration_slots"],
     "Availability": ["is_preferred"],
@@ -101,6 +106,11 @@ TEMPLATE_COLUMNS["Professors"] = [
     "department_id",
     "max_hours",
     "max_consecutive",
+]
+TEMPLATE_COLUMNS["ProfessorPreferences"] = [
+    "professor_email",
+    "subject_code",
+    "priority",
 ]
 
 # Read-only display columns appended AFTER the input columns in the XLSX
@@ -156,6 +166,11 @@ TEMPLATE_COLUMN_GUIDE = {
         ("max_hours", "Optional", "Maximum teaching hours per day; positive integer, defaults to 8."),
         ("max_consecutive", "Optional", "Positive integer; defaults to 4."),
     ],
+    "ProfessorPreferences": [
+        ("professor_email", "Required", "Professor's email (case-insensitive). Matches a professor already in the database or one created on the Professors sheet of this workbook."),
+        ("subject_code", "Required", "Subject code (case-insensitive). Matches a subject already in the database or one created on the Subjects sheet of this workbook."),
+        ("priority", "Optional", "Positive integer preference order for that professor. Leave blank to number the rows sequentially per professor."),
+    ],
 }
 
 TEMPLATE_GENERAL_NOTES = [
@@ -173,6 +188,7 @@ TEMPLATE_GENERAL_NOTES = [
     "Sections 'program' is optional (max 20 characters): leave it blank to derive it from the section name (e.g., 'BSCS 3-A' becomes BSCS).",
     "Professors are matched by email (case-insensitive): a new email creates the login account and profile; an existing email updates that professor. Passwords are never set or reset by an import.",
     "The 'department_name' columns (Rooms and Professors) auto-fill by formula once a valid department_id is entered; do not edit them.",
+    "ProfessorPreferences is optional: list one preferred subject per row. An active academic term is required when it has rows.",
     "Legacy 9-sheet workbooks that also include Assignments, Meetings, Availability, and BusyBlocks sheets are still accepted on upload.",
 ]
 
@@ -481,6 +497,25 @@ class ImportProcessor:
                         f"Missing required header(s): {', '.join(missing)}",
                     )
                 )
+        # ProfessorPreferences is optional; when present its headers must be valid.
+        if "ProfessorPreferences" in present:
+            normalized = set(headers.get("ProfessorPreferences") or [])
+            missing = [
+                col
+                for col in REQUIRED_COLUMNS["ProfessorPreferences"]
+                if col not in normalized
+            ]
+            if missing:
+                structure_ok = False
+                result.valid = False
+                result.errors.append(
+                    ImportError(
+                        "ProfessorPreferences",
+                        0,
+                        "sheet",
+                        f"Missing required header(s): {', '.join(missing)}",
+                    )
+                )
         return structure_ok
 
     def _validate_rows(self, parsed_data: dict, result: ImportResult):
@@ -592,9 +627,36 @@ class ImportProcessor:
                             result.errors.append(
                                 ImportError(sheet_name, row_num, col, "Program must be 20 characters or fewer")
                             )
+                    elif sheet_name == "ProfessorPreferences" and col == "professor_email":
+                        sval = normalize_email(str(val) if val is not None else "")
+                        if not sval:
+                            # Truly empty cells are already reported by the
+                            # required-field check; only whitespace slips past it.
+                            if str(val or "").strip():
+                                result.valid = False
+                                result.errors.append(
+                                    ImportError(sheet_name, row_num, col, "Required field 'professor_email' is empty")
+                                )
+                        else:
+                            try:
+                                validate_email(sval)
+                            except DjangoValidationError:
+                                result.valid = False
+                                result.errors.append(
+                                    ImportError(sheet_name, row_num, col, f"Invalid email '{val}'")
+                                )
+                    elif sheet_name == "ProfessorPreferences" and col == "priority":
+                        if val is not None and str(val).strip() != "":
+                            ival = parse_int(val)
+                            if ival is None or ival <= 0:
+                                result.valid = False
+                                result.errors.append(
+                                    ImportError(sheet_name, row_num, col, "Priority must be positive integer")
+                                )
 
     def _validate_cross_model(self, parsed_data: dict, result: ImportResult):
-        from catalog.models import Department
+        from catalog.models import Department, Subject
+        from timetable.models import AcademicTerm
 
         # department_id must reference a department that already exists in
         # the database. Ids defined only in this workbook's Departments sheet
@@ -655,6 +717,80 @@ class ImportProcessor:
                             row_num,
                             "email",
                             f"Email '{email}' does not match the existing professor {pid} account email",
+                        )
+                    )
+
+        # ProfessorPreferences resolve professors and subjects by email/code,
+        # accepting both database rows and rows created by this workbook.
+        pref_rows = parsed_data.get("ProfessorPreferences", [])
+        if pref_rows:
+            workbook_emails = {
+                normalize_email(str(row.get("email") or ""))
+                for row in parsed_data.get("Professors", [])
+            }
+            known_emails = workbook_emails | {
+                normalize_email(email)
+                for email in Professors.objects.filter(
+                    user__email__isnull=False
+                ).values_list("user__email", flat=True)
+            }
+            known_emails.discard("")
+            known_codes = {
+                str(row.get("code") or "").strip().casefold()
+                for row in parsed_data.get("Subjects", [])
+            } | {
+                code.casefold()
+                for code in Subject.objects.values_list("code", flat=True)
+            }
+            has_active_term = AcademicTerm.objects.filter(is_active=True).exists()
+            seen_pairs = {}
+            for row in pref_rows:
+                row_num = row.get("_row_num", 0)
+                email = normalize_email(str(row.get("professor_email") or ""))
+                code = str(row.get("subject_code") or "").strip()
+                if email and email not in known_emails:
+                    result.valid = False
+                    result.errors.append(
+                        ImportError(
+                            "ProfessorPreferences",
+                            row_num,
+                            "professor_email",
+                            f"Professor with email '{email}' not found",
+                        )
+                    )
+                if code and code.casefold() not in known_codes:
+                    result.valid = False
+                    result.errors.append(
+                        ImportError(
+                            "ProfessorPreferences",
+                            row_num,
+                            "subject_code",
+                            f"Subject '{code}' not found",
+                        )
+                    )
+                if email and code:
+                    key = (email, code.casefold())
+                    if key in seen_pairs:
+                        result.valid = False
+                        result.errors.append(
+                            ImportError(
+                                "ProfessorPreferences",
+                                row_num,
+                                "subject_code",
+                                f"Duplicate professor '{email}' and subject '{code}' "
+                                f"(also on row {seen_pairs[key]})",
+                            )
+                        )
+                    else:
+                        seen_pairs[key] = row_num
+                if not has_active_term:
+                    result.valid = False
+                    result.errors.append(
+                        ImportError(
+                            "ProfessorPreferences",
+                            row_num,
+                            "term",
+                            "No active AcademicTerm found. Mark a term active before importing preferences.",
                         )
                     )
 
@@ -776,6 +912,7 @@ class ImportProcessor:
             "Subjects": ["code", "title", "units"],
             "Sections": ["name", "headcount", "program", "year_level", "term_id"],
             "Professors": ["email", "first_name", "last_name", "department_id", "max_hours"],
+            "ProfessorPreferences": ["professor_email", "subject_code", "priority"],
             "Assignments": ["professor_id", "subject_id", "section_id", "term_id"],
             "Meetings": ["assignment_id", "order", "mode", "duration_slots"],
             "Availability": ["professor_id", "day", "start_time", "end_time", "is_preferred"],
@@ -882,6 +1019,64 @@ class ImportProcessor:
                     "count": creates + updates,
                 })
 
+        pref_rows = parsed_data.get("ProfessorPreferences", [])
+        if pref_rows:
+            from timetable.models import AcademicTerm
+            from users.models import ProfessorPreference
+
+            active_term = AcademicTerm.objects.filter(is_active=True).first()
+            creates = 0
+            updates = 0
+            items = []
+            for row in pref_rows:
+                row_num = row.get("_row_num", 0)
+                row_errors = list(error_lookup.get(("ProfessorPreferences", row_num), []))
+                email = normalize_email(str(row.get("professor_email") or ""))
+                code = str(row.get("subject_code") or "").strip()
+                if row_errors or not active_term:
+                    action = "error"
+                else:
+                    prof = Professors.objects.filter(
+                        user__email__iexact=email
+                    ).first()
+                    subject = Subject.objects.filter(code__iexact=code).first()
+                    exists = (
+                        prof
+                        and subject
+                        and ProfessorPreference.objects.filter(
+                            professor=prof,
+                            subject=subject,
+                            section__isnull=True,
+                            term=active_term,
+                        ).exists()
+                    )
+                    if exists:
+                        action = "update"
+                        updates += 1
+                    else:
+                        action = "create"
+                        creates += 1
+                data = {}
+                for field in display_fields["ProfessorPreferences"]:
+                    val = row.get(field)
+                    if val is not None and val != "":
+                        data[field] = val
+                items.append({
+                    "row": row_num,
+                    "action": action,
+                    "errors": row_errors,
+                    "data": data,
+                })
+            result.summary["creates"] += creates
+            result.summary["updates"] += updates
+            result.preview_items["ProfessorPreferences"] = items
+            if creates or updates:
+                result.details.append({
+                    "model": "ProfessorPreferences",
+                    "action": "create" if creates and not updates else ("update" if updates and not creates else "mixed"),
+                    "count": creates + updates,
+                })
+
     @staticmethod
     def _ensure_pk_exists(model, pk) -> int:
         """Defensive guard: a provided id must reference an existing row.
@@ -896,7 +1091,12 @@ class ImportProcessor:
             raise ValueError(f"{model.__name__} id {pk} does not exist")
         return pk_num
 
-    def commit(self, preview_token: str, selected_keys: list[str] | None = None) -> CommitResult:
+    def commit(
+        self,
+        preview_token: str,
+        selected_keys: list[str] | None = None,
+        submitted_by=None,
+    ) -> CommitResult:
         cached = cache.get(f"import_preview_{preview_token}")
         if not cached:
             return CommitResult(committed=False, errors=[{"message": "Preview token expired or invalid"}])
@@ -931,9 +1131,20 @@ class ImportProcessor:
         try:
             from django.db import transaction
             from catalog.models import Department, Room, Subject, Section
-            from users.models import Professors
+            from users.models import (
+                PreferenceSubmission,
+                ProfessorPreference,
+                Professors,
+                SubmissionItem,
+            )
             from users.services import provision_professor
-            from timetable.models import Assignment, MeetingSlot, AvailabilityWindow, BusyBlock
+            from timetable.models import (
+                AcademicTerm,
+                Assignment,
+                MeetingSlot,
+                AvailabilityWindow,
+                BusyBlock,
+            )
             from django.contrib.auth import get_user_model
 
             User = get_user_model()
@@ -1068,6 +1279,82 @@ class ImportProcessor:
                     else:
                         result.summary["updates"] += 1
 
+                # ProfessorPreferences (optional sheet). Runs after Professors
+                # and Subjects so workbook-created rows exist in the database.
+                pref_rows = parsed_data.get("ProfessorPreferences", [])
+                if pref_rows:
+                    from django.db.models import Max
+
+                    active_term = AcademicTerm.objects.filter(is_active=True).first()
+                    if active_term is None:
+                        raise ValueError(
+                            "No active AcademicTerm found. Mark a term active "
+                            "before importing preferences."
+                        )
+                    next_priority = {}
+                    submissions = {}
+                    for row in pref_rows:
+                        email = normalize_email(
+                            str(row.get("professor_email") or "")
+                        )
+                        code = str(row.get("subject_code") or "").strip()
+                        prof = Professors.objects.select_related("user").filter(
+                            user__email__iexact=email
+                        ).first()
+                        if prof is None:
+                            raise ValueError(
+                                f"Professor with email '{email}' not found"
+                            )
+                        subject = Subject.objects.filter(code__iexact=code).first()
+                        if subject is None:
+                            raise ValueError(f"Subject '{code}' not found")
+
+                        if prof.pk not in next_priority:
+                            highest = (
+                                ProfessorPreference.objects.filter(
+                                    professor=prof,
+                                    term=active_term,
+                                    section__isnull=True,
+                                ).aggregate(Max("priority"))["priority__max"]
+                                or 0
+                            )
+                            next_priority[prof.pk] = highest + 1
+                        priority = parse_int(row.get("priority"))
+                        if priority is None:
+                            priority = next_priority[prof.pk]
+                        next_priority[prof.pk] = max(
+                            next_priority[prof.pk], priority + 1
+                        )
+
+                        pref, created = ProfessorPreference.objects.update_or_create(
+                            professor=prof,
+                            subject=subject,
+                            section=None,
+                            term=active_term,
+                            defaults={"priority": priority},
+                        )
+                        if created:
+                            result.summary["creates"] += 1
+                        else:
+                            result.summary["updates"] += 1
+
+                        if prof.department_id:
+                            submission = submissions.get(prof.department_id)
+                            if submission is None:
+                                submission, _ = (
+                                    PreferenceSubmission.objects.get_or_create(
+                                        department_id=prof.department_id,
+                                        term=active_term,
+                                        defaults={"submitted_by": submitted_by},
+                                    )
+                                )
+                                submissions[prof.department_id] = submission
+                            SubmissionItem.objects.update_or_create(
+                                submission=submission,
+                                preference=pref,
+                                defaults={"action": "publish", "notes": ""},
+                            )
+
                 # Assignments (legacy sheet: a typed id creates that record)
                 for row in parsed_data.get("Assignments", []):
                     pk = row.get("id")
@@ -1183,8 +1470,8 @@ class ImportProcessor:
         section_font = Font(bold=True, color="1B5E20")
         ro_fill = PatternFill("solid", fgColor="ECEFF1")
 
-        for sheet_name in TEMPLATE_SHEETS:
-            if sheet_name == TEMPLATE_SHEETS[0]:
+        for sheet_name in TEMPLATE_ALL_SHEETS:
+            if sheet_name == TEMPLATE_ALL_SHEETS[0]:
                 ws = wb.active
                 ws.title = sheet_name
             else:
@@ -1250,7 +1537,7 @@ class ImportProcessor:
     def generate_template_csv_zip(self) -> bytes:
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for sheet_name in TEMPLATE_SHEETS:
+            for sheet_name in TEMPLATE_ALL_SHEETS:
                 # Header rows only (no sample data). Input columns only: the
                 # formula display columns exist only in the XLSX template.
                 columns = TEMPLATE_COLUMNS[sheet_name]
@@ -1344,6 +1631,15 @@ class ImportProcessor:
                 "Units must be a positive integer.",
             )
 
+        if sheet_name == "ProfessorPreferences":
+            self._add_positive_int_validation(
+                ws,
+                columns,
+                "priority",
+                "Invalid priority",
+                "Priority must be a positive integer.",
+            )
+
         if sheet_name == "Professors":
             self._add_department_dropdown(ws, columns)
             self._add_positive_int_validation(
@@ -1390,7 +1686,7 @@ class ImportProcessor:
             "Use this workbook as a starting point. Every sheet is header-only: type your data starting in row 2.",
             "Departments, rooms, subjects, sections, and professors. The hidden _Lists sheet feeds the department_id dropdowns on Rooms and Professors.",
             "Sheet order (the importer processes sheets in this order): "
-            + " -> ".join(TEMPLATE_SHEETS),
+            + " -> ".join(TEMPLATE_ALL_SHEETS),
             "Legacy 9-sheet workbooks that also include Assignments, Meetings, Availability, and BusyBlocks sheets are still accepted on upload.",
         ]
         for line in intro_lines:
@@ -1446,7 +1742,7 @@ class ImportProcessor:
             header_cell.alignment = Alignment(vertical="center")
         row += 1
 
-        for sheet_name in TEMPLATE_SHEETS:
+        for sheet_name in TEMPLATE_ALL_SHEETS:
             for col_name, required, description in TEMPLATE_COLUMN_GUIDE[
                 sheet_name
             ]:
@@ -1467,11 +1763,11 @@ class ImportProcessor:
             "",
             "CSV bundle: this ZIP contains one CSV file per sheet, headers only. A single .csv upload is not supported.",
             "Keep the exact file names: "
-            + ", ".join(f"{name}.csv" for name in TEMPLATE_SHEETS)
+            + ", ".join(f"{name}.csv" for name in TEMPLATE_ALL_SHEETS)
             + ".",
             "Row 1 is the header row; data starts in row 2.",
             "Sheet order: "
-            + " -> ".join(TEMPLATE_SHEETS),
+            + " -> ".join(TEMPLATE_ALL_SHEETS),
             "Legacy 9-sheet workbooks (Assignments/Meetings/Availability/BusyBlocks sheets) are still accepted on upload.",
             "",
             "General rules:",
@@ -1479,7 +1775,7 @@ class ImportProcessor:
         lines.extend(f"- {note}" for note in TEMPLATE_GENERAL_NOTES)
         lines.extend(["", "Column guide:"])
 
-        for sheet_name in TEMPLATE_SHEETS:
+        for sheet_name in TEMPLATE_ALL_SHEETS:
             lines.extend(["", f"[{sheet_name}]"])
             for col_name, required, description in TEMPLATE_COLUMN_GUIDE[
                 sheet_name

@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { createBrowserRouter, Navigate, useLocation } from 'react-router-dom';
 import Login from './pages/login/Login';
 import ResetPasswordPage from './pages/login/ResetPasswordPage';
 import TeacherLayout from './layouts/TeacherLayout';
@@ -26,6 +26,17 @@ import RegistrarMasterDataPage from './pages/registrar/RegistrarMasterDataPage';
 import EngineTestPage from './pages/registrar/EngineTestPage';
 import { RequireAuth } from './components/shared/RequireAuth';
 import NotFound from './pages/NotFound';
+
+function LegacyRegistrarDashboardRedirect() {
+  const { search } = useLocation();
+  const tab = new URLSearchParams(search).get('tab');
+  return (
+    <Navigate
+      to={tab ? `/registrar/master-data?tab=${encodeURIComponent(tab)}` : '/registrar'}
+      replace
+    />
+  );
+}
 
 const Router = createBrowserRouter([
   {
@@ -128,7 +139,7 @@ const Router = createBrowserRouter([
       },
       {
         path: 'dashboard',
-        element: <Navigate to='/registrar' replace />,
+        element: <LegacyRegistrarDashboardRedirect />,
       },
       {
         path: 'schedule-management',
