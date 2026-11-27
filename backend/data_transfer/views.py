@@ -179,7 +179,7 @@ class ImportCommitView(APIView):
         if selected_keys is not None and not isinstance(selected_keys, list):
             return Response({"detail": "selected_keys must be a list"}, status=status.HTTP_400_BAD_REQUEST)
 
-        result = processor.commit(preview_token, selected_keys)
+        result = processor.commit(preview_token, selected_keys, submitted_by=request.user)
 
         if result.committed:
             return Response({

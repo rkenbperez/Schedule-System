@@ -2,7 +2,7 @@ import io
 import csv
 import zipfile
 from io import BytesIO
-from datetime import time as dtime
+from datetime import date, time as dtime
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
@@ -12,13 +12,19 @@ from rest_framework.test import APITestCase
 
 from catalog.models import Department, Room, Section, Subject
 from timetable.models import (
+    AcademicTerm,
     Assignment,
     AvailabilityWindow,
     BusyBlock,
     GlobalSettings,
     MeetingSlot,
 )
-from users.models import Professors
+from users.models import (
+    PreferenceSubmission,
+    ProfessorPreference,
+    Professors,
+    SubmissionItem,
+)
 
 from data_transfer.import_utils import (
     TEMPLATE_SHEETS,
@@ -478,13 +484,13 @@ class ImportCommitTests(ImportTestCase):
     def test_commit_atomic_rollback_on_error(self):
         self.auth(self.reg_token)
         sheets = {
-            "Departments": [["id", "code", "name"], [1, "VDEPT", "Valid Dept"]],
-            "Rooms": [["id", "name", "capacity", "department_id"], [1, "R101", 40, 1]],
-            "Subjects": [["id", "code", "title", "department_id"], [1, "CS101", "Intro", 1]],
-            "Sections": [["id", "name", "headcount", "department_id"], [1, "BSIT-3A", 30, 1]],
-            "Professors": [["id", "user_id", "department_id"], [1, self.prof_user.id, 1]],
-            "Assignments": [["id", "professor_id", "subject_id", "section_id"], [1, 1, 1, 1]],
-            "Meetings": [["id", "assignment_id", "order", "mode"], [1, 1, 1, "sync"]],
+            "Departments": [["id", "code", "name"], [self.dept.id, "VDEPT", "Valid Dept"]],
+            "Rooms": [["id", "name", "capacity", "department_id"], [self.room.id, "R101", 40, self.dept.id]],
+            "Subjects": [["id", "code", "title", "department_id"], [self.subject.id, "CS101", "Intro", self.dept.id]],
+            "Sections": [["id", "name", "headcount", "department_id"], [self.section.id, "BSIT-3A", 30, self.dept.id]],
+            "Professors": [["id", "user_id", "department_id"], [self.prof.id, self.prof_user.id, self.dept.id]],
+            "Assignments": [["id", "professor_id", "subject_id", "section_id"], [self.assignment.id, self.prof.id, self.subject.id, self.section.id]],
+            "Meetings": [["id", "assignment_id", "order", "mode"], [None, self.assignment.id, 1, "sync"]],
             "Availability": [["id", "professor_id", "day", "start_time", "end_time"]],
             "BusyBlocks": [["id", "professor_id", "day", "start_time", "end_time"]],
         }
@@ -1062,7 +1068,7 @@ class ImportTemplateTests(ImportTestCase):
         wb = load_workbook(BytesIO(content))
         self.assertEqual(set(wb.sheetnames), set([
             "Departments", "Rooms", "Subjects", "Sections", "Professors",
-            "Instructions", "_Lists",
+            "ProfessorPreferences", "Instructions", "_Lists",
         ]))
         self.assertEqual(wb["_Lists"].sheet_state, "hidden")
 
@@ -1159,8 +1165,9 @@ class ImportTemplateTests(ImportTestCase):
                 # Header rows only: no sample data rows.
                 lines = zf.read(f"{sheet}.csv").decode("utf-8").strip().splitlines()
                 self.assertEqual(len(lines), 1, sheet)
+            self.assertIn("ProfessorPreferences.csv", names)
             self.assertIn("Instructions.txt", names)
-            self.assertEqual(len(names), 6)  # 5 CSVs + Instructions.txt
+            self.assertEqual(len(names), 7)  # 6 CSVs + Instructions.txt
 
             instructions = zf.read("Instructions.txt").decode("utf-8")
             for statement in REQUIRED_INSTRUCTION_STATEMENTS:
@@ -1200,11 +1207,16 @@ class ImportProcessorUnitTests(ImportTestCase):
         wb = load_workbook(BytesIO(content))
         self.assertEqual(set(wb.sheetnames), set([
             "Departments", "Rooms", "Subjects", "Sections", "Professors",
-            "Instructions", "_Lists",
+            "ProfessorPreferences", "Instructions", "_Lists",
         ]))
         self.assertEqual(wb["_Lists"].sheet_state, "hidden")
 
         # All five core sheets are headers-only (no data rows).
+        self.assertEqual(
+            [c.value for c in wb["ProfessorPreferences"][1]],
+            ["professor_email", "subject_code", "priority"],
+        )
+        self.assertEqual(wb["ProfessorPreferences"].max_row, 1)
         for sheet_name in ["Departments", "Subjects", "Sections"]:
             self.assertEqual(wb[sheet_name].max_row, 1)
 
@@ -1276,13 +1288,13 @@ class ImportProcessorUnitTests(ImportTestCase):
         content = processor.generate_template_csv_zip()
         with zipfile.ZipFile(BytesIO(content), "r") as zf:
             names = zf.namelist()
-            for sheet in ["Departments", "Rooms", "Subjects", "Sections", "Professors"]:
+            for sheet in ["Departments", "Rooms", "Subjects", "Sections", "Professors", "ProfessorPreferences"]:
                 self.assertIn(f"{sheet}.csv", names)
                 # Header rows only: no sample data rows.
                 lines = zf.read(f"{sheet}.csv").decode("utf-8").strip().splitlines()
                 self.assertEqual(len(lines), 1, sheet)
             self.assertIn("Instructions.txt", names)
-            self.assertEqual(len(names), 6)  # 5 CSVs + Instructions.txt
+            self.assertEqual(len(names), 7)  # 6 CSVs + Instructions.txt
 
     def test_csv_zip_parsing(self):
         sheets = {
@@ -1451,3 +1463,143 @@ class ImportTemplateBehaviorTests(ImportTestCase):
             '=IFERROR(IF($E501="","",INDEX(Departments!$B:$B,'
             'MATCH($E501,Departments!$A:$A,0))),"")',
         )
+
+
+class ImportProfessorPreferencesTests(ImportTestCase):
+    def _active_term(self):
+        return AcademicTerm.objects.create(
+            year=2026,
+            semester=1,
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 5, 1),
+            is_active=True,
+        )
+
+    def _sheets(self, pref_rows, subject_rows=None, professor_rows=None):
+        return {
+            "Departments": [["id", "name"], [self.dept.id, "CS"]],
+            "Rooms": [["id", "name", "capacity"]],
+            "Subjects": [
+                ["id", "code", "title"],
+                [self.subject.id, "CS101", "Intro"],
+                *(subject_rows or []),
+            ],
+            "Sections": [["id", "name", "headcount"]],
+            "Professors": [
+                ["id", "email", "department_id"],
+                *(professor_rows or []),
+            ],
+            "ProfessorPreferences": [
+                ["professor_email", "subject_code", "priority"],
+                *pref_rows,
+            ],
+        }
+
+    def test_multi_subject_preferences_preview_and_commit(self):
+        self.auth(self.reg_token)
+        term = self._active_term()
+        sheets = self._sheets(
+            [
+                ["pref.prof@example.com", "CS101", None],
+                ["PREF.PROF@example.com", "MATH101", None],
+            ],
+            subject_rows=[[None, "MATH101", "Calculus"]],
+            professor_rows=[[None, "pref.prof@example.com", self.dept.id]],
+        )
+        xlsx = self._make_xlsx(sheets)
+        response = self.client.post(self.url_preview, {"file": xlsx}, format="multipart")
+        self.assertEqual(response.status_code, 200, response.data.get("errors"))
+        self.assertTrue(response.data["valid"])
+
+        items = response.data["preview_items"]["ProfessorPreferences"]
+        self.assertEqual([item["action"] for item in items], ["create", "create"])
+
+        token = response.data["preview_token"]
+        commit = self.client.post(self.url_commit, {"preview_token": token}, format="json")
+        self.assertEqual(commit.status_code, 200, commit.data.get("errors"))
+        self.assertTrue(commit.data["committed"])
+
+        prof = Professors.objects.get(user__email__iexact="pref.prof@example.com")
+        prefs = ProfessorPreference.objects.filter(professor=prof, term=term).order_by("priority")
+        self.assertEqual(list(prefs.values_list("subject__code", "priority")), [
+            ("CS101", 1),
+            ("MATH101", 2),
+        ])
+        self.assertIsNone(prefs[0].section)
+
+        submission = PreferenceSubmission.objects.get(term=term, department=self.dept)
+        self.assertEqual(submission.submitted_by, self.registrar)
+        self.assertEqual(SubmissionItem.objects.filter(submission=submission).count(), 2)
+
+    def test_unknown_professor_and_subject_are_row_errors(self):
+        self.auth(self.reg_token)
+        self._active_term()
+        sheets = self._sheets([
+            ["missing.prof@example.com", "CS101", 1],
+            ["prof.prof@example.com", "NOPE101", 1],
+        ])
+        xlsx = self._make_xlsx(sheets)
+        response = self.client.post(self.url_preview, {"file": xlsx}, format="multipart")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["valid"])
+
+        fields = {e["field"] for e in response.data["errors"] if e["sheet"] == "ProfessorPreferences"}
+        self.assertIn("professor_email", fields)
+        self.assertIn("subject_code", fields)
+        items = response.data["preview_items"]["ProfessorPreferences"]
+        self.assertEqual([item["action"] for item in items], ["error", "error"])
+
+    def test_duplicate_pairs_and_missing_active_term_are_rejected(self):
+        self.auth(self.reg_token)
+        sheets = self._sheets([
+            ["pref.prof@example.com", "CS101", 1],
+            ["PREF.PROF@example.com", "cs101", 2],
+        ])
+        xlsx = self._make_xlsx(sheets)
+        response = self.client.post(self.url_preview, {"file": xlsx}, format="multipart")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["valid"])
+        messages = " ".join(e["message"] for e in response.data["errors"])
+        self.assertIn("Duplicate professor", messages)
+        self.assertIn("No active AcademicTerm", messages)
+
+    def test_invalid_priority_is_rejected(self):
+        self.auth(self.reg_token)
+        self._active_term()
+        sheets = self._sheets([["pref.prof@example.com", "CS101", "abc"]])
+        xlsx = self._make_xlsx(sheets)
+        response = self.client.post(self.url_preview, {"file": xlsx}, format="multipart")
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(
+            any(
+                e["sheet"] == "ProfessorPreferences" and e["field"] == "priority"
+                for e in response.data["errors"]
+            )
+        )
+
+    def test_commit_rolls_back_when_active_term_disappears(self):
+        self.auth(self.reg_token)
+        term = self._active_term()
+        sheets = {
+            "Departments": [["id", "name"], [self.dept.id, "CS"], [None, "Rollback Dept"]],
+            "Rooms": [["id", "name", "capacity"]],
+            "Subjects": [["id", "code", "title"], [self.subject.id, "CS101", "Intro"]],
+            "Sections": [["id", "name", "headcount"]],
+            "Professors": [["id", "email", "department_id"], [None, "rb.prof@example.com", self.dept.id]],
+            "ProfessorPreferences": [
+                ["professor_email", "subject_code", "priority"],
+                ["rb.prof@example.com", "CS101", 1],
+            ],
+        }
+        xlsx = self._make_xlsx(sheets)
+        response = self.client.post(self.url_preview, {"file": xlsx}, format="multipart")
+        self.assertEqual(response.status_code, 200, response.data.get("errors"))
+        token = response.data["preview_token"]
+
+        term.delete()
+        commit = self.client.post(self.url_commit, {"preview_token": token}, format="json")
+        self.assertEqual(commit.status_code, 400)
+        self.assertFalse(commit.data["committed"])
+        self.assertFalse(Department.objects.filter(name="Rollback Dept").exists())
+        self.assertFalse(User.objects.filter(email__iexact="rb.prof@example.com").exists())
+        self.assertEqual(ProfessorPreference.objects.count(), 0)

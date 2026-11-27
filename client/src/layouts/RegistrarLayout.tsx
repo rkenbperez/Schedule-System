@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom';
 import {
   Calendar,
   CalendarDays,
+  Database,
   LayoutDashboard,
   Users,
 } from 'lucide-react';
@@ -16,6 +17,11 @@ const navItems: AppNavItem[] = [
     label: 'Dashboard',
     to: '/registrar',
     end: true,
+  },
+  {
+    icon: Database,
+    label: 'Master Data',
+    to: '/registrar/master-data',
   },
   {
     icon: Users,

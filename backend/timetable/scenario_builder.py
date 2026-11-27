@@ -133,6 +133,9 @@ def build_scenario_from_published_preferences(term=None) -> Scenario:
     prefs = ProfessorPreference.objects.filter(
         term=term,
         status="published",
+        # Imported preferred-subject rows have no section/meetings and cannot
+        # be placed; ignore them instead of crashing on pref.section.
+        section__isnull=False,
     ).select_related(
         "professor__department", "professor__user", "subject", "section"
     )
