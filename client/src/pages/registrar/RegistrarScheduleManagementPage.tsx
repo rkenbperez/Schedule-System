@@ -95,10 +95,10 @@ const FORMAT_GUIDE_SHEETS = [
 
 const FORMAT_GUIDE_COLUMNS = [
   'Departments: name',
-  'Rooms: name, capacity, department_id',
+  'Rooms: name, capacity, department_name (or department_id)',
   'Subjects: code, title, units',
   'Sections: name, headcount, program',
-  'Professors: email, first_name, last_name, department_id, max_hours',
+  'Professors: email, first_name, last_name, department_name (or department_id), max_hours',
   'ProfessorPreferences: professor_email, subject_code, priority, days, start_time, end_time, mode',
 ];
 
@@ -188,7 +188,10 @@ function detailSegments(sheet: string, item: ImportPreviewItem): string[] {
       if (d.email !== undefined) parts.push(String(d.email));
       if (d.first_name !== undefined || d.last_name !== undefined)
         parts.push([d.first_name, d.last_name].filter(Boolean).join(' '));
-      if (d.department_id !== undefined) parts.push(`Dept #${d.department_id}`);
+      if (d.department_name !== undefined)
+        parts.push(String(d.department_name));
+      else if (d.department_id !== undefined)
+        parts.push(`Dept #${d.department_id}`);
       if (d.user_id !== undefined) parts.push(`User #${d.user_id}`);
       break;
     case 'Subjects':
@@ -204,6 +207,8 @@ function detailSegments(sheet: string, item: ImportPreviewItem): string[] {
     case 'Rooms':
       if (d.name !== undefined) parts.push(String(d.name));
       if (d.capacity !== undefined) parts.push(`Cap ${d.capacity}`);
+      if (d.department_name !== undefined)
+        parts.push(String(d.department_name));
       break;
     case 'Assignments':
       if (d.professor_id !== undefined) parts.push(`Prof #${d.professor_id}`);
