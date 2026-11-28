@@ -1,9 +1,27 @@
 import { Fragment } from 'react';
 import { CalendarDays, CheckCircle2 } from 'lucide-react';
 import { Badge } from '../../../components/ui';
+import { cn } from '../../../lib/cn';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 const TIMES = ['7 AM', '9 AM', '11 AM', '1 PM', '3 PM', '5 PM'];
+
+// Grid geometry: an 8px top spacer keeps the first time label clear of the
+// panel edge, the day header is 28px, and every 2-hour band is a uniform 44px.
+const HEADER_ROW = 2;
+const FIRST_TIME_ROW = 3;
+const GRID_TEMPLATE_COLUMNS = '3.25rem repeat(5, minmax(0, 1fr))';
+const GRID_TEMPLATE_ROWS = `8px 28px repeat(${TIMES.length}, 44px)`;
+
+function compactTimeRange(startIndex: number, span: number) {
+  const from = TIMES[startIndex] ?? TIMES[0];
+  const to = TIMES[startIndex + span] ?? TIMES[TIMES.length - 1];
+  const [fromHour, fromMeridiem] = from.split(' ');
+  const [toHour, toMeridiem] = to.split(' ');
+  return fromMeridiem === toMeridiem
+    ? `${fromHour}–${toHour} ${toMeridiem}`
+    : `${from}–${to}`;
+}
 
 type PreviewClass = {
   id: number;
@@ -58,16 +76,18 @@ export default function SchedulePreview() {
           aria-hidden='true'
           className='grid'
           style={{
-            gridTemplateColumns: '38px repeat(5, minmax(0, 1fr))',
-            gridTemplateRows: '28px repeat(6, 30px)',
+            gridTemplateColumns: GRID_TEMPLATE_COLUMNS,
+            gridTemplateRows: GRID_TEMPLATE_ROWS,
           }}
         >
-          <div />
           {DAYS.map((day, index) => (
             <div
               key={day}
-              className='flex items-center justify-center border-b border-border-light text-caption font-medium text-text-tertiary'
-              style={{ gridColumn: index + 2, gridRow: 1 }}
+              className={cn(
+                'flex items-center justify-center border-l border-t border-border-light text-caption font-medium text-text-tertiary',
+                index === DAYS.length - 1 && 'border-r'
+              )}
+              style={{ gridColumn: index + 2, gridRow: HEADER_ROW }}
             >
               {day}
             </div>
@@ -76,18 +96,24 @@ export default function SchedulePreview() {
           {TIMES.map((time, rowIndex) => (
             <Fragment key={time}>
               <div
-                className='flex items-start justify-end pr-2 pt-1 text-caption text-text-tertiary'
-                style={{ gridColumn: 1, gridRow: rowIndex + 2 }}
+                className='relative'
+                style={{ gridColumn: 1, gridRow: rowIndex + FIRST_TIME_ROW }}
               >
-                {time}
+                <span className='absolute right-0 top-0 -translate-y-1/2 whitespace-nowrap pr-2.5 text-right text-caption tabular-nums text-text-tertiary'>
+                  {time}
+                </span>
               </div>
               {DAYS.map((_, dayIndex) => (
                 <div
                   key={`${time}-${dayIndex}`}
-                  className='border-l border-t border-border-light/80'
+                  className={cn(
+                    'border-l border-t border-border-light',
+                    dayIndex === DAYS.length - 1 && 'border-r',
+                    rowIndex === TIMES.length - 1 && 'border-b'
+                  )}
                   style={{
                     gridColumn: dayIndex + 2,
-                    gridRow: rowIndex + 2,
+                    gridRow: rowIndex + FIRST_TIME_ROW,
                   }}
                 />
               ))}
@@ -97,20 +123,23 @@ export default function SchedulePreview() {
           {CLASSES.map((cls) => (
             <div
               key={cls.id}
-              className={`z-10 m-0.5 flex flex-col justify-between overflow-hidden rounded-md border p-1.5 leading-tight ${toneClasses[cls.tone]}`}
+              className={cn(
+                'z-10 m-1 flex flex-col justify-between overflow-hidden rounded-md border px-1.5 py-1 leading-tight',
+                toneClasses[cls.tone]
+              )}
               style={{
                 gridColumn: cls.day + 2,
-                gridRow: `${cls.start + 2} / span ${cls.span}`,
+                gridRow: `${cls.start + FIRST_TIME_ROW} / span ${cls.span}`,
               }}
             >
               <span className='truncate text-caption font-semibold'>
                 {cls.code}
               </span>
-              {cls.span > 1 && (
-                <span className='truncate text-caption opacity-80'>
-                  {cls.room}
-                </span>
-              )}
+              <span className='truncate text-[10px] leading-3 opacity-80'>
+                {cls.span > 1
+                  ? `${compactTimeRange(cls.start, cls.span)} · ${cls.room}`
+                  : compactTimeRange(cls.start, cls.span)}
+              </span>
             </div>
           ))}
         </div>
