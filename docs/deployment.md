@@ -1,154 +1,244 @@
 # Deployment
 
-This page covers the current development deployment and a recommended production
-topology. The repository currently contains a Django backend only; the React
-frontend has not been scaffolded. The production topology below is guidance for
-future deployment, not an implemented configuration.
+This page covers local development and the containerized production stack.
+The repository ships a Docker Compose deployment with PostgreSQL, Redis,
+Gunicorn, and an Nginx-served React build.
 
-## Current development deployment
+## Container topology (production)
 
 ```mermaid
 flowchart LR
-    Dev[Developer browser] -->|HTTP :8000| Django[Django development server]
-    Django --> DB[(SQLite<br/>backend/db.sqlite3)]
-    Django --> Schema[Swagger UI / ReDoc]
-    Admin[Registrar browser] -->|/admin/| Django
-    Public[Public browser] -->|published schedules| Django
+    Browser[Registrar / professor / public browser] -->|HTTP :80| FE[Nginx frontend<br/>React static + reverse proxy]
+    FE -->|/api /admin /static| BE[Gunicorn<br/>Django WSGI]
+    BE --> DB[(PostgreSQL 16)]
+    BE --> Cache[(Redis 7)]
+    Admin[Registrar] -->|/admin/| FE
 ```
 
-### Prerequisites
+Compose services:
 
-- Python 3.14 (as documented by the backend README)
-- `pip` and `venv`
-- A POSIX-like shell; the documented commands use macOS/Linux paths
+| Service | Image / build | Role |
+| --- | --- | --- |
+| `db` | `postgres:16-alpine` | Primary database; data in the `postgres_data` volume |
+| `redis` | `redis:7-alpine` | Shared cache (import previews, multiple workers) |
+| `backend` | `./backend` | Gunicorn + WhiteNoise; runs migrations and `collectstatic` on start |
+| `frontend` | `./client` | Multi-stage build; Nginx serves the SPA and proxies API paths |
 
-### Local setup
+Only the `frontend` service publishes a host port (`80` by default). The
+database and Redis are reachable only on the internal Compose network.
 
-See [Backend README: First-time setup](../backend/README.md#first-time-setup)
-for local installation and account creation. The API is available at
-`http://127.0.0.1:8000/api/`; Swagger UI and ReDoc are under
-`/api/schema/swagger-ui/` and `/api/schema/redoc/`.
+## Quick start
 
-For demo data, see [Operations: Demo environment](operations.md#demo-environment).
-For tests and checks, see [Testing](testing.md).
-
-### Schema generation
+Requirements: Docker Engine with the Compose plugin (or standalone
+`docker-compose`).
 
 ```bash
-cd backend
-python manage.py spectacular --file ../docs/api/openapi.yaml
+cp .env.example .env
+# Edit .env: set DJANGO_SECRET_KEY, POSTGRES_PASSWORD, and the hostnames.
+docker compose up -d --build
 ```
 
-Commit the regenerated `docs/api/openapi.yaml` whenever endpoint contracts
-change.
+The application is available at `http://localhost/`. Health check:
 
-## Recommended production topology
-
-> **Status: Planned.** None of the production components below are configured in
-> the repository. The current `settings.py` is development-oriented.
-
-```mermaid
-flowchart LR
-    Browser[Registrar / professor / public browser] -->|HTTPS| Proxy[Reverse proxy<br/>TLS, rate limits, upload limits]
-    Proxy -->|HTTP| App[Gunicorn<br/>Django WSGI]
-    App --> DB[(PostgreSQL)]
-    App --> Cache[(Redis cache)]
-    App --> Static[Static files<br/>served by proxy]
-    App --> Logs[Centralized logs]
-    App --> Monitor[Monitoring / alerts]
-    Admin[Registrar] -->|HTTPS /admin/| Proxy
+```bash
+curl http://localhost/api/health/
 ```
 
-Recommended components:
+Create the first administrator:
 
-| Concern | Recommendation |
-| --- | --- |
-| Application server | Gunicorn or uWSGI behind a reverse proxy; do not use `runserver` |
-| Reverse proxy | Nginx, Caddy, or a managed load balancer with TLS |
-| Database | PostgreSQL with automated backups and least-privilege credentials |
-| Cache | Redis for import previews and future shared caching |
-| Static files | `collectstatic` to a proxy-served directory or object storage |
-| Secrets | Secret manager or environment variables; never commit them |
-| Rate limiting | Proxy-level limits now; attach the application login throttle before launch |
-| Uploads | Request-size and decompression limits at the proxy |
-| Observability | Structured logs, health checks, error tracking, and database metrics |
-| Backups | Encrypted database backups with restore testing |
-| Access | Restrict `/admin/` by network or identity-aware proxy where possible |
+```bash
+docker compose exec backend python manage.py createsuperuser
+```
 
-### Database and backups (planned)
+Then sign in at `http://localhost/admin/`. Academic terms and professor
+profiles are managed through Django admin.
 
-- Use PostgreSQL with a least-privilege application role; keep owner and backup
-  roles separate.
-- Take nightly logical backups with `pg_dump` (custom format), compress and
-  encrypt them, and copy them offsite.
-- Retain 7 daily, 4 weekly, and 3 monthly backups; verify each dump with
+If your installation uses standalone Compose v1, replace `docker compose` with
+`docker-compose` in the commands on this page.
+
+## Configuration
+
+Copy `.env.example` to `.env`; Compose reads it for interpolation. Every
+`change-me` value must be replaced before deployment.
+
+### Core
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `POSTGRES_DB` | Database name | `scheduler` |
+| `POSTGRES_USER` | Database role | `scheduler` |
+| `POSTGRES_PASSWORD` | Database password | required |
+| `DJANGO_SECRET_KEY` | Django signing key | required |
+| `DJANGO_DEBUG` | Debug mode | `False` |
+| `DJANGO_ALLOWED_HOSTS` | Comma-separated hosts | `localhost,127.0.0.1` |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | Comma-separated origins | `http://localhost` |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated origins | `http://localhost` |
+| `FRONTEND_URL` | Base URL used in emails | `http://localhost` |
+| `HTTP_PORT` | Host port for Nginx | `80` |
+| `VITE_API_URL` | API base baked into the SPA; empty means same-origin | empty |
+| `REDIS_URL` | Django cache backend | `redis://redis:6379/1` |
+| `GUNICORN_WORKERS` | Worker processes | `3` |
+| `GUNICORN_TIMEOUT` | Worker timeout (seconds) | `300` |
+| `SEED_DEMO_ADMIN` | Create `demo_admin` on migrate | `0` |
+| `DJANGO_LOG_LEVEL` | Root log level | `INFO` |
+
+`VITE_API_URL` is compiled into the frontend bundle. After changing it, rebuild
+the frontend image:
+
+```bash
+docker compose build frontend
+docker compose up -d frontend
+```
+
+### Email
+
+Leave `EMAIL_HOST` empty to print password-reset emails to the backend logs.
+Set `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`,
+`EMAIL_USE_TLS`, and `DEFAULT_FROM_EMAIL` to use SMTP.
+
+### Migrations and demo data
+
+The backend entrypoint runs `migrate --noinput` and `collectstatic --noinput`
+before starting Gunicorn. This is safe for a single backend replica. Before
+scaling `backend` horizontally, move migrations to a dedicated one-shot job so
+concurrent workers do not race.
+
+The `0004_create_demo_admin` migration only creates the known `demo_admin`
+account when `SEED_DEMO_ADMIN=1`. Keep it `0` on any shared or public
+deployment.
+
+## TLS with Certbot
+
+The stack serves HTTP. Terminate TLS at a host-level reverse proxy and keep the
+Compose frontend bound to loopback:
+
+1. In `.env`, publish Nginx only on loopback, for example
+   `HTTP_PORT=127.0.0.1:8080`.
+2. Point a host Nginx `server` block for your domain at
+   `http://127.0.0.1:8080`, forwarding `Host` and `X-Forwarded-*` headers.
+3. Obtain a certificate with Certbot and enable it in the host proxy:
+
+   ```bash
+   sudo certbot --nginx -d schedule.example.com
+   ```
+
+4. Enable TLS-aware Django settings in `.env`:
+
+   ```dotenv
+   DJANGO_ALLOWED_HOSTS=schedule.example.com
+   DJANGO_CSRF_TRUSTED_ORIGINS=https://schedule.example.com
+   CORS_ALLOWED_ORIGINS=https://schedule.example.com
+   FRONTEND_URL=https://schedule.example.com
+   DJANGO_USE_X_FORWARDED_PROTO=True
+   DJANGO_SECURE_SSL_REDIRECT=True
+   DJANGO_SESSION_COOKIE_SECURE=True
+   DJANGO_CSRF_COOKIE_SECURE=True
+   DJANGO_SECURE_HSTS_SECONDS=31536000
+   ```
+
+5. Recreate the backend so the new environment applies:
+
+   ```bash
+   docker compose up -d backend
+   ```
+
+Certbot renews certificates through a system timer; reload the host proxy after
+renewal (`systemctl reload nginx`).
+
+## Backups and restore
+
+Back up PostgreSQL from the running container:
+
+```bash
+docker compose exec -T db pg_dump \
+  -U "${POSTGRES_USER:-scheduler}" \
+  -d "${POSTGRES_DB:-scheduler}" \
+  -Fc > "scheduler-$(date +%F).dump"
+```
+
+Restore into an empty or maintenance database:
+
+```bash
+cat scheduler-2026-11-28.dump | docker compose exec -T db pg_restore \
+  -U "${POSTGRES_USER:-scheduler}" \
+  -d "${POSTGRES_DB:-scheduler}" \
+  --clean --if-exists
+```
+
+Operational guidance:
+
+- Keep the application role least-privilege; use a separate role for backups.
+- Compress and encrypt dumps, copy them offsite, and verify with
   `pg_restore --list`.
-- Record a checksum and row-count manifest for each backup.
+- Retain 7 daily, 4 weekly, and 3 monthly backups.
 - Run a restore drill at least monthly. Target RPO ≤ 24 hours and RTO ≤ 1 hour
   until continuous WAL archiving or managed PITR is added.
-- Do not use the SQLite development file as a production backup.
+- The Redis volume holds only cache data and does not need backup.
 
-## Production settings checklist
+## Routine operations
 
-Before deployment:
+```bash
+docker compose ps                       # service status and health
+docker compose logs -f backend          # application logs
+docker compose logs -f frontend         # proxy logs
+docker compose exec backend python manage.py check --deploy
+docker compose exec backend python manage.py migrate --noinput
+docker compose exec backend python manage.py collectstatic --noinput
+```
 
-- [ ] Set `DEBUG=False`.
-- [ ] Move `SECRET_KEY` to an environment variable and rotate it.
-- [ ] Set `ALLOWED_HOSTS` and trusted origins for the real hostnames.
-- [ ] Configure TLS and redirect HTTP to HTTPS.
-- [ ] Enable HSTS, secure cookies, and CSRF trusted origins as applicable.
-- [ ] Attach the login throttle class or enforce login rate limits at the proxy.
-- [ ] Move to PostgreSQL with a least-privilege application role.
-- [ ] Configure a shared cache for import previews.
-- [ ] Configure `STATIC_ROOT` and run `collectstatic`.
-- [ ] Add CORS rules for the frontend origin.
-- [ ] Add upload-size and decompression limits.
-- [ ] Add application-level audit writes for sensitive operations.
-- [ ] Configure encrypted, offsite backups and test a restore.
-- [ ] Restrict `/admin/` by network or identity-aware proxy and use strong staff passwords.
-- [ ] Configure centralized logging, metrics, and alerting.
-- [ ] Run dependency and container vulnerability scans.
-- [ ] Verify `/api/schema/swagger-ui/` exposure is acceptable for the environment.
-- [ ] Run `python manage.py check --deploy` and resolve the findings.
+Update to a new release:
+
+```bash
+git pull
+docker compose build
+docker compose up -d
+```
+
+The entrypoint applies migrations automatically. Back up the database first.
+
+## Production checklist
+
+- [ ] `DJANGO_DEBUG=False` and a unique `DJANGO_SECRET_KEY`.
+- [ ] Strong `POSTGRES_PASSWORD`; database port stays unpublished.
+- [ ] `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, and
+      `CORS_ALLOWED_ORIGINS` match the real hostnames.
+- [ ] TLS terminated and HTTP redirected to HTTPS.
+- [ ] Secure cookies and HSTS enabled after TLS works.
+- [ ] `SEED_DEMO_ADMIN=0`.
+- [ ] `python manage.py check --deploy` passes (or findings are understood).
+- [ ] Login throttle is enforced (configured in DRF; verify at the proxy too).
+- [ ] `/admin/` restricted by network or identity-aware proxy where possible.
+- [ ] Backups configured, encrypted, offsite, and restore-tested.
+- [ ] Logs, metrics, and alerting wired to the platform.
+- [ ] Image and dependency vulnerability scans in the pipeline.
 
 ## Release and migration procedure
-
-The repository uses Git tags and GitHub releases; see
-[CONTRIBUTING.md](../CONTRIBUTING.md).
-
-Recommended release flow:
 
 1. Merge the release PR into `staging`.
 2. Run `python manage.py check`, `makemigrations --check --dry-run`, and the
    test suite.
 3. Regenerate `docs/api/openapi.yaml` if API contracts changed.
 4. Back up the database.
-5. Deploy the new code and run `python manage.py migrate --noinput`.
-6. Run `python manage.py collectstatic --noinput` if static settings are used.
-7. Restart the application workers.
-8. Smoke-test login, schedule generation, analytics, import/export, and public
+5. `docker compose build` and `docker compose up -d`.
+6. Smoke-test login, schedule generation, analytics, import/export, and public
    schedules.
-9. Tag the release and publish release notes.
+7. Tag the release and publish release notes.
 
 ## Rollback
 
-- Keep the previous application artifact available.
-- Database migrations are not automatically reversible in every case; verify the
-  reverse migration before release.
-- If a release must be rolled back, restore the database from the pre-release
-  backup when schema changes are incompatible.
-- Revoke or rotate secrets if a rollback is caused by credential exposure.
+- Keep the previous image or git revision available.
+- Verify the reverse migration before release; not every migration is
+  reversible.
+- Restore the pre-release database backup when schema changes are incompatible.
+- Rotate secrets if a rollback follows credential exposure.
 
-## Current deployment limitations
+## Current limitations
 
-- No Dockerfile, container image, or infrastructure-as-code configuration.
 - No CI/CD workflow.
-- No production database, cache, or static-file configuration.
-- No frontend build or hosting configuration.
-- No centralized logging, metrics, or alerting.
-- No automated backup or restore process.
-
-These are documented as gaps rather than implied capabilities.
+- No infrastructure-as-code or managed platform configuration.
+- No centralized logging, metrics, or alerting bundled with the stack.
+- No automated backup scheduler; use host cron or a managed database service.
+- The stack serves HTTP; TLS requires a host-level proxy (see above).
 
 ## Related documentation
 

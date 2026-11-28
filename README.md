@@ -20,7 +20,7 @@ quality so the algorithms can be evaluated on the same input.
 | Spreadsheet import/export | Implemented |
 | Frontend | Implemented (React + Vite in `client/`) |
 | Student, enrollment, and program features | Not implemented |
-| Production hardening | Planned; see [Deployment](docs/deployment.md) |
+| Production hardening | Implemented — Docker Compose stack; see [Deployment](docs/deployment.md) |
 
 The latest release tag is `v1.2.0`. The current development version is `1.3.0`
 (see [`backend/VERSION`](backend/VERSION)); `staging` contains the post-tag work,
@@ -102,6 +102,38 @@ the repository root, `npm run dev` starts both the API and the client together.
 Create a registrar account with `python manage.py createsuperuser`. Academic
 terms and professor profiles are managed through Django admin. See the
 [backend runbook](backend/README.md) for the demo dataset and account setup.
+
+## Deploy with Docker
+
+The repository ships a production-oriented Compose stack: PostgreSQL, Redis,
+Gunicorn, and an Nginx-served React build.
+
+Requirements: Docker Engine with the Compose plugin, or standalone
+`docker-compose`.
+
+```bash
+cp .env.example .env      # set DJANGO_SECRET_KEY and POSTGRES_PASSWORD
+docker compose up -d --build
+```
+
+Open `http://localhost`. Create the first administrator:
+
+```bash
+docker compose exec backend python manage.py createsuperuser
+```
+
+| Task | Command |
+| --- | --- |
+| Follow logs | `docker compose logs -f backend` |
+| Apply migrations | `docker compose exec backend python manage.py migrate` |
+| Back up PostgreSQL | `docker compose exec -T db pg_dump -U scheduler -d scheduler -Fc > backup.dump` |
+| Stop (keep data) | `docker compose down` |
+| Stop and delete data | `docker compose down -v` |
+
+Migrations and `collectstatic` run automatically when the backend container
+starts. Set `SEED_DEMO_ADMIN=1` only on a disposable database. TLS with
+Certbot, backups/restore, the full environment reference, and the production
+checklist live in [Deployment](docs/deployment.md).
 
 ## Documentation
 
