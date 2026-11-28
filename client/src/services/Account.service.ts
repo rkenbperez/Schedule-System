@@ -76,6 +76,17 @@ class AccountService {
     return response.json();
   }
 
+  async changePassword(oldPassword: string, newPassword: string) {
+    return apiJson<{ detail: string }>(`${BASE_URL}/api/auth/change-password/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        old_password: oldPassword,
+        new_password: newPassword,
+      }),
+    });
+  }
+
   async resetPassword(token: string, newPassword: string) {
     const response = await fetch(
       `${BASE_URL}/api/auth/password-reset/confirm/${token}/`,

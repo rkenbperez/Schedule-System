@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   CreateAssignmentPayload,
+  Department,
   GenerateSchedulePayload,
   GenerateScheduleResponse,
   ScheduleCreatePayload,
@@ -622,7 +623,16 @@ export function useUpdateDepartment() {
       id: number;
       payload: Partial<{ name: string; head: number | null }>;
     }) => scheduleService.updateDepartment(id, payload),
-    onSuccess: () => {
+    onSuccess: (updated) => {
+      // Apply the PATCH response immediately so head/head_name/head_email do
+      // not wait on the refetch.
+      queryClient.setQueryData<Department[]>(
+        ['departments', undefined],
+        (departments) =>
+          departments?.map((department) =>
+            department.id === updated.id ? updated : department
+          )
+      );
       queryClient.invalidateQueries({ queryKey: ['departments'] });
     },
   });

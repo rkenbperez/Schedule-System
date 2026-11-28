@@ -24,6 +24,7 @@ import RegistrarTeacherAssignment from './pages/registrar/RegistrarTeacherAssign
 import RegistrarTimetablePage from './pages/registrar/RegistrarTimetablePage';
 import RegistrarMasterDataPage from './pages/registrar/RegistrarMasterDataPage';
 import EngineTestPage from './pages/registrar/EngineTestPage';
+import AccountSettingsPage from './pages/settings/AccountSettingsPage';
 import { RequireAuth } from './components/shared/RequireAuth';
 import NotFound from './pages/NotFound';
 
@@ -46,6 +47,14 @@ const Router = createBrowserRouter([
   {
     path: '/reset-password',
     element: <ResetPasswordPage />,
+  },
+  {
+    path: '/settings',
+    element: (
+      <RequireAuth>
+        <AccountSettingsPage />
+      </RequireAuth>
+    ),
   },
   {
     path: '/teacher/:name',

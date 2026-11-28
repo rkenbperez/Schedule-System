@@ -27,7 +27,7 @@ class SectionSerializer(serializers.ModelSerializer):
 
 class DepartmentSerializer(serializers.ModelSerializer):
     head = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(),
+        queryset=User.objects.filter(is_active=True, prof__isnull=False),
         allow_null=True,
         required=False,
     )
@@ -42,6 +42,29 @@ class DepartmentSerializer(serializers.ModelSerializer):
         if not obj.head:
             return ""
         return obj.head.get_full_name() or obj.head.get_username()
+
+    def validate_head(self, user):
+        if user is None:
+            return user
+        professor = getattr(user, "prof", None)
+        if professor is None or not user.is_active:
+            raise serializers.ValidationError(
+                "The selected user has no active professor profile."
+            )
+        if self.instance is not None:
+            if professor.department_id != self.instance.id:
+                raise serializers.ValidationError(
+                    "The professor must belong to this department."
+                )
+            if self.instance.head_id == user.id:
+                return user
+        if Department.objects.filter(head=user).exclude(
+            pk=getattr(self.instance, "pk", None)
+        ).exists():
+            raise serializers.ValidationError(
+                "This user already heads another department."
+            )
+        return user
 
 
 class RoomSerializer(serializers.ModelSerializer):

@@ -629,6 +629,13 @@ class ScheduleService {
     });
   }
 
+  async createProfessorSetupLink(id: number) {
+    return apiJson<{ setup_url: string; expires_at: string }>(
+      `${BASE_URL}/api/users/professors/${id}/setup-link/`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+
   /* ---------- Master Data CRUD (Departments) ---------- */
 
   async createDepartment(payload: { name: string; head?: number | null }) {

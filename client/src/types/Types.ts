@@ -294,10 +294,14 @@ export interface ScheduleRun {
 
 export interface TeacherListItem {
   id: number;
+  user_id: number;
   username: string;
   full_name: string;
+  email?: string;
   department: number | null;
   department_name: string;
+  is_active?: boolean;
+  is_department_head?: boolean;
 }
 
 export interface RegistrarSchedulePayload {
@@ -481,8 +485,8 @@ export interface ProfessorPreference {
   subject: number;
   subject_code: string;
   subject_title: string;
-  section: number;
-  section_name: string;
+  section: number | null;
+  section_name: string | null;
   term: number;
   term_code: string;
   meetings: MeetingPreference[];
