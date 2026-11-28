@@ -713,7 +713,7 @@ class ImportSectionProgramTests(ImportTestCase):
 
 REQUIRED_INSTRUCTION_STATEMENTS = [
     "Leave ID blank to CREATE a new record. Select from dropdown or type existing ID to UPDATE.",
-    "You must upload Departments/Subjects first before uploading Rooms/Professors.",
+    "a department added on the Departments sheet can be referenced by name",
     "New professors can be added by leaving ID blank and typing a new email.",
 ]
 
@@ -1082,9 +1082,9 @@ class ImportTemplateTests(ImportTestCase):
         # Headers only: no database rows and no sample rows.
         for sheet_name in ["Departments", "Subjects", "Sections"]:
             self.assertEqual(wb[sheet_name].max_row, 1)
-        # Rooms/Professors carry only the 500 auto-fill formula rows.
+        # Rooms/Professors are header-only as well; dropdowns cover 500 rows.
         for sheet_name in ["Rooms", "Professors"]:
-            self.assertEqual(wb[sheet_name].max_row, 501)
+            self.assertEqual(wb[sheet_name].max_row, 1)
             self.assertIsNone(wb[sheet_name].cell(row=2, column=1).value)
 
         # Professors sheet is email-based; Sections has the program column.
@@ -1093,14 +1093,16 @@ class ImportTemplateTests(ImportTestCase):
         self.assertNotIn("user_id", prof_headers)
         self.assertIn("program", [cell.value for cell in wb["Sections"][1]])
 
-        # The hidden _Lists sheet carries the live department ids.
+        # The hidden _Lists sheet carries the live department names.
         lists_ws = wb["_Lists"]
-        self.assertEqual(lists_ws["A1"].value, "department_id")
-        self.assertEqual(lists_ws["B1"].value, "department_name")
-        list_ids = [row[0] for row in lists_ws.iter_rows(min_row=2, values_only=True)]
+        self.assertEqual(lists_ws["A1"].value, "department_name")
+        self.assertEqual(lists_ws["B1"].value, "department_id")
+        list_names = [row[0] for row in lists_ws.iter_rows(min_row=2, values_only=True)]
+        list_ids = [row[1] for row in lists_ws.iter_rows(min_row=2, values_only=True)]
+        self.assertIn(self.dept.name, list_names)
         self.assertIn(self.dept.id, list_ids)
 
-        # department_id dropdowns reference the _Lists sheet.
+        # department_name dropdowns reference the _Lists sheet.
         for sheet_name, dept_col in (("Rooms", "D"), ("Professors", "E")):
             list_dvs = [
                 dv
@@ -1175,6 +1177,24 @@ class ImportTemplateTests(ImportTestCase):
             instructions = zf.read("Instructions.txt").decode("utf-8")
             for statement in REQUIRED_INSTRUCTION_STATEMENTS:
                 self.assertIn(statement, instructions)
+
+    def test_csv_template_headers_match_xlsx(self):
+        xlsx = load_workbook(BytesIO(processor.generate_template_xlsx()))
+        content = processor.generate_template_csv_zip()
+        with zipfile.ZipFile(BytesIO(content), "r") as zf:
+            for sheet in [
+                "Departments", "Rooms", "Subjects", "Sections",
+                "Professors", "ProfessorPreferences",
+            ]:
+                expected = [cell.value for cell in xlsx[sheet][1]]
+                actual = next(
+                    csv.reader(
+                        io.StringIO(
+                            zf.read(f"{sheet}.csv").decode("utf-8-sig")
+                        )
+                    )
+                )
+                self.assertEqual(actual, expected, sheet)
 
     def test_professor_cannot_access_template(self):
         self.auth(Token.objects.create(user=self.prof_user))
@@ -1268,46 +1288,21 @@ class ImportProcessorUnitTests(ImportTestCase):
         self.assertIn("headcount", sections_headers)
         self.assertIn("program", sections_headers)
 
-        # Rooms: auto-fill formula in rows 2..501 anchored on department_id
-        # (column D), data columns still empty.
+        # Rooms/Professors expose department_name as an editable dropdown
+        # column and keep the legacy department_id column optional.
         rooms = wb["Rooms"]
         self.assertEqual(
             [c.value for c in rooms[1]],
-            ["id", "name", "capacity", "department_id", "department_name"],
+            ["id", "name", "capacity", "department_name", "department_id"],
         )
-        self.assertIsNone(rooms["D2"].value)
-        expected_rooms_row2 = (
-            '=IFERROR(IF($D2="","",INDEX(Departments!$B:$B,'
-            'MATCH($D2,Departments!$A:$A,0))),"")'
-        )
-        expected_rooms_row501 = (
-            '=IFERROR(IF($D501="","",INDEX(Departments!$B:$B,'
-            'MATCH($D501,Departments!$A:$A,0))),"")'
-        )
-        self.assertEqual(rooms["E2"].value, expected_rooms_row2)
-        self.assertEqual(rooms["E501"].value, expected_rooms_row501)
-        self.assertIsNone(rooms["E502"].value)
-
-        # Professors: same pattern anchored on department_id (column E).
         profs = wb["Professors"]
         self.assertEqual(
             [c.value for c in profs[1]],
             [
-                "id", "email", "first_name", "last_name", "department_id",
-                "max_hours", "max_consecutive", "department_name",
+                "id", "email", "first_name", "last_name", "department_name",
+                "department_id", "max_hours", "max_consecutive",
             ],
         )
-        expected_profs_row2 = (
-            '=IFERROR(IF($E2="","",INDEX(Departments!$B:$B,'
-            'MATCH($E2,Departments!$A:$A,0))),"")'
-        )
-        expected_profs_row501 = (
-            '=IFERROR(IF($E501="","",INDEX(Departments!$B:$B,'
-            'MATCH($E501,Departments!$A:$A,0))),"")'
-        )
-        self.assertEqual(profs["H2"].value, expected_profs_row2)
-        self.assertEqual(profs["H501"].value, expected_profs_row501)
-        self.assertIsNone(profs["B2"].value)
 
         # List dropdowns fed by the hidden _Lists sheet.
         for sheet_name, dept_col in (("Rooms", "D"), ("Professors", "E")):
@@ -1321,12 +1316,12 @@ class ImportProcessorUnitTests(ImportTestCase):
             self.assertIn(dept_col, str(list_dvs[0].sqref))
             self.assertTrue(list_dvs[0].allow_blank)
 
-        # _Lists column A holds the department ids that exist in the DB.
+        # _Lists column A holds the department names that exist in the DB.
         lists_ws = wb["_Lists"]
-        self.assertEqual(lists_ws["A1"].value, "department_id")
-        self.assertEqual(lists_ws["B1"].value, "department_name")
-        list_ids = [row[0] for row in lists_ws.iter_rows(min_row=2, values_only=True)]
-        self.assertIn(self.dept.id, list_ids)
+        self.assertEqual(lists_ws["A1"].value, "department_name")
+        self.assertEqual(lists_ws["B1"].value, "department_id")
+        list_names = [row[0] for row in lists_ws.iter_rows(min_row=2, values_only=True)]
+        self.assertIn(self.dept.name, list_names)
 
     def test_generate_template_csv_zip(self):
         content = processor.generate_template_csv_zip()
@@ -1461,52 +1456,35 @@ class ImportTemplateBehaviorTests(ImportTestCase):
         self.assertEqual(prof_ws.cell(row=1, column=1).value, "id")
         self.assertIn("email", [c.value for c in prof_ws[1]])
         self.assertIsNone(prof_ws.cell(row=2, column=1).value)
-        self.assertEqual(wb["Rooms"].max_row, 501)  # formula rows only
+        self.assertEqual(wb["Rooms"].max_row, 1)
 
         # _Lists is hidden and empty apart from its header row.
         self.assertEqual(wb["_Lists"].sheet_state, "hidden")
         self.assertEqual(wb["_Lists"].max_row, 1)
         self.assertIsNone(wb["_Lists"]["A2"].value)
 
-    def test_template_rooms_and_professors_auto_fill_formulas(self):
+    def test_template_rooms_and_professors_department_name_columns(self):
         content = processor.generate_template_xlsx()
         wb = load_workbook(BytesIO(content))
 
         rooms_ws = wb["Rooms"]
-        headers = [c.value for c in rooms_ws[1]]
         self.assertEqual(
-            headers,
-            ["id", "name", "capacity", "department_id", "department_name"],
+            [c.value for c in rooms_ws[1]],
+            ["id", "name", "capacity", "department_name", "department_id"],
         )
-        self.assertEqual(
-            rooms_ws["E2"].value,
-            '=IFERROR(IF($D2="","",INDEX(Departments!$B:$B,'
-            'MATCH($D2,Departments!$A:$A,0))),"")',
-        )
-        self.assertEqual(
-            rooms_ws["E501"].value,
-            '=IFERROR(IF($D501="","",INDEX(Departments!$B:$B,'
-            'MATCH($D501,Departments!$A:$A,0))),"")',
-        )
+        self.assertIsNone(rooms_ws["D2"].value)
+        self.assertIsNone(rooms_ws["E2"].value)
 
         profs_ws = wb["Professors"]
         self.assertEqual(
             [c.value for c in profs_ws[1]],
             [
-                "id", "email", "first_name", "last_name", "department_id",
-                "max_hours", "max_consecutive", "department_name",
+                "id", "email", "first_name", "last_name", "department_name",
+                "department_id", "max_hours", "max_consecutive",
             ],
         )
-        self.assertEqual(
-            profs_ws["H2"].value,
-            '=IFERROR(IF($E2="","",INDEX(Departments!$B:$B,'
-            'MATCH($E2,Departments!$A:$A,0))),"")',
-        )
-        self.assertEqual(
-            profs_ws["H501"].value,
-            '=IFERROR(IF($E501="","",INDEX(Departments!$B:$B,'
-            'MATCH($E501,Departments!$A:$A,0))),"")',
-        )
+        self.assertIsNone(profs_ws["E2"].value)
+        self.assertIsNone(profs_ws["F2"].value)
 
 
 class ImportProfessorPreferencesTests(ImportTestCase):
@@ -1671,7 +1649,7 @@ class ImportProfessorPreferencesTests(ImportTestCase):
             for e in response.data["errors"]
             if e["sheet"] == "ProfessorPreferences"
         }
-        self.assertIn("department_id", fields)
+        self.assertIn("department_name", fields)
         self.assertEqual(ProfessorPreference.objects.count(), 0)
 
     def test_null_section_duplicates_blocked_at_db_level(self):
@@ -1907,4 +1885,339 @@ class ImportProfessorPreferencesTests(ImportTestCase):
         self.assertIn("ScheduleRun", rollback.data["detail"])
         self.assertTrue(
             ProfessorPreference.objects.filter(professor=prof, term=term).exists()
+        )
+
+
+class ImportDepartmentNameTests(ImportTestCase):
+    """Rooms/Professors resolve departments by name, id, or both."""
+
+    def _active_term(self):
+        return AcademicTerm.objects.create(
+            year=2026,
+            semester=1,
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 5, 1),
+            is_active=True,
+        )
+
+    def _sheets(
+        self,
+        *,
+        departments=None,
+        rooms=None,
+        professors=None,
+        preferences=None,
+    ):
+        return {
+            "Departments": [["id", "name"], *(departments or [])],
+            "Rooms": [
+                ["id", "name", "capacity", "department_name", "department_id"],
+                *(rooms or []),
+            ],
+            "Subjects": [
+                ["id", "code", "title"],
+                [None, "TST101", "Test Subject"],
+            ],
+            "Sections": [
+                ["id", "name", "headcount"],
+                [None, "TST-1A", 20],
+            ],
+            "Professors": [
+                [
+                    "id",
+                    "email",
+                    "first_name",
+                    "last_name",
+                    "department_name",
+                    "department_id",
+                ],
+                *(professors or []),
+            ],
+            "ProfessorPreferences": [
+                ["professor_email", "subject_code"],
+                *(preferences or []),
+            ],
+        }
+
+    def test_same_upload_department_name_case_and_whitespace(self):
+        self.auth(self.reg_token)
+        self._active_term()
+        sheets = self._sheets(
+            departments=[[None, "  Department of Testing  "]],
+            rooms=[[None, "New Room", 30, "  department of TESTING "]],
+            professors=[
+                [
+                    None,
+                    "new.dept.prof@example.com",
+                    "New",
+                    "Prof",
+                    "DEPARTMENT OF TESTING",
+                ]
+            ],
+            preferences=[["new.dept.prof@example.com", "TST101"]],
+        )
+        response = self.client.post(
+            self.url_preview, {"file": self._make_xlsx(sheets)}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 200, response.data.get("errors"))
+        self.assertTrue(response.data["valid"])
+        self.assertEqual(response.data["errors"], [])
+
+        commit = self.client.post(
+            self.url_commit,
+            {"preview_token": response.data["preview_token"]},
+            format="json",
+        )
+        self.assertEqual(commit.status_code, 200, commit.data.get("errors"))
+        self.assertTrue(commit.data["committed"])
+
+        department = Department.objects.get(name="Department of Testing")
+        self.assertEqual(
+            Room.objects.get(name="New Room").department_id, department.id
+        )
+        prof = Professors.objects.get(
+            user__email__iexact="new.dept.prof@example.com"
+        )
+        self.assertEqual(prof.department_id, department.id)
+        self.assertEqual(ProfessorPreference.objects.count(), 1)
+
+    def test_existing_department_name_is_case_insensitive(self):
+        self.auth(self.reg_token)
+        sheets = self._sheets(
+            rooms=[[None, "Case Room", 25, "  cs "]],
+            professors=[
+                [None, "case.prof@example.com", "Case", "Prof", "Cs"]
+            ],
+        )
+        response = self.client.post(
+            self.url_preview, {"file": self._make_xlsx(sheets)}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 200, response.data.get("errors"))
+        commit = self.client.post(
+            self.url_commit,
+            {"preview_token": response.data["preview_token"]},
+            format="json",
+        )
+        self.assertEqual(commit.status_code, 200, commit.data.get("errors"))
+        self.assertEqual(
+            Room.objects.get(name="Case Room").department_id, self.dept.id
+        )
+        prof = Professors.objects.get(
+            user__email__iexact="case.prof@example.com"
+        )
+        self.assertEqual(prof.department_id, self.dept.id)
+
+    def test_unknown_department_name_is_a_row_error(self):
+        self.auth(self.reg_token)
+        sheets = self._sheets(
+            professors=[
+                [
+                    None,
+                    "ghost.dept@example.com",
+                    "Ghost",
+                    "Prof",
+                    "Ghost Department",
+                ]
+            ]
+        )
+        response = self.client.post(
+            self.url_preview, {"file": self._make_xlsx(sheets)}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 400)
+        errors = [
+            e
+            for e in response.data["errors"]
+            if e["field"] == "department_name"
+        ]
+        self.assertEqual(len(errors), 1)
+        self.assertIn("not found", errors[0]["message"])
+
+    def test_conflicting_id_and_name_is_a_row_error(self):
+        self.auth(self.reg_token)
+        other = Department.objects.create(name="Other Dept")
+        sheets = self._sheets(
+            rooms=[[None, "Conflict Room", 30, other.name, self.dept.id]],
+            professors=[
+                [
+                    None,
+                    "conflict.prof@example.com",
+                    "Conflict",
+                    "Prof",
+                    other.name,
+                    self.dept.id,
+                ]
+            ],
+        )
+        response = self.client.post(
+            self.url_preview, {"file": self._make_xlsx(sheets)}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 400)
+        conflicts = [
+            e
+            for e in response.data["errors"]
+            if "different departments" in e["message"]
+        ]
+        self.assertEqual(len(conflicts), 2)
+        self.assertTrue(all(e["field"] == "department_name" for e in conflicts))
+
+    def test_legacy_department_id_only_still_works(self):
+        self.auth(self.reg_token)
+        sheets = self._sheets(
+            rooms=[[None, "Legacy Room", 20, None, self.dept.id]],
+            professors=[
+                [
+                    None,
+                    "legacy.dept@example.com",
+                    "Legacy",
+                    "Prof",
+                    None,
+                    self.dept.id,
+                ]
+            ],
+        )
+        response = self.client.post(
+            self.url_preview, {"file": self._make_xlsx(sheets)}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 200, response.data.get("errors"))
+        commit = self.client.post(
+            self.url_commit,
+            {"preview_token": response.data["preview_token"]},
+            format="json",
+        )
+        self.assertEqual(commit.status_code, 200, commit.data.get("errors"))
+        self.assertEqual(
+            Room.objects.get(name="Legacy Room").department_id, self.dept.id
+        )
+        prof = Professors.objects.get(
+            user__email__iexact="legacy.dept@example.com"
+        )
+        self.assertEqual(prof.department_id, self.dept.id)
+
+    def test_duplicate_case_variant_departments_are_rejected(self):
+        self.auth(self.reg_token)
+        sheets = self._sheets(
+            departments=[
+                [None, "Department of Testing"],
+                [None, " department of TESTING "],
+            ],
+            rooms=[[None, "Dup Room", 30, "Department of Testing"]],
+            professors=[
+                [
+                    None,
+                    "dup.dept@example.com",
+                    "Dup",
+                    "Prof",
+                    "Department of Testing",
+                ]
+            ],
+        )
+        response = self.client.post(
+            self.url_preview, {"file": self._make_xlsx(sheets)}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 400)
+        duplicate_errors = [
+            e
+            for e in response.data["errors"]
+            if e["sheet"] == "Departments" and "Duplicate" in e["message"]
+        ]
+        self.assertEqual(len(duplicate_errors), 1)
+        self.assertEqual(duplicate_errors[0]["row"], 3)
+        self.assertFalse(
+            Department.objects.filter(
+                name__iexact="Department of Testing"
+            ).exists()
+        )
+
+    def test_blank_department_id_matches_existing_name_case_insensitively(self):
+        self.auth(self.reg_token)
+        Department.objects.create(name="Existing Department")
+        sheets = self._sheets(
+            departments=[[None, " existing DEPARTMENT "]],
+        )
+        response = self.client.post(
+            self.url_preview, {"file": self._make_xlsx(sheets)}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 200, response.data.get("errors"))
+        dept_item = response.data["preview_items"]["Departments"][0]
+        self.assertEqual(dept_item["action"], "update")
+
+        commit = self.client.post(
+            self.url_commit,
+            {"preview_token": response.data["preview_token"]},
+            format="json",
+        )
+        self.assertEqual(commit.status_code, 200, commit.data.get("errors"))
+        self.assertEqual(
+            Department.objects.filter(
+                name__iexact="Existing Department"
+            ).count(),
+            1,
+        )
+
+    def test_reimport_without_department_columns_preserves_assignment(self):
+        self.auth(self.reg_token)
+        preserve_user = User.objects.create_user(
+            username="preserve.prof",
+            email="preserve.prof@example.com",
+            password="pass12345",
+        )
+        preserve_prof = Professors.objects.create(
+            user=preserve_user, department=self.dept
+        )
+        sheets = {
+            "Departments": [["id", "name"]],
+            "Rooms": [
+                ["id", "name", "capacity"],
+                [self.room.id, self.room.name, self.room.capacity],
+            ],
+            "Subjects": [["id", "code", "title"]],
+            "Sections": [["id", "name", "headcount"]],
+            "Professors": [
+                ["id", "email"],
+                [preserve_prof.id, "preserve.prof@example.com"],
+            ],
+        }
+        response = self.client.post(
+            self.url_preview, {"file": self._make_xlsx(sheets)}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 200, response.data.get("errors"))
+        commit = self.client.post(
+            self.url_commit,
+            {"preview_token": response.data["preview_token"]},
+            format="json",
+        )
+        self.assertEqual(commit.status_code, 200, commit.data.get("errors"))
+        self.room.refresh_from_db()
+        preserve_prof.refresh_from_db()
+        self.assertEqual(self.room.department_id, self.dept.id)
+        self.assertEqual(preserve_prof.department_id, self.dept.id)
+
+    def test_malformed_department_id_with_name_is_a_row_error(self):
+        self.auth(self.reg_token)
+        sheets = self._sheets(
+            rooms=[[None, "Bad Id Room", 30, "CS", "not-a-number"]],
+            professors=[
+                [
+                    None,
+                    "bad.id@example.com",
+                    "Bad",
+                    "Id",
+                    "CS",
+                    0,
+                ]
+            ],
+        )
+        response = self.client.post(
+            self.url_preview, {"file": self._make_xlsx(sheets)}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 400)
+        id_errors = [
+            e for e in response.data["errors"] if e["field"] == "department_id"
+        ]
+        self.assertEqual(len(id_errors), 2)
+        self.assertTrue(
+            any("must be an integer" in e["message"] for e in id_errors)
+        )
+        self.assertTrue(
+            any("not found in database" in e["message"] for e in id_errors)
         )

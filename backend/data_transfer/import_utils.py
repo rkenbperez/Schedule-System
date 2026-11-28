@@ -55,13 +55,14 @@ REQUIRED_COLUMNS = {
 
 OPTIONAL_COLUMNS = {
     "Departments": [],
-    "Rooms": ["department_id"],
+    "Rooms": ["department_name", "department_id"],
     "Subjects": ["units"],
     "Sections": ["program"],
     "Professors": [
         "email",
         "first_name",
         "last_name",
+        "department_name",
         "department_id",
         "max_hours",
         "max_daily_hours",
@@ -109,6 +110,7 @@ TEMPLATE_COLUMNS["Professors"] = [
     "email",
     "first_name",
     "last_name",
+    "department_name",
     "department_id",
     "max_hours",
     "max_consecutive",
@@ -123,23 +125,14 @@ TEMPLATE_COLUMNS["ProfessorPreferences"] = [
     "mode",
 ]
 
-# Read-only display columns appended AFTER the input columns in the XLSX
-# template only (never in CSV uploads). Each holds an INDEX/MATCH formula
-# against the Departments tab; the parser ignores them because they are not
-# in EDITABLE_COLUMNS.
-TEMPLATE_DISPLAY_COLUMNS = {
-    "Rooms": ("department_name", "D"),  # department_id is column D
-    "Professors": ("department_name", "E"),  # department_id is column E
-}
-
 # Auto-fill formula rows written into Rooms/Professors regardless of data:
 # rows 2..501 (500 rows) so users can paste large batches under the header.
 TEMPLATE_FORMULA_ROWS = 500
 
-# Hidden lookup sheet feeding the department_id dropdowns. Column A holds the
-# Department ids that exist in the database; column B repeats the name for
-# readability. The generous fixed range keeps working as departments are
-# added without regenerating the template.
+# Hidden lookup sheet feeding the department_name dropdowns. Column A holds
+# the live department names; column B repeats the id for readability. The
+# generous fixed range keeps working as departments are added without
+# regenerating the template.
 LISTS_SHEET_NAME = "_Lists"
 DEPT_DROPDOWN_FORMULA = "_Lists!$A$2:$A$2000"
 
@@ -153,7 +146,8 @@ TEMPLATE_COLUMN_GUIDE = {
         ("id", "Optional", "Integer primary key. Leave blank to create; type an existing id to update. An id that does not exist in the database is rejected for that row."),
         ("name", "Required", "Unique room name (max 50 characters). Samples: CS Lecture Room 1, CS Computer Laboratory 1."),
         ("capacity", "Required", "Positive integer seat capacity."),
-        ("department_id", "Optional", "Department id. Pick from the dropdown (fed by the hidden _Lists sheet) or leave blank."),
+        ("department_name", "Optional", "Department name. Pick from the dropdown (fed by the hidden _Lists sheet) or type an existing or newly added Department name; matching is case-insensitive."),
+        ("department_id", "Optional", "Legacy department id. Use only if you already know the database id; leave blank when department_name is filled."),
     ],
     "Subjects": [
         ("id", "Optional", "Integer primary key. Leave blank to create; type an existing id to update. An id that does not exist in the database is rejected for that row."),
@@ -172,7 +166,8 @@ TEMPLATE_COLUMN_GUIDE = {
         ("email", "Required", "Professor's email address (case-insensitive). A new email creates the login account and profile; an existing email updates that professor. Passwords are never set or reset."),
         ("first_name", "Optional", "First name; only applied when provided."),
         ("last_name", "Optional", "Last name; only applied when provided."),
-        ("department_id", "Optional", "Department id. Pick from the dropdown (fed by the hidden _Lists sheet) or leave blank."),
+        ("department_name", "Optional", "Department name. Pick from the dropdown (fed by the hidden _Lists sheet) or type an existing or newly added Department name; matching is case-insensitive."),
+        ("department_id", "Optional", "Legacy department id. Use only if you already know the database id; leave blank when department_name is filled."),
         ("max_hours", "Optional", "Maximum teaching hours per day; positive integer, defaults to 8."),
         ("max_consecutive", "Optional", "Positive integer; defaults to 4."),
     ],
@@ -192,16 +187,16 @@ TEMPLATE_GENERAL_NOTES = [
     "CSV: upload a .zip containing one .csv per sheet (Departments.csv, Rooms.csv, Subjects.csv, Sections.csv, Professors.csv). A single .csv file is not supported.",
     "Leave ID blank to CREATE a new record. Select from dropdown or type existing ID to UPDATE.",
     "A typed 'id' that does not exist in the database is rejected for that row; the other rows can still be imported.",
-    "You must upload Departments/Subjects first before uploading Rooms/Professors.",
+    "Departments are matched by name (case-insensitive) within the same workbook, so a department added on the Departments sheet can be referenced by name on Rooms/Professors immediately.",
     "New professors can be added by leaving ID blank and typing a new email.",
-    "department_id (Rooms and Professors): pick from the dropdown fed by the hidden _Lists sheet, or type an id that already exists in the database. Legacy sheets also cross-reference professor_id, subject_id, section_id, and assignment_id within the same workbook.",
+    "department_name (Rooms and Professors): pick from the dropdown fed by the hidden _Lists sheet, or type an existing/uploaded department name. department_id remains supported as an optional legacy column; do not set both unless they refer to the same department. Legacy sheets also cross-reference professor_id, subject_id, section_id, and assignment_id within the same workbook.",
     "Every assignment must have at least one synchronous meeting: mode 'sync' or 'lab' (legacy sheets only).",
     "Delivery modes: async, sync, lab. Day values: 0-5 or Monday-Saturday. Times: 24-hour HH:MM (legacy sheets only).",
     "Capacity, headcount, units, max_hours, max_consecutive, order, and duration_slots must be positive integers.",
     "Rooms have no room-type column. Use descriptive names such as 'CS Lecture Room 1' or 'CS Computer Laboratory 1'.",
     "Sections 'program' is optional (max 20 characters): leave it blank to derive it from the section name (e.g., 'BSCS 3-A' becomes BSCS).",
     "Professors are matched by email (case-insensitive): a new email creates the login account and profile; an existing email updates that professor. Passwords are never set or reset by an import.",
-    "The 'department_name' columns (Rooms and Professors) auto-fill by formula once a valid department_id is entered; do not edit them.",
+    "The 'department_name' columns (Rooms and Professors) are now the preferred way to link a department; the optional legacy 'department_id' column still works.",
     "ProfessorPreferences is optional: list one preferred subject per row. An active academic term is required when it has rows.",
     "ProfessorPreferences meeting columns (days, start_time, end_time, mode) are optional: leave all of them blank for a legacy subject-only preference, or fill days+start_time+end_time together. Days accepts MWF, TTH, MON,WED, or MON-FRI; times are 24-hour HH:MM and start_time must be before end_time.",
     "Legacy 9-sheet workbooks that also include Assignments, Meetings, Availability, and BusyBlocks sheets are still accepted on upload.",
@@ -269,6 +264,11 @@ def parse_day(value: Any) -> int | None:
         except ValueError:
             return None
     return None
+
+
+def _cell_text(value: Any) -> str:
+    """Trim a cell value without treating 0/False as blank."""
+    return "" if value is None else str(value).strip()
 
 
 def parse_int(value: Any) -> int | None:
@@ -831,9 +831,121 @@ class ImportProcessor:
         from timetable.models import AcademicTerm
 
         # department_id must reference a department that already exists in
-        # the database. Ids defined only in this workbook's Departments sheet
-        # are rejected: upload Departments first, then Rooms/Professors.
-        db_dept_ids = set(Department.objects.values_list("id", flat=True))
+        # the database. department_name also matches Departments rows created
+        # earlier in this same upload (case-insensitive).
+        db_departments = list(Department.objects.only("id", "name"))
+        db_dept_by_id = {dept.id: dept for dept in db_departments}
+        db_dept_by_name = {
+            dept.name.strip().casefold(): dept for dept in db_departments
+        }
+        workbook_department_names = set()
+        seen_department_names = {}
+        # Rows already flagged on the Departments sheet will not commit, so
+        # their names must not validate a dependent Rooms/Professors row.
+        department_error_rows = {
+            error.row
+            for error in result.errors
+            if error.sheet == "Departments"
+        }
+        for row in parsed_data.get("Departments", []):
+            name = str(row.get("name") or "").strip()
+            if not name or row.get("_row_num") in department_error_rows:
+                continue
+            key = name.casefold()
+            workbook_department_names.add(key)
+            row_num = row.get("_row_num", 0)
+            if key in seen_department_names:
+                result.valid = False
+                result.errors.append(
+                    ImportError(
+                        "Departments",
+                        row_num,
+                        "name",
+                        f"Duplicate department name '{name}' (also on row "
+                        f"{seen_department_names[key]})",
+                    )
+                )
+            else:
+                seen_department_names[key] = row_num
+
+        def resolve_department(row: dict, sheet_name: str) -> int | None:
+            row_num = row.get("_row_num", 0)
+            raw_id = _cell_text(row.get("department_id"))
+            raw_name = _cell_text(row.get("department_name"))
+            resolved_id = None
+            resolved_name_key = None
+            if raw_id:
+                did = parse_int(raw_id)
+                if did is None:
+                    result.valid = False
+                    result.errors.append(
+                        ImportError(
+                            sheet_name,
+                            row_num,
+                            "department_id",
+                            f"department_id '{raw_id}' must be an integer",
+                        )
+                    )
+                elif did not in db_dept_by_id:
+                    result.valid = False
+                    result.errors.append(
+                        ImportError(
+                            sheet_name,
+                            row_num,
+                            "department_id",
+                            f"Department {did} not found in database",
+                        )
+                    )
+                else:
+                    resolved_id = did
+                    resolved_name_key = (
+                        db_dept_by_id[did].name.strip().casefold()
+                    )
+            if raw_name:
+                name_key = raw_name.casefold()
+                if name_key == resolved_name_key:
+                    pass
+                elif name_key in db_dept_by_name:
+                    if resolved_id is not None:
+                        result.valid = False
+                        result.errors.append(
+                            ImportError(
+                                sheet_name,
+                                row_num,
+                                "department_name",
+                                f"department_id {resolved_id} and "
+                                f"department_name '{raw_name}' refer to "
+                                "different departments",
+                            )
+                        )
+                    else:
+                        resolved_id = db_dept_by_name[name_key].id
+                elif name_key in workbook_department_names:
+                    if resolved_id is not None:
+                        result.valid = False
+                        result.errors.append(
+                            ImportError(
+                                sheet_name,
+                                row_num,
+                                "department_name",
+                                f"department_id {resolved_id} and "
+                                f"department_name '{raw_name}' refer to "
+                                "different departments",
+                            )
+                        )
+                else:
+                    result.valid = False
+                    result.errors.append(
+                        ImportError(
+                            sheet_name,
+                            row_num,
+                            "department_name",
+                            f"Department '{raw_name}' not found. Add it on "
+                            "the Departments sheet or use an existing name.",
+                        )
+                    )
+            return resolved_id
+
         room_names = {r.get("name") for r in parsed_data.get("Rooms", []) if r.get("name")}
         subject_codes = {r.get("code") for r in parsed_data.get("Subjects", []) if r.get("code")}
         section_names = {r.get("name") for r in parsed_data.get("Sections", []) if r.get("name")}
@@ -892,6 +1004,14 @@ class ImportProcessor:
                         )
                     )
 
+        # Resolve Rooms/Professors department references once, before the
+        # preference check needs to know whether a workbook professor has one.
+        for sheet_name in ("Rooms", "Professors"):
+            for row in parsed_data.get(sheet_name, []):
+                row["_resolved_department_id"] = resolve_department(
+                    row, sheet_name
+                )
+
         # ProfessorPreferences resolve professors and subjects by email/code,
         # accepting both database rows and rows created by this workbook.
         pref_rows = parsed_data.get("ProfessorPreferences", [])
@@ -913,8 +1033,10 @@ class ImportProcessor:
             for prof_row in parsed_data.get("Professors", []):
                 prof_email = normalize_email(str(prof_row.get("email") or ""))
                 if prof_email:
-                    workbook_prof_depts[prof_email] = parse_int(
-                        prof_row.get("department_id")
+                    workbook_prof_depts[prof_email] = (
+                        prof_row.get("_resolved_department_id")
+                        or str(prof_row.get("department_name") or "").strip()
+                        or parse_int(prof_row.get("department_id"))
                     )
             db_prof_depts = {
                 normalize_email(email): dept_id
@@ -953,10 +1075,11 @@ class ImportProcessor:
                         ImportError(
                             "ProfessorPreferences",
                             row_num,
-                            "department_id",
+                            "department_name",
                             f"Professor '{email}' has no department; set "
-                            "department_id on the Professors sheet so the "
-                            "preference can be submitted.",
+                            "department_name (or department_id) on the "
+                            "Professors sheet so the preference can be "
+                            "submitted.",
                         )
                     )
                 if code and code.casefold() not in known_codes:
@@ -992,33 +1115,6 @@ class ImportProcessor:
                             row_num,
                             "term",
                             "No active AcademicTerm found. Mark a term active before importing preferences.",
-                        )
-                    )
-
-        for sheet_name in ("Rooms", "Professors"):
-            for row in parsed_data.get(sheet_name, []):
-                raw = row.get("department_id")
-                if raw is None or str(raw).strip() == "":
-                    continue
-                did = parse_int(raw)
-                if did is None:
-                    result.valid = False
-                    result.errors.append(
-                        ImportError(
-                            sheet_name,
-                            row.get("_row_num", 0),
-                            "department_id",
-                            f"department_id '{raw}' must be an integer",
-                        )
-                    )
-                elif did not in db_dept_ids:
-                    result.valid = False
-                    result.errors.append(
-                        ImportError(
-                            sheet_name,
-                            row.get("_row_num", 0),
-                            "department_id",
-                            f"Department {did} not found in database",
                         )
                     )
 
@@ -1109,10 +1205,10 @@ class ImportProcessor:
         # Key display fields per entity for preview tables
         display_fields = {
             "Departments": ["name"],
-            "Rooms": ["name", "capacity", "department_id"],
+            "Rooms": ["name", "capacity", "department_name", "department_id"],
             "Subjects": ["code", "title", "units"],
             "Sections": ["name", "headcount", "program", "year_level", "term_id"],
-            "Professors": ["email", "first_name", "last_name", "department_id", "max_hours"],
+            "Professors": ["email", "first_name", "last_name", "department_name", "department_id", "max_hours"],
             "ProfessorPreferences": ["professor_email", "subject_code", "priority", "days", "start_time", "end_time", "mode"],
             "Assignments": ["professor_id", "subject_id", "section_id", "term_id"],
             "Meetings": ["assignment_id", "order", "mode", "duration_slots"],
@@ -1121,6 +1217,10 @@ class ImportProcessor:
         }
 
         result.preview_items = {}
+        existing_department_names = {
+            name.strip().casefold()
+            for name in Department.objects.values_list("name", flat=True)
+        }
 
         for sheet_name, (model, pk_field) in model_map.items():
             creates = 0
@@ -1174,6 +1274,15 @@ class ImportProcessor:
                     has_user = User.objects.filter(email__iexact=email_value).exists()
                     has_prof = Professors.objects.filter(user__email__iexact=email_value).exists()
                     if has_user and has_prof:
+                        action = "update"
+                        updates += 1
+                    else:
+                        action = "create"
+                        creates += 1
+                elif sheet_name == "Departments":
+                    # Blank id + existing name (any casing) updates that row.
+                    name_key = str(row.get("name") or "").strip().casefold()
+                    if name_key and name_key in existing_department_names:
                         action = "update"
                         updates += 1
                     else:
@@ -1277,6 +1386,57 @@ class ImportProcessor:
                     "action": "create" if creates and not updates else ("update" if updates and not creates else "mixed"),
                     "count": creates + updates,
                 })
+
+    @staticmethod
+    def _has_department_ref(row) -> bool:
+        return bool(
+            _cell_text(row.get("department_id"))
+            or _cell_text(row.get("department_name"))
+        )
+
+    @staticmethod
+    def _resolve_department_id(
+        row, dept_by_id=None, dept_by_name=None
+    ) -> int | None:
+        """Resolve department_name (preferred) or legacy department_id.
+
+        Runs inside the commit transaction after the Departments sheet has
+        been applied, so same-upload departments are visible here. Callers
+        pass cached maps so hundreds of rows do not issue per-row queries.
+        """
+        from catalog.models import Department
+
+        raw_id = _cell_text(row.get("department_id"))
+        raw_name = _cell_text(row.get("department_name"))
+        dept = None
+        if raw_id:
+            did = parse_int(raw_id)
+            if dept_by_id is not None:
+                dept = dept_by_id.get(did)
+            else:
+                dept = (
+                    Department.objects.filter(pk=did).first()
+                    if did is not None
+                    else None
+                )
+            if dept is None:
+                raise ValueError(f"Department {raw_id} does not exist")
+        if raw_name:
+            if dept_by_name is not None:
+                by_name = dept_by_name.get(raw_name.casefold())
+            else:
+                by_name = Department.objects.filter(
+                    name__iexact=raw_name
+                ).first()
+            if by_name is None:
+                raise ValueError(f"Department '{raw_name}' does not exist")
+            if dept is not None and dept.pk != by_name.pk:
+                raise ValueError(
+                    f"department_id {raw_id} and department_name "
+                    f"'{raw_name}' refer to different departments"
+                )
+            dept = by_name
+        return dept.pk if dept else None
 
     @staticmethod
     def _ensure_pk_exists(model, pk) -> int:
@@ -1405,29 +1565,58 @@ class ImportProcessor:
             manifest = {"created": [], "updated": []}
 
             with transaction.atomic():
-                # Departments
+                # Departments. A blank id that matches an existing name
+                # case-insensitively updates that row instead of creating a
+                # duplicate (and avoids an IntegrityError on exact names).
+                existing_departments_by_name = {
+                    dept.name.strip().casefold(): dept
+                    for dept in Department.objects.all()
+                }
                 for row in parsed_data.get("Departments", []):
+                    name = str(row["name"]).strip()
+                    pk = row.get("id")
+                    if pk in (None, ""):
+                        existing = existing_departments_by_name.get(
+                            name.casefold()
+                        )
+                        if existing is not None:
+                            pk = existing.pk
                     obj, created = self._upsert(
                         manifest,
                         Department,
-                        {"name": row["name"]},
-                        pk=row.get("id"),
+                        {"name": name},
+                        pk=pk,
                     )
+                    existing_departments_by_name[name.casefold()] = obj
                     if created:
                         result.summary["creates"] += 1
                     else:
                         result.summary["updates"] += 1
 
+                # Cached maps keep department resolution O(1) per row.
+                all_departments = list(Department.objects.all())
+                dept_by_id = {dept.id: dept for dept in all_departments}
+                dept_by_name = {
+                    dept.name.strip().casefold(): dept
+                    for dept in all_departments
+                }
+
                 # Rooms
                 for row in parsed_data.get("Rooms", []):
+                    defaults = {
+                        "name": row["name"],
+                        "capacity": parse_int(row["capacity"]),
+                    }
+                    if self._has_department_ref(row):
+                        defaults["department_id"] = (
+                            self._resolve_department_id(
+                                row, dept_by_id, dept_by_name
+                            )
+                        )
                     obj, created = self._upsert(
                         manifest,
                         Room,
-                        {
-                            "name": row["name"],
-                            "capacity": parse_int(row["capacity"]),
-                            "department_id": parse_int(row.get("department_id")) or None,
-                        },
+                        defaults,
                         pk=row.get("id"),
                     )
                     if created:
@@ -1491,7 +1680,13 @@ class ImportProcessor:
                             email=email,
                             first_name=row.get("first_name") or "",
                             last_name=row.get("last_name") or "",
-                            department_id=parse_int(row.get("department_id")) or None,
+                            department_id=(
+                                self._resolve_department_id(
+                                    row, dept_by_id, dept_by_name
+                                )
+                                if self._has_department_ref(row)
+                                else None
+                            ),
                             max_daily_hours=(
                                 parse_int(row.get("max_hours"))
                                 or parse_int(row.get("max_daily_hours"))
@@ -1517,15 +1712,21 @@ class ImportProcessor:
                     user_id = parse_int(row.get("user_id"))
                     if not user_id or not User.objects.filter(id=user_id).exists():
                         raise ValueError(f"User {user_id} does not exist")
+                    defaults = {
+                        "user_id": user_id,
+                        "max_daily_hours": parse_int(row.get("max_daily_hours")) or 8,
+                        "max_consecutive": parse_int(row.get("max_consecutive")) or 4,
+                    }
+                    if self._has_department_ref(row):
+                        defaults["department_id"] = (
+                            self._resolve_department_id(
+                                row, dept_by_id, dept_by_name
+                            )
+                        )
                     obj, created = self._upsert(
                         manifest,
                         Professors,
-                        {
-                            "user_id": user_id,
-                            "department_id": parse_int(row.get("department_id")) or None,
-                            "max_daily_hours": parse_int(row.get("max_daily_hours")) or 8,
-                            "max_consecutive": parse_int(row.get("max_consecutive")) or 4,
-                        },
+                        defaults,
                         pk=row.get("id"),
                         lookup={"user_id": user_id},
                     )
@@ -1820,20 +2021,20 @@ class ImportProcessor:
         return batch
 
     def _write_department_list_sheet(self, wb) -> None:
-        """Hidden `_Lists` sheet holding the live department ids.
+        """Hidden `_Lists` sheet holding the live department names.
 
-        Column A feeds the department_id dropdowns on Rooms and Professors;
-        column B repeats the department name for readability.
+        Column A feeds the department_name dropdowns on Rooms and Professors;
+        column B repeats the numeric id for readability/legacy use.
         """
         from catalog.models import Department
 
         ws = wb.create_sheet(LISTS_SHEET_NAME)
         ws.sheet_state = "hidden"
-        ws.append(["department_id", "department_name"])
-        for dept_id, dept_name in Department.objects.order_by("id").values_list(
+        ws.append(["department_name", "department_id"])
+        for dept_id, dept_name in Department.objects.order_by("name").values_list(
             "id", "name"
         ):
-            ws.append([dept_id, dept_name])
+            ws.append([dept_name, dept_id])
 
     def generate_template_xlsx(self) -> bytes:
         wb = Workbook()
@@ -1841,7 +2042,6 @@ class ImportProcessor:
         header_font = Font(bold=True, color="FFFFFF")
         section_fill = PatternFill("solid", fgColor="E8F5E9")
         section_font = Font(bold=True, color="1B5E20")
-        ro_fill = PatternFill("solid", fgColor="ECEFF1")
 
         for sheet_name in TEMPLATE_ALL_SHEETS:
             if sheet_name == TEMPLATE_ALL_SHEETS[0]:
@@ -1854,27 +2054,8 @@ class ImportProcessor:
             # template stays identical whether or not the database is empty.
             columns = TEMPLATE_COLUMNS[sheet_name]
             ws.append(columns)
-
-            # Read-only display column appended after the input columns,
-            # auto-filled for TEMPLATE_FORMULA_ROWS regardless of data. It
-            # evaluates to blank until a valid department_id is typed or
-            # picked from the dropdown.
-            display = TEMPLATE_DISPLAY_COLUMNS.get(sheet_name)
             total_columns = len(columns)
             all_names = list(columns)
-            if display:
-                display_name, ref_col = display
-                display_idx = total_columns + 1
-                ws.cell(row=1, column=display_idx, value=display_name)
-                for i in range(2, TEMPLATE_FORMULA_ROWS + 2):
-                    formula = (
-                        f'=IFERROR(IF(${ref_col}{i}="","",'
-                        f"INDEX(Departments!$B:$B,"
-                        f"MATCH(${ref_col}{i},Departments!$A:$A,0))),\"\")"
-                    )
-                    ws.cell(row=i, column=display_idx, value=formula).fill = ro_fill
-                total_columns = display_idx
-                all_names.append(display_name)
 
             for cell in ws[1]:
                 cell.font = header_font
@@ -1929,11 +2110,11 @@ class ImportProcessor:
     def _add_department_dropdown(ws, columns: list[str]):
         """List validation fed by the hidden _Lists sheet.
 
-        Only department ids that exist in the database appear in the
+        Only department names that exist in the database appear in the
         dropdown; the generous fixed range keeps working as departments are
         added without regenerating the template.
         """
-        col_idx = columns.index("department_id") + 1
+        col_idx = columns.index("department_name") + 1
         col_letter = ws.cell(row=1, column=col_idx).column_letter
         dv = DataValidation(
             type="list",
@@ -1941,9 +2122,9 @@ class ImportProcessor:
             allow_blank=True,
             showErrorMessage=True,
         )
-        dv.errorTitle = "Invalid department id"
+        dv.errorTitle = "Invalid department name"
         dv.error = (
-            "Pick a department id from the dropdown (fed by the hidden "
+            "Pick a department name from the dropdown (fed by the hidden "
             "_Lists sheet) or leave the cell blank."
         )
         dv.add(f"{col_letter}2:{col_letter}{TEMPLATE_FORMULA_ROWS + 1}")
@@ -2057,7 +2238,7 @@ class ImportProcessor:
         row += 2
         intro_lines = [
             "Use this workbook as a starting point. Every sheet is header-only: type your data starting in row 2.",
-            "Departments, rooms, subjects, sections, and professors. The hidden _Lists sheet feeds the department_id dropdowns on Rooms and Professors.",
+            "Departments, rooms, subjects, sections, and professors. The hidden _Lists sheet feeds the department_name dropdowns on Rooms and Professors.",
             "Sheet order (the importer processes sheets in this order): "
             + " -> ".join(TEMPLATE_ALL_SHEETS),
             "Legacy 9-sheet workbooks that also include Assignments, Meetings, Availability, and BusyBlocks sheets are still accepted on upload.",
