@@ -4,15 +4,15 @@
 // Edit / Delete via SlideOverDrawer and ConfirmDialog.
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Trash2, Edit2, Search, X as XIcon, Mail, Lock, Building2, Clock, Timer } from 'lucide-react';
+import { Plus, Trash2, Edit2, Search, X as XIcon, Mail, Lock, Building2, Clock, Timer, Link2 } from 'lucide-react';
 import {
   useCourses,
   useDepartments,
   useRooms,
   useSections,
   useTeachers,
+  useProfessorsByDepartment,
   useTerms,
-  useUsers,
   useCreateDepartment,
   useUpdateDepartment,
   useDeleteDepartment,
@@ -32,6 +32,7 @@ import {
 import { SlideOverDrawer } from '../../components/shared/SlideOverDrawer';
 import { ConfirmDialog } from '../../components/shared/ConfirmDialog';
 import { useToast } from '../../hooks/useToast';
+import { scheduleService } from '../../services/Schedule.service';
 import type {
   Course,
   Department,
@@ -39,6 +40,50 @@ import type {
   Section,
   TeacherListItem,
 } from '../../types/Types';
+
+function DepartmentHeadSelect({
+  departmentId,
+  value,
+  onChange,
+  label,
+  disabled = false,
+}: {
+  departmentId: number;
+  value: number | null;
+  onChange: (headId: string) => void;
+  label: string;
+  disabled?: boolean;
+}) {
+  const { data } = useProfessorsByDepartment({ departmentId });
+  const professors = (data ?? []).filter(
+    (professor) => professor.is_active !== false
+  );
+
+  return (
+    <select
+      value={value ?? ''}
+      onChange={(event) => onChange(event.target.value)}
+      aria-label={label}
+      disabled={disabled}
+      className='h-8 w-full min-w-36 rounded-control border border-border bg-surface px-2 text-xs text-text-primary outline-none transition-colors focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100 disabled:cursor-not-allowed disabled:opacity-50'
+    >
+      {professors.length === 0 ? (
+        <option value='' disabled>
+          No active professors
+        </option>
+      ) : (
+        <>
+          <option value=''>Unassign</option>
+          {professors.map((professor) => (
+            <option key={professor.id} value={professor.user_id}>
+              {professor.full_name || professor.username}
+            </option>
+          ))}
+        </>
+      )}
+    </select>
+  );
+}
 
 type Tab =
   | 'Departments'
@@ -63,8 +108,6 @@ function tabFromSlug(value: string | null): Tab | null {
   return match ?? null;
 }
 
-type SimpleUser = { id: number; username: string; email: string };
-
 export default function RegistrarMasterDataPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
@@ -86,10 +129,16 @@ export default function RegistrarMasterDataPage() {
     id: number;
     label: string;
   } | null>(null);
+  const [setupLinkFallback, setSetupLinkFallback] = useState<{
+    name: string;
+    url: string;
+  } | null>(null);
+  const [setupLinkPendingId, setSetupLinkPendingId] = useState<number | null>(
+    null
+  );
   const toast = useToast();
 
   const departments = useDepartments();
-  const users = useUsers();
   const teachers = useTeachers();
   const rooms = useRooms();
   const courses = useCourses();
@@ -118,7 +167,6 @@ export default function RegistrarMasterDataPage() {
   const courseList: Course[] = courses.data ?? [];
   const sectionList: Section[] = sections.data ?? [];
   const deptList: Department[] = departments.data ?? [];
-  const userList: SimpleUser[] = users.data ?? [];
   const termList = terms.data ?? [];
 
   const rows = (
@@ -165,16 +213,14 @@ export default function RegistrarMasterDataPage() {
   const handleDrawerSave = async (payload: Record<string, unknown>) => {
     try {
       if (tab === 'Departments') {
-        const head = payload.head ? Number(payload.head) : null;
         if (drawer.mode === 'add') {
           await createDepartment.mutateAsync({
             name: String(payload.name ?? ''),
-            head,
           });
         } else {
           await updateDepartment.mutateAsync({
             id: Number(drawer.item!.id),
-            payload: { name: String(payload.name ?? ''), head },
+            payload: { name: String(payload.name ?? '') },
           });
         }
         toast.addToast({
@@ -325,6 +371,62 @@ export default function RegistrarMasterDataPage() {
     setDeleteTarget(null);
   };
 
+  const handleAssignHead = async (department: Department, headId: string) => {
+    try {
+      await updateDepartment.mutateAsync({
+        id: department.id,
+        payload: { head: headId ? Number(headId) : null },
+      });
+      toast.addToast({
+        type: 'success',
+        title: headId
+          ? `Head assigned to ${department.name}.`
+          : `Head unassigned from ${department.name}.`,
+      });
+    } catch (error) {
+      toast.addToast({
+        type: 'error',
+        title: 'Failed to update department head.',
+        description: error instanceof Error ? error.message : undefined,
+      });
+    }
+  };
+
+  const handleCopySetupLink = async (professorId: number, name: string) => {
+    setSetupLinkPendingId(professorId);
+    try {
+      const { setup_url: setupUrl } =
+        await scheduleService.createProfessorSetupLink(professorId);
+      try {
+        if (!navigator.clipboard) {
+          throw new Error('Clipboard unavailable');
+        }
+        await navigator.clipboard.writeText(setupUrl);
+        setSetupLinkFallback(null);
+        toast.addToast({
+          type: 'success',
+          title: 'Setup link copied.',
+          description: 'The link expires in 24 hours.',
+        });
+      } catch {
+        setSetupLinkFallback({ name, url: setupUrl });
+        toast.addToast({
+          type: 'warning',
+          title: 'Could not access the clipboard.',
+          description: 'Select and copy the link shown below.',
+        });
+      }
+    } catch (error) {
+      toast.addToast({
+        type: 'error',
+        title: 'Failed to create setup link.',
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setSetupLinkPendingId(null);
+    }
+  };
+
   // ---------- render helpers ----------
   const isActive = (t: Tab) => tab === t;
 
@@ -394,6 +496,7 @@ export default function RegistrarMasterDataPage() {
                   <>
                     <th className='px-3 py-2 whitespace-nowrap'>Name</th>
                     <th className='px-3 py-2 whitespace-nowrap'>Head</th>
+                    <th className='px-3 py-2 whitespace-nowrap'>Assign Head</th>
                   </>
                 )}
                 {tab === 'Professors' && (
@@ -440,7 +543,7 @@ export default function RegistrarMasterDataPage() {
               {rows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={tab === 'Departments' ? 4 : 7}
+                    colSpan={tab === 'Departments' ? 5 : 7}
                     className='px-3 py-8 text-center text-text-secondary'
                   >
                     No {tab.toLowerCase()} found.
@@ -460,6 +563,26 @@ export default function RegistrarMasterDataPage() {
                         </td>
                         <td className='px-3 py-1 text-text-secondary truncate'>
                           {String(row.head_name || '—')}
+                        </td>
+                        <td className='px-3 py-1'>
+                          <DepartmentHeadSelect
+                            departmentId={Number(row.id)}
+                            value={(row.head as number | null) ?? null}
+                            onChange={(headId) =>
+                              handleAssignHead(
+                                row as unknown as Department,
+                                headId
+                              )
+                            }
+                            label={`Assign head for ${String(
+                              row.name ?? 'department'
+                            )}`}
+                            disabled={
+                              updateDepartment.isPending &&
+                              updateDepartment.variables?.id ===
+                                Number(row.id)
+                            }
+                          />
                         </td>
                       </>
                     )}
@@ -550,6 +673,26 @@ export default function RegistrarMasterDataPage() {
                     )}
                     <td className='px-3 py-1 text-right'>
                       <div className='flex items-center justify-end gap-1.5'>
+                        {tab === 'Professors' && (
+                          <button
+                            type='button'
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopySetupLink(
+                                Number(row.id),
+                                String(row.full_name ?? row.username ?? '')
+                              );
+                            }}
+                            disabled={setupLinkPendingId === Number(row.id)}
+                            className='flex h-7 w-7 items-center justify-center rounded border border-border bg-surface-secondary text-text-secondary transition hover:bg-apple-green-50 hover:text-apple-green-700 disabled:opacity-50'
+                            title='Copy setup link'
+                            aria-label={`Copy setup link for ${String(
+                              row.full_name ?? 'professor'
+                            )}`}
+                          >
+                            <Link2 size={12} />
+                          </button>
+                        )}
                         <button
                           type='button'
                           onClick={(e) => {
@@ -593,6 +736,26 @@ export default function RegistrarMasterDataPage() {
             </tbody>
           </table>
         </div>
+
+        {setupLinkFallback && (
+          <div className='mt-3 rounded-lg border border-border bg-surface-secondary p-3'>
+            <p className='text-[10px] text-text-secondary'>
+              Clipboard unavailable. Copy this setup link for{' '}
+              <span className='font-medium text-text-primary'>
+                {setupLinkFallback.name}
+              </span>{' '}
+              (expires in 24 hours):
+            </p>
+            <input
+              readOnly
+              autoFocus
+              value={setupLinkFallback.url}
+              onFocus={(event) => event.currentTarget.select()}
+              aria-label='Professor setup link'
+              className='mt-2 h-9 w-full rounded-control border border-border bg-surface px-2 text-xs text-text-primary outline-none focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100'
+            />
+          </div>
+        )}
       </div>
 
       <SlideOverDrawer isOpen={drawer.open} onClose={closeDrawer}>
@@ -784,30 +947,6 @@ export default function RegistrarMasterDataPage() {
                       placeholder='Computer Science'
                       className='h-10 rounded-lg border border-border bg-surface px-3 text-sm text-text-primary outline-none focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100 transition-colors'
                     />
-                  </div>
-                  <div className='flex flex-col gap-1.5 sm:col-span-2'>
-                    <label className='text-xs font-medium text-text-secondary'>
-                      Department head
-                    </label>
-                    <select
-                      name='head'
-                      defaultValue={
-                        drawer.mode === 'edit'
-                          ? String(drawer.item?.head ?? '')
-                          : ''
-                      }
-                      className='h-10 rounded-lg border border-border bg-surface px-3 text-sm text-text-primary outline-none focus:border-apple-green-400 focus:ring-2 focus:ring-apple-green-100 transition-colors'
-                    >
-                      <option value=''>No head assigned</option>
-                      {userList.map((user) => (
-                        <option key={user.id} value={user.id}>
-                          {user.username} ({user.email})
-                        </option>
-                      ))}
-                    </select>
-                    <p className='text-[10px] text-text-tertiary'>
-                      Optional. Select a user to lead this department.
-                    </p>
                   </div>
                 </div>
               </>

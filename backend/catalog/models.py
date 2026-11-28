@@ -121,6 +121,13 @@ class Department(models.Model):
 
     class Meta:
         ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["head"],
+                condition=models.Q(head__isnull=False),
+                name="unique_active_department_head",
+            )
+        ]
 
     def __str__(self):
         return self.name

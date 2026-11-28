@@ -1,21 +1,27 @@
 // components/shared/ProfileDropdown.tsx
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, LogOut, User } from 'lucide-react';
+import { ChevronDown, LogOut, Settings, User } from 'lucide-react';
 import { useSignOut } from '../../hooks/useAuth';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 export function ProfileDropdown({
   userName,
   userEmail,
   userRole,
+  userInitials,
   profileTo,
 }: {
   userName: string;
-  userEmail: string;
-  userRole: string;
+  userEmail?: string;
+  userRole?: string;
+  userInitials?: string;
   profileTo?: string;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const { pathname } = useLocation();
+  // Tying the open state to the current path closes the menu on navigation
+  // without a setState-in-effect cascade.
+  const [openAtPath, setOpenAtPath] = useState<string | null>(null);
+  const isOpen = openAtPath === pathname;
   const containerRef = useRef<HTMLDivElement>(null);
   const signOut = useSignOut();
   const navigate = useNavigate();
@@ -28,11 +34,11 @@ export function ProfileDropdown({
         containerRef.current &&
         !containerRef.current.contains(event.target as Node)
       ) {
-        setIsOpen(false);
+        setOpenAtPath(null);
       }
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsOpen(false);
+      if (event.key === 'Escape') setOpenAtPath(null);
     };
 
     document.addEventListener('click', handleOutsideClick);
@@ -51,7 +57,7 @@ export function ProfileDropdown({
       // ignore errors on logout
     }
     navigate('/');
-    setIsOpen(false);
+    setOpenAtPath(null);
   };
 
   return (
@@ -64,20 +70,21 @@ export function ProfileDropdown({
         type='button'
         onClick={(e) => {
           e.stopPropagation();
-          setIsOpen((prev) => !prev);
+          setOpenAtPath(isOpen ? null : pathname);
         }}
         aria-haspopup='menu'
         aria-expanded={isOpen}
-        className='flex items-center gap-2 rounded-full py-1 pl-1 pr-2 transition hover:bg-surface-secondary'
+        className='flex min-h-11 items-center gap-2 rounded-pill py-1 pl-1 pr-2 transition hover:bg-surface-secondary'
       >
-        <span className='grid h-7 w-7 shrink-0 place-items-center rounded-full bg-apple-green-50 text-[11px] font-semibold text-apple-green-700'>
-          {userName.charAt(0).toUpperCase()}
+        <span className='grid h-9 w-9 shrink-0 place-items-center rounded-full bg-apple-green-50 text-caption font-semibold text-apple-green-700'>
+          {userInitials || userName.charAt(0).toUpperCase()}
         </span>
-        <span className='hidden text-sm font-medium text-text-primary sm:block'>
+        <span className='hidden max-w-40 truncate text-body-sm font-medium text-text-primary md:block'>
           {userName}
         </span>
         <ChevronDown
-          size={13}
+          size={14}
+          aria-hidden='true'
           className={`text-text-tertiary transition-transform ${
             isOpen ? 'rotate-180' : ''
           }`}
@@ -88,38 +95,53 @@ export function ProfileDropdown({
       {isOpen && (
         <div
           role='menu'
-          className='absolute right-0 top-full mt-2 w-56 rounded-xl border border-gray-200 bg-white py-2 shadow-xl z-[100]'
+          className='absolute right-0 top-full z-[100] mt-2 w-60 rounded-card border border-border bg-surface py-2 shadow-overlay'
         >
           <div className='px-4 py-2'>
-            <p className='truncate text-sm font-medium text-text-primary'>
+            <p className='truncate text-body-sm font-semibold text-text-primary'>
               {userName}
             </p>
-            <p className='truncate text-xs text-text-tertiary'>{userEmail}</p>
+            {userEmail && (
+              <p className='truncate text-caption text-text-tertiary'>
+                {userEmail}
+              </p>
+            )}
           </div>
-          <div className='px-4 pb-2'>
-            <span className='inline-flex rounded-full bg-apple-green-50 px-2 py-0.5 text-[10px] font-medium capitalize text-apple-green-700'>
-              {userRole}
-            </span>
-          </div>
+          {userRole && (
+            <div className='px-4 pb-2'>
+              <span className='inline-flex rounded-pill bg-apple-green-50 px-2 py-0.5 text-caption font-medium capitalize text-apple-green-700'>
+                {userRole}
+              </span>
+            </div>
+          )}
           <hr className='my-1 border-border' />
           {profileTo && (
             <Link
               to={profileTo}
               role='menuitem'
-              onClick={() => setIsOpen(false)}
-              className='flex w-full items-center gap-2 px-4 py-2 text-sm text-text-primary transition hover:bg-surface-secondary'
+              onClick={() => setOpenAtPath(null)}
+              className='flex w-full items-center gap-2 px-4 py-2 text-body-sm text-text-primary transition hover:bg-surface-secondary'
             >
-              <User size={14} className='shrink-0' />
+              <User size={15} className='shrink-0' aria-hidden='true' />
               My Profile
             </Link>
           )}
+          <Link
+            to='/settings'
+            role='menuitem'
+            onClick={() => setOpenAtPath(null)}
+            className='flex w-full items-center gap-2 px-4 py-2 text-body-sm text-text-primary transition hover:bg-surface-secondary'
+          >
+            <Settings size={15} className='shrink-0' aria-hidden='true' />
+            Account Settings
+          </Link>
           <button
             type='button'
             role='menuitem'
             onClick={handleSignOut}
-            className='flex w-full items-center gap-2 px-4 py-2 text-sm text-apple-green-600 transition hover:bg-apple-green-50 hover:text-apple-green-700'
+            className='flex w-full items-center gap-2 px-4 py-2 text-body-sm text-text-primary transition hover:bg-danger-soft hover:text-danger'
           >
-            <LogOut size={14} className='shrink-0' />
+            <LogOut size={15} className='shrink-0' aria-hidden='true' />
             Log out
           </button>
         </div>
