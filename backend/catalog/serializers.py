@@ -89,6 +89,7 @@ class ProfessorSubjectSerializer(serializers.ModelSerializer):
             "subject_code",
             "subject_title",
             "is_preferred",
+            "modality",
         ]
 
     def get_professor_name(self, obj):

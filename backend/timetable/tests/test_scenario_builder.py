@@ -6,7 +6,10 @@ from django.test import TestCase
 from catalog.models import Department, Room, Section, Subject
 from timetable.engines import run
 from timetable.models import AcademicTerm
-from timetable.scenario_builder import build_scenario
+from timetable.scenario_builder import (
+    build_scenario,
+    build_scenario_from_published_preferences,
+)
 from users.models import Professors
 
 
@@ -150,3 +153,45 @@ class ScenarioBuilderTests(TestCase):
         self.assertTrue(result.feasible, result.violations)
         lab_room = next(r for r in scenario.rooms if r.name == "CS Computer Laboratory 1")
         self.assertEqual(result.classes[0].room_id, lab_room.id)
+
+    def test_asynchronous_modality_skips_room_but_keeps_hours(self):
+        from catalog.models import ProfessorSubject
+        from timetable.models import Assignment, AvailabilityWindow
+        from users.models import ProfessorPreference
+
+        # Availability is keyed off assignments, so the professor needs one.
+        Assignment.objects.create(
+            prof=self.prof,
+            subject=self.subject,
+            section=self.section,
+            term=self.term,
+        )
+        AvailabilityWindow.objects.create(
+            prof=self.prof, day=0, start_time=time(8, 0), end_time=time(17, 0)
+        )
+        ProfessorSubject.objects.create(
+            professor=self.prof,
+            subject=self.subject,
+            modality=ProfessorSubject.Modality.ASYNCHRONOUS,
+        )
+        ProfessorPreference.objects.create(
+            professor=self.prof,
+            subject=self.subject,
+            section=self.section,
+            term=self.term,
+            status="published",
+            meetings=[
+                {"mode": "sync", "duration_slots": 2, "preferred_days": [0]}
+            ],
+        )
+
+        scenario = build_scenario_from_published_preferences(self.term)
+        self.assertEqual(len(scenario.meetings), 1)
+        self.assertEqual(scenario.meetings[0].mode, "async")
+        self.assertEqual(scenario.meetings[0].duration_slots, 2)
+
+        result = run("greedy", scenario)
+        self.assertTrue(result.feasible, result.violations)
+        self.assertEqual(len(result.classes), 1)
+        self.assertIsNone(result.classes[0].room_id)
+        self.assertEqual(result.classes[0].duration_slots, 2)

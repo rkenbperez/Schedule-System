@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
+  BookOpen,
   Check,
   CheckCircle,
   ClipboardList,
   Clock,
   Eye,
+  Layers,
   Search,
+  Send,
   X,
   XCircle,
 } from 'lucide-react';
@@ -15,18 +18,31 @@ import {
   usePublishPreference,
   useBatchPublishPreferences,
 } from '../../hooks/Professor.hooks';
-import type { ProfessorPreferenceListItem } from '../../types/Types';
+import {
+  useDepartments,
+  useProfessorSubjects,
+  useUpdateProfessorSubject,
+} from '../../hooks/Schedule.hooks';
+import type {
+  ProfessorPreferenceListItem,
+  ProfessorSubject,
+} from '../../types/Types';
 import {
   Alert,
   Badge,
   Button,
   Card,
+  CardBody,
+  CardHeader,
+  CardTitle,
   EmptyState,
   IconButton,
   Input,
   Modal,
   PageHeader,
   SegmentedControl,
+  Select,
+  SelectField,
   Separator,
   StatCard,
   Table,
@@ -43,7 +59,7 @@ import { ConfirmDialog } from '../../components/shared/ConfirmDialog';
 import { useToast } from '../../hooks/useToast';
 import DepartmentCreateAssignment from './components/DepartmentCreateAssignment';
 
-type View = 'submissions' | 'assignments';
+type View = 'submissions' | 'modality' | 'assignments' | 'published';
 type StatusFilter = 'all' | 'submitted' | 'published' | 'rejected';
 
 const STATUS_TONE = {
@@ -73,14 +89,400 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function ModalityPanel({
+  departmentsLoading,
+  departmentsError,
+  deptList,
+  selectedDeptId,
+  onSelectDept,
+  effectiveDeptId,
+}: {
+  departmentsLoading: boolean;
+  departmentsError: boolean;
+  deptList: Array<{ id: number; name: string }>;
+  selectedDeptId: number | null;
+  onSelectDept: (id: number | null) => void;
+  effectiveDeptId: number | null;
+}) {
+  const toast = useToast();
+  const professorSubjectsQuery = useProfessorSubjects(
+    effectiveDeptId ?? undefined
+  );
+  const updateModalityMutation = useUpdateProfessorSubject(
+    effectiveDeptId ?? 0
+  );
+  const [optimisticModalities, setOptimisticModalities] = useState<
+    Record<number, 'synchronous' | 'asynchronous'>
+  >({});
+  const [pendingIds, setPendingIds] = useState<Record<number, boolean>>({});
+
+  const assignments = professorSubjectsQuery.data ?? [];
+
+  const getEffectiveModality = (
+    assignment: ProfessorSubject
+  ): 'synchronous' | 'asynchronous' =>
+    optimisticModalities[assignment.id] ??
+    assignment.modality ??
+    'synchronous';
+
+  const syncCount = assignments.filter(
+    (a) => getEffectiveModality(a) === 'synchronous'
+  ).length;
+  const asyncCount = assignments.length - syncCount;
+
+  const handleModalityChange = (
+    assignment: ProfessorSubject,
+    nextModality: 'synchronous' | 'asynchronous'
+  ) => {
+    const previous = getEffectiveModality(assignment);
+    if (previous === nextModality) return;
+
+    setOptimisticModalities((prev) => ({
+      ...prev,
+      [assignment.id]: nextModality,
+    }));
+    setPendingIds((prev) => ({ ...prev, [assignment.id]: true }));
+
+    updateModalityMutation.mutate(
+      {
+        assignmentId: assignment.id,
+        payload: { modality: nextModality },
+      },
+      {
+        onSuccess: (updated) => {
+          setOptimisticModalities((prev) => {
+            const copy = { ...prev };
+            delete copy[assignment.id];
+            return copy;
+          });
+          setPendingIds((prev) => {
+            const copy = { ...prev };
+            delete copy[assignment.id];
+            return copy;
+          });
+          const resolved = updated.modality ?? nextModality;
+          toast.addToast({
+            type: 'success',
+            title: 'Delivery modality updated',
+            description:
+              resolved === 'asynchronous'
+                ? `${assignment.subject_code} (${assignment.professor_name}) set to Asynchronous — no physical room will be allocated.`
+                : `${assignment.subject_code} (${assignment.professor_name}) set to Synchronous — requires on-campus room allocation.`,
+          });
+        },
+        onError: () => {
+          setOptimisticModalities((prev) => ({
+            ...prev,
+            [assignment.id]: previous,
+          }));
+          setPendingIds((prev) => {
+            const copy = { ...prev };
+            delete copy[assignment.id];
+            return copy;
+          });
+          toast.addToast({
+            type: 'error',
+            title: 'Could not update modality',
+            description: 'Reverted to the previous setting.',
+          });
+        },
+      }
+    );
+  };
+
+  if (departmentsLoading) {
+    return (
+      <Card>
+        <CardBody className='flex flex-col items-center gap-3 py-14'>
+          <div className='h-8 w-8 animate-spin rounded-full border-2 border-border border-t-apple-green-600' />
+          <p className='text-body-sm text-text-secondary'>
+            Loading department assignments…
+          </p>
+        </CardBody>
+      </Card>
+    );
+  }
+
+  if (departmentsError) {
+    return (
+      <Alert tone='danger' title='Unable to load departments'>
+        Please try again later.
+      </Alert>
+    );
+  }
+
+  if (deptList.length === 0) {
+    return (
+      <EmptyState
+        icon={Layers}
+        title='No department assigned'
+        description='You are not assigned as head of any department.'
+      />
+    );
+  }
+
+  return (
+    <div className='space-y-4'>
+      <Alert tone='info' title='Room allocation impact'>
+        <strong>Synchronous (On-Campus)</strong> courses require a physical
+        classroom or laboratory during schedule generation.{' '}
+        <strong>Asynchronous (Online / No Room)</strong> courses run online and
+        do not reserve campus rooms.
+      </Alert>
+
+      <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
+        <StatCard
+          icon={Layers}
+          label='Total assignments'
+          value={assignments.length}
+          hint='Professor–subject pairs'
+        />
+        <StatCard
+          icon={CheckCircle}
+          label='Synchronous (On-Campus)'
+          value={syncCount}
+          hint='Requires physical room'
+        />
+        <StatCard
+          icon={Clock}
+          label='Asynchronous (Online)'
+          value={asyncCount}
+          hint='No room allocated'
+        />
+      </div>
+
+      <Card className='overflow-hidden'>
+        <CardHeader className='items-center'>
+          <div>
+            <CardTitle>Course delivery modality</CardTitle>
+            <p className='mt-1 text-body-sm text-text-secondary'>
+              Set whether each faculty subject assignment meets on campus or
+              asynchronously online.
+            </p>
+          </div>
+          {deptList.length > 1 && (
+            <div className='w-full sm:w-64'>
+              <SelectField
+                id='modality-department'
+                label='Department'
+                value={String(selectedDeptId ?? effectiveDeptId ?? '')}
+                onChange={(e) => onSelectDept(Number(e.target.value) || null)}
+              >
+                {deptList.map((dept) => (
+                  <option key={dept.id} value={String(dept.id)}>
+                    {dept.name}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+          )}
+        </CardHeader>
+
+        {professorSubjectsQuery.isLoading ? (
+          <CardBody className='flex flex-col items-center gap-3 py-14'>
+            <div className='h-8 w-8 animate-spin rounded-full border-2 border-border border-t-apple-green-600' />
+            <p className='text-body-sm text-text-secondary'>
+              Loading professor subject assignments…
+            </p>
+          </CardBody>
+        ) : assignments.length === 0 ? (
+          <EmptyState
+            className='py-14'
+            icon={BookOpen}
+            title='No faculty subject assignments yet'
+            description='Add professor–subject qualifications in the Faculty Assignments tab to configure delivery modality.'
+          />
+        ) : (
+          <TableContainer className='rounded-none border-0'>
+            <Table aria-label='Sync and async delivery modality'>
+              <THead>
+                <TR>
+                  <TH>Professor</TH>
+                  <TH>Subject</TH>
+                  <TH>Room impact</TH>
+                  <TH className='w-72'>Delivery modality</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {assignments.map((assignment) => {
+                  const modality = getEffectiveModality(assignment);
+                  const isAsync = modality === 'asynchronous';
+                  const isPending = Boolean(pendingIds[assignment.id]);
+
+                  return (
+                    <TR key={assignment.id}>
+                      <TD className='font-medium'>
+                        {assignment.professor_name}
+                      </TD>
+                      <TD>
+                        <div className='font-medium text-text-primary'>
+                          {assignment.subject_code}
+                        </div>
+                        <div className='text-caption text-text-tertiary'>
+                          {assignment.subject_title}
+                        </div>
+                      </TD>
+                      <TD>
+                        <Badge tone={isAsync ? 'neutral' : 'success'} size='sm'>
+                          {isAsync
+                            ? 'No room (Online)'
+                            : 'Room required'}
+                        </Badge>
+                      </TD>
+                      <TD>
+                        <Select
+                          aria-label={`Modality for ${assignment.professor_name} ${assignment.subject_code}`}
+                          value={modality}
+                          disabled={isPending}
+                          onValueChange={(value) =>
+                            handleModalityChange(
+                              assignment,
+                              value as 'synchronous' | 'asynchronous'
+                            )
+                          }
+                        >
+                          <option value='synchronous'>
+                            Synchronous (On-Campus)
+                          </option>
+                          <option value='asynchronous'>
+                            Asynchronous (Online / No Room)
+                          </option>
+                        </Select>
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+          </TableContainer>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function PublishedSummaryPanel({
+  isLoading,
+  publishedItems,
+}: {
+  isLoading: boolean;
+  publishedItems: Array<{ id: number; preference: ProfessorPreferenceListItem }>;
+}) {
+  if (isLoading) {
+    return (
+      <Card>
+        <CardBody className='flex flex-col items-center gap-3 py-14'>
+          <div className='h-8 w-8 animate-spin rounded-full border-2 border-border border-t-apple-green-600' />
+          <p className='text-body-sm text-text-secondary'>
+            Loading published preferences…
+          </p>
+        </CardBody>
+      </Card>
+    );
+  }
+
+  return (
+    <div className='space-y-4'>
+      <Alert
+        tone={publishedItems.length > 0 ? 'success' : 'info'}
+        title={
+          publishedItems.length > 0
+            ? `${publishedItems.length} published preference${publishedItems.length !== 1 ? 's' : ''} ready for schedule generation`
+            : 'No published preferences yet'
+        }
+      >
+        {publishedItems.length > 0
+          ? 'These department-approved preferences are visible to the Registrar and included when generating the term schedule.'
+          : 'Publish submitted preferences in the Submissions tab to make them available for the Registrar’s schedule generator.'}
+      </Alert>
+
+      <Card className='overflow-hidden'>
+        <CardHeader>
+          <div>
+            <CardTitle>Published department preferences</CardTitle>
+            <p className='mt-1 text-body-sm text-text-secondary'>
+              Read-only summary of approved preferences for the active term.
+            </p>
+          </div>
+        </CardHeader>
+
+        {publishedItems.length === 0 ? (
+          <EmptyState
+            className='py-14'
+            icon={Send}
+            title='Nothing published yet'
+            description='Published professor preferences will appear here once reviewed and approved.'
+          />
+        ) : (
+          <TableContainer className='rounded-none border-0'>
+            <Table aria-label='Published department preferences'>
+              <THead>
+                <TR>
+                  <TH>Professor</TH>
+                  <TH>Subject / Section</TH>
+                  <TH>Meetings</TH>
+                  <TH>Total hours</TH>
+                  <TH>Published</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {publishedItems.map((item) => {
+                  const pref = item.preference;
+                  return (
+                    <TR key={pref.id}>
+                      <TD className='font-medium'>{pref.professor_name}</TD>
+                      <TD>
+                        <div className='font-medium text-text-primary'>
+                          {pref.subject_code} · {pref.subject_title}
+                        </div>
+                        <div className='text-caption text-text-tertiary'>
+                          {pref.section_name || 'Subject preference (no section)'}
+                        </div>
+                      </TD>
+                      <TD>
+                        {pref.meetings.length === 0 ? (
+                          <span className='text-caption text-text-tertiary'>
+                            Subject preference only
+                          </span>
+                        ) : (
+                          <div className='flex flex-wrap gap-1'>
+                            {pref.meetings.map((meeting, index) => (
+                              <Badge key={index} tone='neutral' size='sm'>
+                                {MODE_LABEL[meeting.mode] ?? meeting.mode} ·{' '}
+                                {meeting.duration_slots}h
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </TD>
+                      <TD className='font-medium'>{pref.total_duration}h</TD>
+                      <TD className='text-caption text-text-secondary'>
+                        {pref.published_at
+                          ? new Date(pref.published_at).toLocaleDateString()
+                          : '—'}
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+          </TableContainer>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 export default function DepartmentHeadDashboard() {
   const toast = useToast();
   const { data: submissions, isLoading, refetch } = useDepartmentHeadSubmissions({
     enabled: true,
   });
+  const departments = useDepartments({ headed: 'me' });
   const publishMutation = usePublishPreference();
   const batchMutation = useBatchPublishPreferences();
 
+  const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -96,9 +498,28 @@ export default function DepartmentHeadDashboard() {
 
   const location = useLocation();
   const navigate = useNavigate();
-  const view: View = location.pathname.endsWith('/assignments')
+  // The routed tab is derived from the URL; the other tabs are pure local
+  // state. Selecting the routed tab again clears the local override.
+  const routedTab: View = location.pathname.endsWith('/assignments')
     ? 'assignments'
     : 'submissions';
+  const [localTab, setLocalTab] = useState<View | null>(null);
+  const activeTab = localTab ?? routedTab;
+
+  const handleTabChange = (next: View) => {
+    // Only non-routed tabs are remembered locally; 'assignments' is owned by
+    // the URL so back/forward navigation always wins over local state.
+    setLocalTab(next === 'assignments' || next === routedTab ? null : next);
+    if (next === 'assignments') {
+      navigate('/department-head/assignments');
+    } else if (location.pathname.endsWith('/assignments')) {
+      navigate('/department-head');
+    }
+  };
+
+  const deptList = departments.data ?? [];
+  const effectiveDeptId = selectedDeptId ?? deptList[0]?.id ?? null;
+  const profSubjectsQuery = useProfessorSubjects(effectiveDeptId ?? undefined);
 
   const allItems = useMemo(
     () => (submissions ?? []).flatMap((submission) => submission.items),
@@ -108,9 +529,11 @@ export default function DepartmentHeadDashboard() {
   const submittedCount = allItems.filter(
     (item) => item.preference.status === 'submitted'
   ).length;
-  const publishedCount = allItems.filter(
-    (item) => item.preference.status === 'published'
-  ).length;
+  const publishedItems = useMemo(
+    () => allItems.filter((item) => item.preference.status === 'published'),
+    [allItems]
+  );
+  const publishedCount = publishedItems.length;
   const rejectedCount = allItems.filter(
     (item) => item.preference.status === 'rejected'
   ).length;
@@ -125,7 +548,7 @@ export default function DepartmentHeadDashboard() {
       pref.professor_name.toLowerCase().includes(normalizedQuery) ||
       pref.subject_code.toLowerCase().includes(normalizedQuery) ||
       pref.subject_title.toLowerCase().includes(normalizedQuery) ||
-      pref.section_name.toLowerCase().includes(normalizedQuery);
+      (pref.section_name ?? '').toLowerCase().includes(normalizedQuery);
     return matchesStatus && matchesQuery;
   });
 
@@ -262,8 +685,14 @@ export default function DepartmentHeadDashboard() {
   };
 
   const viewOptions: SegmentedOption<View>[] = [
-    { value: 'submissions', label: 'Submissions' },
-    { value: 'assignments', label: 'Assignments' },
+    { value: 'submissions', label: 'Submissions', count: submittedCount },
+    {
+      value: 'modality',
+      label: 'Sync / Async Modality',
+      count: profSubjectsQuery.data?.length,
+    },
+    { value: 'assignments', label: 'Faculty Assignments' },
+    { value: 'published', label: 'Published Summary', count: publishedCount },
   ];
 
   const statusOptions: SegmentedOption<StatusFilter>[] = [
@@ -277,22 +706,38 @@ export default function DepartmentHeadDashboard() {
     <section className='w-full space-y-6'>
       <PageHeader
         title='Department Head Dashboard'
-        description='Review and publish professor schedule preferences for your department.'
+        description='Review professor preferences, configure course delivery modality, and manage faculty assignments.'
       />
 
       <SegmentedControl
         label='Dashboard sections'
         options={viewOptions}
-        value={view}
-        onChange={(next) =>
-          navigate(next === 'assignments' ? '/department-head/assignments' : '/department-head')
-        }
-        className='w-fit'
+        value={activeTab}
+        onChange={handleTabChange}
+        className='w-full sm:w-fit'
       />
 
-      {view === 'assignments' ? (
-        <DepartmentCreateAssignment />
-      ) : (
+      {activeTab === 'assignments' && <DepartmentCreateAssignment />}
+
+      {activeTab === 'modality' && (
+        <ModalityPanel
+          departmentsLoading={departments.isLoading}
+          departmentsError={departments.isError}
+          deptList={deptList}
+          selectedDeptId={selectedDeptId}
+          onSelectDept={setSelectedDeptId}
+          effectiveDeptId={effectiveDeptId}
+        />
+      )}
+
+      {activeTab === 'published' && (
+        <PublishedSummaryPanel
+          isLoading={isLoading}
+          publishedItems={publishedItems}
+        />
+      )}
+
+      {activeTab === 'submissions' && (
         <>
           <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
             <StatCard
@@ -460,18 +905,24 @@ export default function DepartmentHeadDashboard() {
                               {pref.subject_code} · {pref.subject_title}
                             </div>
                             <div className='text-caption text-text-tertiary'>
-                              {pref.section_name}
+                              {pref.section_name || 'Subject preference (no section)'}
                             </div>
                           </TD>
                           <TD>
-                            <div className='flex flex-wrap gap-1'>
-                              {pref.meetings.map((meeting, index) => (
-                                <Badge key={index} tone='neutral' size='sm'>
-                                  {MODE_LABEL[meeting.mode] ?? meeting.mode} ·{' '}
-                                  {meeting.duration_slots}h
-                                </Badge>
-                              ))}
-                            </div>
+                            {pref.meetings.length === 0 ? (
+                              <span className='text-caption text-text-tertiary'>
+                                Subject preference only
+                              </span>
+                            ) : (
+                              <div className='flex flex-wrap gap-1'>
+                                {pref.meetings.map((meeting, index) => (
+                                  <Badge key={index} tone='neutral' size='sm'>
+                                    {MODE_LABEL[meeting.mode] ?? meeting.mode} ·{' '}
+                                    {meeting.duration_slots}h
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
                           </TD>
                           <TD className='font-medium'>{pref.total_duration}h</TD>
                           <TD>
@@ -578,7 +1029,7 @@ export default function DepartmentHeadDashboard() {
               <div>
                 <p className='text-caption text-text-tertiary'>Section</p>
                 <p className='text-body-sm font-medium text-text-primary'>
-                  {reviewPreference.section_name}
+                  {reviewPreference.section_name || 'Subject preference (no section)'}
                 </p>
               </div>
             </div>
@@ -590,34 +1041,40 @@ export default function DepartmentHeadDashboard() {
                 Meetings
               </h4>
               <div className='space-y-2'>
-                {reviewPreference.meetings.map((meeting, index) => (
-                  <div
-                    key={index}
-                    className='rounded-control border border-border bg-surface-secondary p-3'
-                  >
-                    <div className='flex items-center justify-between gap-2'>
-                      <span className='text-body-sm font-medium text-text-primary'>
-                        {MODE_LABEL[meeting.mode] ?? meeting.mode}
-                      </span>
-                      <span className='text-caption text-text-tertiary'>
-                        {meeting.duration_slots} hour
-                        {meeting.duration_slots !== 1 ? 's' : ''}
-                      </span>
+                {reviewPreference.meetings.length === 0 ? (
+                  <p className='text-caption text-text-tertiary'>
+                    Subject preference only — no specific meeting slots attached.
+                  </p>
+                ) : (
+                  reviewPreference.meetings.map((meeting, index) => (
+                    <div
+                      key={index}
+                      className='rounded-control border border-border bg-surface-secondary p-3'
+                    >
+                      <div className='flex items-center justify-between gap-2'>
+                        <span className='text-body-sm font-medium text-text-primary'>
+                          {MODE_LABEL[meeting.mode] ?? meeting.mode}
+                        </span>
+                        <span className='text-caption text-text-tertiary'>
+                          {meeting.duration_slots} hour
+                          {meeting.duration_slots !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      {meeting.preferred_days && meeting.preferred_days.length > 0 && (
+                        <p className='mt-1 text-caption text-text-secondary'>
+                          {meeting.preferred_days
+                            .map((day) => DAY_LABELS[day])
+                            .join(', ')}
+                        </p>
+                      )}
+                      {meeting.preferred_start && meeting.preferred_end && (
+                        <p className='text-caption text-text-secondary'>
+                          {meeting.preferred_start} – {meeting.preferred_end}
+                        </p>
+                      )}
                     </div>
-                    {meeting.preferred_days && meeting.preferred_days.length > 0 && (
-                      <p className='mt-1 text-caption text-text-secondary'>
-                        {meeting.preferred_days
-                          .map((day) => DAY_LABELS[day])
-                          .join(', ')}
-                      </p>
-                    )}
-                    {meeting.preferred_start && meeting.preferred_end && (
-                      <p className='text-caption text-text-secondary'>
-                        {meeting.preferred_start} – {meeting.preferred_end}
-                      </p>
-                    )}
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
 

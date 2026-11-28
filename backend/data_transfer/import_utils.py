@@ -2,7 +2,7 @@ import csv
 import io
 import zipfile
 from dataclasses import dataclass, field
-from datetime import time
+from datetime import date, datetime, time
 from typing import Any
 from uuid import uuid4
 
@@ -68,7 +68,13 @@ OPTIONAL_COLUMNS = {
         "max_consecutive",
         "user_id",
     ],
-    "ProfessorPreferences": ["priority"],
+    "ProfessorPreferences": [
+        "priority",
+        "days",
+        "start_time",
+        "end_time",
+        "mode",
+    ],
     "Assignments": ["term_id"],
     "Meetings": ["duration_slots"],
     "Availability": ["is_preferred"],
@@ -111,6 +117,10 @@ TEMPLATE_COLUMNS["ProfessorPreferences"] = [
     "professor_email",
     "subject_code",
     "priority",
+    "days",
+    "start_time",
+    "end_time",
+    "mode",
 ]
 
 # Read-only display columns appended AFTER the input columns in the XLSX
@@ -170,6 +180,10 @@ TEMPLATE_COLUMN_GUIDE = {
         ("professor_email", "Required", "Professor's email (case-insensitive). Matches a professor already in the database or one created on the Professors sheet of this workbook."),
         ("subject_code", "Required", "Subject code (case-insensitive). Matches a subject already in the database or one created on the Subjects sheet of this workbook."),
         ("priority", "Optional", "Positive integer preference order for that professor. Leave blank to number the rows sequentially per professor."),
+        ("days", "Optional", "Meeting days. Use a multi-day pattern: MWF, TTH, MON,WED, MON-FRI, or single days MON..SAT. Leave days, start_time, and end_time blank for a subject-only preference."),
+        ("start_time", "Optional", "Meeting start time in 24-hour HH:MM. Required together with days and end_time; must be before end_time."),
+        ("end_time", "Optional", "Meeting end time in 24-hour HH:MM. Required together with days and start_time; must be after start_time."),
+        ("mode", "Optional", "Delivery mode for the meeting: sync, lab, or async. Defaults to sync."),
     ],
 }
 
@@ -189,6 +203,7 @@ TEMPLATE_GENERAL_NOTES = [
     "Professors are matched by email (case-insensitive): a new email creates the login account and profile; an existing email updates that professor. Passwords are never set or reset by an import.",
     "The 'department_name' columns (Rooms and Professors) auto-fill by formula once a valid department_id is entered; do not edit them.",
     "ProfessorPreferences is optional: list one preferred subject per row. An active academic term is required when it has rows.",
+    "ProfessorPreferences meeting columns (days, start_time, end_time, mode) are optional: leave all of them blank for a legacy subject-only preference, or fill days+start_time+end_time together. Days accepts MWF, TTH, MON,WED, or MON-FRI; times are 24-hour HH:MM and start_time must be before end_time.",
     "Legacy 9-sheet workbooks that also include Assignments, Meetings, Availability, and BusyBlocks sheets are still accepted on upload.",
 ]
 
@@ -217,6 +232,7 @@ class CommitResult:
     committed: bool
     summary: dict = field(default_factory=lambda: {"creates": 0, "updates": 0})
     errors: list = field(default_factory=list)
+    batch_id: int | None = None
 
 
 def parse_time(value: Any) -> time | None:
@@ -288,6 +304,105 @@ def parse_mode(value: Any) -> str | None:
         if v in VALID_MODES:
             return v
     return None
+
+
+# Canonical day codes accepted in the ProfessorPreferences `days` column.
+DAY_CODES = ["MON", "TUE", "WED", "THU", "FRI", "SAT"]
+DAY_CODE_INDEX = {code: i for i, code in enumerate(DAY_CODES)}
+_DAY_ALIASES = {
+    "MONDAY": "MON", "MON": "MON",
+    "TUESDAY": "TUE", "TUE": "TUE", "TUES": "TUE",
+    "WEDNESDAY": "WED", "WED": "WED",
+    "THURSDAY": "THU", "THU": "THU", "THUR": "THU", "THURS": "THU",
+    "FRIDAY": "FRI", "FRI": "FRI",
+    "SATURDAY": "SAT", "SAT": "SAT",
+}
+# Compact single-letter codes: S is Saturday (the app has no Sunday).
+_COMPACT_DAY = {"M": "MON", "T": "TUE", "W": "WED", "F": "FRI", "S": "SAT"}
+
+
+def _parse_day_token(token: str) -> list[str] | None:
+    """Parse one token: a day name, compact run (MWF/TTH), or MON-FRI range."""
+    token = token.strip().upper()
+    if not token:
+        return None
+    if "-" in token:
+        left, _, right = token.partition("-")
+        start = _DAY_ALIASES.get(left.strip())
+        end = _DAY_ALIASES.get(right.strip())
+        if start is None or end is None:
+            return None
+        lo, hi = sorted((DAY_CODE_INDEX[start], DAY_CODE_INDEX[end]))
+        return DAY_CODES[lo : hi + 1]
+    if token in _DAY_ALIASES:
+        return [_DAY_ALIASES[token]]
+    codes = []
+    i = 0
+    while i < len(token):
+        pair = token[i : i + 2]
+        if pair == "TH":
+            codes.append("THU")
+            i += 2
+            continue
+        code = _COMPACT_DAY.get(token[i])
+        if code is None:
+            return None
+        codes.append(code)
+        i += 1
+    return codes
+
+
+def parse_days(value: Any) -> list[str] | None:
+    """Normalize a multi-day pattern into ordered canonical MON..SAT codes.
+
+    Accepts ``MWF``, ``TTH``, ``MON,WED``, ``MON-FRI``, ``M W F``, ``0``, etc.
+    Returns None when empty or unparseable; callers distinguish the two by
+    checking whether the raw value is blank.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, int):
+        return [DAY_CODES[value]] if value in DAY_CODE_INDEX.values() else None
+    if not isinstance(value, str):
+        return None
+    text = value.strip().upper().replace("/", ",").replace(";", ",").replace("+", ",")
+    if not text:
+        return None
+    tokens = [t for t in text.replace(" ", ",").split(",") if t]
+    codes: list[str] = []
+    for token in tokens:
+        parsed = _parse_day_token(token)
+        if parsed is None:
+            return None
+        codes.extend(parsed)
+    ordered = sorted(set(codes), key=DAY_CODE_INDEX.get)
+    return ordered or None
+
+
+def build_preference_meetings(row: dict) -> list[dict] | None:
+    """Turn one ProfessorPreferences row into preference meeting objects.
+
+    Returns None for legacy 3-column rows (no day/time data) so commit leaves
+    any existing meetings untouched.
+    """
+    days = parse_days(row.get("days"))
+    start = parse_time(row.get("start_time"))
+    end = parse_time(row.get("end_time"))
+    if not days or start is None or end is None:
+        return None
+    mode = parse_mode(row.get("mode")) or "sync"
+    minutes = (end.hour * 60 + end.minute) - (start.hour * 60 + start.minute)
+    duration_slots = max(1, -(-minutes // 60))
+    return [
+        {
+            "mode": mode,
+            "duration_slots": duration_slots,
+            "preferred_days": [DAY_CODE_INDEX[day]],
+            "preferred_start": start.strftime("%H:%M"),
+            "preferred_end": end.strftime("%H:%M"),
+        }
+        for day in days
+    ]
 
 
 class ImportProcessor:
@@ -418,7 +533,9 @@ class ImportProcessor:
         result["__headers__"] = headers_map
         return result
 
-    def validate_all(self, parsed_data: dict[str, list[dict]]) -> ImportResult:
+    def validate_all(
+        self, parsed_data: dict[str, list[dict]], filename: str = ""
+    ) -> ImportResult:
         # Rows the parser could not read surface as structured row errors;
         # the remaining rows keep flowing through normal validation.
         parse_errors = parsed_data.pop("_parse_errors", [])
@@ -449,7 +566,7 @@ class ImportProcessor:
         )
         cache.set(
             f"import_preview_{result.preview_token}",
-            {"rows": parsed_data, "error_keys": error_keys},
+            {"rows": parsed_data, "error_keys": error_keys, "filename": filename},
             self.PREVIEW_TTL,
         )
         return result
@@ -653,6 +770,61 @@ class ImportProcessor:
                                 result.errors.append(
                                     ImportError(sheet_name, row_num, col, "Priority must be positive integer")
                                 )
+                    elif sheet_name == "ProfessorPreferences" and col == "days":
+                        if val is not None and str(val).strip() != "":
+                            if parse_days(val) is None:
+                                result.valid = False
+                                result.errors.append(
+                                    ImportError(sheet_name, row_num, col, f"Invalid days '{val}'. Use MWF, TTH, MON,WED, MON-FRI, or MON..SAT")
+                                )
+                    elif sheet_name == "ProfessorPreferences" and col in ("start_time", "end_time"):
+                        if val is not None and str(val).strip() != "":
+                            if parse_time(val) is None:
+                                result.valid = False
+                                result.errors.append(
+                                    ImportError(sheet_name, row_num, col, f"Invalid time format '{val}'. Use HH:MM")
+                                )
+                    elif sheet_name == "ProfessorPreferences" and col == "mode":
+                        if val is not None and str(val).strip() != "":
+                            if parse_mode(val) is None:
+                                result.valid = False
+                                result.errors.append(
+                                    ImportError(sheet_name, row_num, col, f"Invalid mode '{val}'. Must be one of: async, sync, lab")
+                                )
+                if sheet_name == "ProfessorPreferences":
+                    self._validate_preference_meeting_fields(row, row_num, result)
+
+    @staticmethod
+    def _validate_preference_meeting_fields(row: dict, row_num: int, result: ImportResult):
+        """Days, start, and end are all-or-nothing and start must precede end."""
+        fields = ("days", "start_time", "end_time")
+        filled = {f for f in fields if str(row.get(f) or "").strip()}
+        if not filled:
+            return
+        if len(filled) != len(fields):
+            missing = sorted(set(fields) - filled)
+            result.valid = False
+            result.errors.append(
+                ImportError(
+                    "ProfessorPreferences",
+                    row_num,
+                    missing[0],
+                    "days, start_time, and end_time must be provided together",
+                )
+            )
+            return
+        start = parse_time(row.get("start_time"))
+        end = parse_time(row.get("end_time"))
+        if start is not None and end is not None and start >= end:
+            result.valid = False
+            result.errors.append(
+                ImportError(
+                    "ProfessorPreferences",
+                    row_num,
+                    "start_time",
+                    "start_time must be before end_time",
+                )
+            )
 
     def _validate_cross_model(self, parsed_data: dict, result: ImportResult):
         from catalog.models import Department, Subject
@@ -941,7 +1113,7 @@ class ImportProcessor:
             "Subjects": ["code", "title", "units"],
             "Sections": ["name", "headcount", "program", "year_level", "term_id"],
             "Professors": ["email", "first_name", "last_name", "department_id", "max_hours"],
-            "ProfessorPreferences": ["professor_email", "subject_code", "priority"],
+            "ProfessorPreferences": ["professor_email", "subject_code", "priority", "days", "start_time", "end_time", "mode"],
             "Assignments": ["professor_id", "subject_id", "section_id", "term_id"],
             "Meetings": ["assignment_id", "order", "mode", "duration_slots"],
             "Availability": ["professor_id", "day", "start_time", "end_time", "is_preferred"],
@@ -1120,6 +1292,56 @@ class ImportProcessor:
             raise ValueError(f"{model.__name__} id {pk} does not exist")
         return pk_num
 
+    @staticmethod
+    def _json_snapshot(obj) -> dict:
+        """Concrete field values of an existing row, JSON-safe for the manifest."""
+        values = {}
+        for field_obj in obj._meta.concrete_fields:
+            value = getattr(obj, field_obj.attname)
+            if isinstance(value, (datetime, date, time)):
+                value = value.isoformat()
+            values[field_obj.attname] = value
+        return values
+
+    @staticmethod
+    def _record(manifest, model, obj, created, before):
+        label = f"{model._meta.app_label}.{model._meta.model_name}"
+        if created:
+            manifest["created"].append({"model": label, "pk": obj.pk})
+        else:
+            manifest["updated"].append(
+                {"model": label, "pk": obj.pk, "before": before or {}}
+            )
+
+    def _upsert(
+        self, manifest, model, defaults, pk=None, lookup=None, allow_new_pk=False
+    ):
+        """Create or update one row and record it for rollback."""
+        existing = None
+        explicit_pk = None
+        if pk not in (None, ""):
+            explicit_pk = parse_int(pk)
+            existing = model.objects.filter(pk=explicit_pk).first()
+            if existing is None and not allow_new_pk:
+                raise ValueError(f"{model.__name__} id {pk} does not exist")
+        elif lookup:
+            existing = model.objects.filter(**lookup).first()
+        before = self._json_snapshot(existing) if existing else None
+        if existing is None:
+            create_values = {**(lookup or {}), **defaults}
+            # Legacy sheets let a typed id create that exact record.
+            if explicit_pk is not None:
+                create_values["id"] = explicit_pk
+            obj = model.objects.create(**create_values)
+            created = True
+        else:
+            for key, value in defaults.items():
+                setattr(existing, key, value)
+            existing.save()
+            obj, created = existing, False
+        self._record(manifest, model, obj, created, before)
+        return obj, created
+
     def commit(
         self,
         preview_token: str,
@@ -1130,14 +1352,17 @@ class ImportProcessor:
         if not cached:
             return CommitResult(committed=False, errors=[{"message": "Preview token expired or invalid"}])
 
-        # New cache shape: {"rows": ..., "error_keys": [...]}. Tolerate the
-        # old bare-dict shape defensively (e.g. tokens cached before deploy).
+        # New cache shape: {"rows": ..., "error_keys": [...], "filename": ...}.
+        # Tolerate the old bare-dict shape defensively (e.g. tokens cached
+        # before deploy).
         if isinstance(cached, dict) and "rows" in cached:
             parsed_data = cached.get("rows") or {}
             error_keys = set(cached.get("error_keys") or [])
+            filename = cached.get("filename") or ""
         else:
             parsed_data = cached
             error_keys = set()
+            filename = ""
 
         selected = set(selected_keys) if selected_keys is not None else None
         # Never commit preview-errored rows: selected_keys=None means "all
@@ -1177,19 +1402,17 @@ class ImportProcessor:
             from django.contrib.auth import get_user_model
 
             User = get_user_model()
+            manifest = {"created": [], "updated": []}
 
             with transaction.atomic():
                 # Departments
                 for row in parsed_data.get("Departments", []):
-                    pk = row.get("id")
-                    if pk not in (None, ""):
-                        self._ensure_pk_exists(Department, pk)
-                    defaults = {"name": row["name"]}
-                    if pk:
-                        obj, created = Department.objects.update_or_create(id=pk, defaults=defaults)
-                    else:
-                        obj = Department.objects.create(**defaults)
-                        created = True
+                    obj, created = self._upsert(
+                        manifest,
+                        Department,
+                        {"name": row["name"]},
+                        pk=row.get("id"),
+                    )
                     if created:
                         result.summary["creates"] += 1
                     else:
@@ -1197,19 +1420,16 @@ class ImportProcessor:
 
                 # Rooms
                 for row in parsed_data.get("Rooms", []):
-                    pk = row.get("id")
-                    if pk not in (None, ""):
-                        self._ensure_pk_exists(Room, pk)
-                    defaults = {
-                        "name": row["name"],
-                        "capacity": parse_int(row["capacity"]),
-                        "department_id": parse_int(row.get("department_id")) or None,
-                    }
-                    if pk:
-                        obj, created = Room.objects.update_or_create(id=pk, defaults=defaults)
-                    else:
-                        obj = Room.objects.create(**defaults)
-                        created = True
+                    obj, created = self._upsert(
+                        manifest,
+                        Room,
+                        {
+                            "name": row["name"],
+                            "capacity": parse_int(row["capacity"]),
+                            "department_id": parse_int(row.get("department_id")) or None,
+                        },
+                        pk=row.get("id"),
+                    )
                     if created:
                         result.summary["creates"] += 1
                     else:
@@ -1217,19 +1437,16 @@ class ImportProcessor:
 
                 # Subjects
                 for row in parsed_data.get("Subjects", []):
-                    pk = row.get("id")
-                    if pk not in (None, ""):
-                        self._ensure_pk_exists(Subject, pk)
-                    defaults = {
-                        "code": row["code"],
-                        "title": row["title"],
-                        "units": parse_int(row.get("units")) or 3,
-                    }
-                    if pk:
-                        obj, created = Subject.objects.update_or_create(id=pk, defaults=defaults)
-                    else:
-                        obj = Subject.objects.create(**defaults)
-                        created = True
+                    obj, created = self._upsert(
+                        manifest,
+                        Subject,
+                        {
+                            "code": row["code"],
+                            "title": row["title"],
+                            "units": parse_int(row.get("units")) or 3,
+                        },
+                        pk=row.get("id"),
+                    )
                     if created:
                         result.summary["creates"] += 1
                     else:
@@ -1237,21 +1454,18 @@ class ImportProcessor:
 
                 # Sections
                 for row in parsed_data.get("Sections", []):
-                    pk = row.get("id")
-                    if pk not in (None, ""):
-                        self._ensure_pk_exists(Section, pk)
-                    defaults = {
-                        "name": row["name"],
-                        "headcount": parse_int(row["headcount"]),
-                        "term_id": parse_int(row.get("term_id")) or None,
-                        # Blank program is derived from the name by Section.save().
-                        "program": (row.get("program") or "").strip(),
-                    }
-                    if pk:
-                        obj, created = Section.objects.update_or_create(id=pk, defaults=defaults)
-                    else:
-                        obj = Section.objects.create(**defaults)
-                        created = True
+                    obj, created = self._upsert(
+                        manifest,
+                        Section,
+                        {
+                            "name": row["name"],
+                            "headcount": parse_int(row["headcount"]),
+                            "term_id": parse_int(row.get("term_id")) or None,
+                            # Blank program is derived from the name by Section.save().
+                            "program": (row.get("program") or "").strip(),
+                        },
+                        pk=row.get("id"),
+                    )
                     if created:
                         result.summary["creates"] += 1
                     else:
@@ -1267,6 +1481,12 @@ class ImportProcessor:
                         pk = row.get("id")
                         if pk not in (None, ""):
                             self._ensure_pk_exists(Professors, pk)
+                        existing = Professors.objects.filter(
+                            user__email__iexact=email
+                        ).first()
+                        before = (
+                            self._json_snapshot(existing) if existing else None
+                        )
                         provisioned = provision_professor(
                             email=email,
                             first_name=row.get("first_name") or "",
@@ -1279,6 +1499,13 @@ class ImportProcessor:
                             ),
                             max_consecutive=parse_int(row.get("max_consecutive")) or None,
                         )
+                        self._record(
+                            manifest,
+                            Professors,
+                            provisioned.professor,
+                            provisioned.professor_created,
+                            before,
+                        )
                         if provisioned.action == "created":
                             result.summary["creates"] += 1
                         else:
@@ -1287,22 +1514,21 @@ class ImportProcessor:
                     # Legacy user_id-based row (pre-email workbooks): keep the
                     # previous behavior of validating the user and updating or
                     # creating the profile by id/user_id.
-                    pk = row.get("id")
-                    if pk not in (None, ""):
-                        self._ensure_pk_exists(Professors, pk)
                     user_id = parse_int(row.get("user_id"))
                     if not user_id or not User.objects.filter(id=user_id).exists():
                         raise ValueError(f"User {user_id} does not exist")
-                    defaults = {
-                        "user_id": user_id,
-                        "department_id": parse_int(row.get("department_id")) or None,
-                        "max_daily_hours": parse_int(row.get("max_daily_hours")) or 8,
-                        "max_consecutive": parse_int(row.get("max_consecutive")) or 4,
-                    }
-                    if pk:
-                        obj, created = Professors.objects.update_or_create(id=pk, defaults=defaults)
-                    else:
-                        obj, created = Professors.objects.update_or_create(user_id=user_id, defaults=defaults)
+                    obj, created = self._upsert(
+                        manifest,
+                        Professors,
+                        {
+                            "user_id": user_id,
+                            "department_id": parse_int(row.get("department_id")) or None,
+                            "max_daily_hours": parse_int(row.get("max_daily_hours")) or 8,
+                            "max_consecutive": parse_int(row.get("max_consecutive")) or 4,
+                        },
+                        pk=row.get("id"),
+                        lookup={"user_id": user_id},
+                    )
                     if created:
                         result.summary["creates"] += 1
                     else:
@@ -1355,17 +1581,43 @@ class ImportProcessor:
                             next_priority[prof.pk], priority + 1
                         )
 
-                        pref, created = ProfessorPreference.objects.update_or_create(
-                            professor=prof,
-                            subject=subject,
-                            section=None,
-                            term=active_term,
-                            defaults={"priority": priority},
+                        defaults = {"priority": priority}
+                        meetings = build_preference_meetings(row)
+                        if meetings is not None:
+                            defaults["meetings"] = meetings
+                        pref, created = self._upsert(
+                            manifest,
+                            ProfessorPreference,
+                            defaults,
+                            lookup={
+                                "professor": prof,
+                                "subject": subject,
+                                "section": None,
+                                "term": active_term,
+                            },
                         )
                         if created:
                             result.summary["creates"] += 1
                         else:
                             result.summary["updates"] += 1
+
+                        # Mirror the preferred day/time blocks into availability
+                        # so the solver treats them as preferred windows.
+                        if meetings:
+                            start = parse_time(row.get("start_time"))
+                            end = parse_time(row.get("end_time"))
+                            for meeting in meetings:
+                                self._upsert(
+                                    manifest,
+                                    AvailabilityWindow,
+                                    {"is_preferred": True},
+                                    lookup={
+                                        "prof": prof,
+                                        "day": meeting["preferred_days"][0],
+                                        "start_time": start,
+                                        "end_time": end,
+                                    },
+                                )
 
                         if not prof.department_id:
                             raise ValueError(
@@ -1375,34 +1627,43 @@ class ImportProcessor:
                             )
                         submission = submissions.get(prof.department_id)
                         if submission is None:
-                            submission, _ = (
+                            submission, submission_created = (
                                 PreferenceSubmission.objects.get_or_create(
                                     department_id=prof.department_id,
                                     term=active_term,
                                     defaults={"submitted_by": submitted_by},
                                 )
                             )
+                            if submission_created:
+                                self._record(
+                                    manifest,
+                                    PreferenceSubmission,
+                                    submission,
+                                    True,
+                                    None,
+                                )
                             submissions[prof.department_id] = submission
-                        SubmissionItem.objects.update_or_create(
-                            submission=submission,
-                            preference=pref,
-                            defaults={"action": "publish", "notes": ""},
+                        self._upsert(
+                            manifest,
+                            SubmissionItem,
+                            {"action": "publish", "notes": ""},
+                            lookup={"submission": submission, "preference": pref},
                         )
 
                 # Assignments (legacy sheet: a typed id creates that record)
                 for row in parsed_data.get("Assignments", []):
-                    pk = row.get("id")
-                    defaults = {
-                        "prof_id": parse_int(row["professor_id"]),
-                        "subject_id": parse_int(row["subject_id"]),
-                        "section_id": parse_int(row["section_id"]),
-                        "term_id": parse_int(row.get("term_id")) or None,
-                    }
-                    if pk:
-                        obj, created = Assignment.objects.update_or_create(id=pk, defaults=defaults)
-                    else:
-                        obj = Assignment.objects.create(**defaults)
-                        created = True
+                    obj, created = self._upsert(
+                        manifest,
+                        Assignment,
+                        {
+                            "prof_id": parse_int(row["professor_id"]),
+                            "subject_id": parse_int(row["subject_id"]),
+                            "section_id": parse_int(row["section_id"]),
+                            "term_id": parse_int(row.get("term_id")) or None,
+                        },
+                        pk=row.get("id"),
+                        allow_new_pk=True,
+                    )
                     if created:
                         result.summary["creates"] += 1
                     else:
@@ -1412,22 +1673,22 @@ class ImportProcessor:
                 from timetable.models import get_mode_duration
 
                 for row in parsed_data.get("Meetings", []):
-                    pk = row.get("id")
                     mode = parse_mode(row["mode"])
-                    defaults = {
-                        "assignment_id": parse_int(row["assignment_id"]),
-                        "order": parse_int(row["order"]),
-                        "mode": mode,
-                        "duration_slots": (
-                            parse_int(row.get("duration_slots"))
-                            or get_mode_duration(mode)
-                        ),
-                    }
-                    if pk:
-                        obj, created = MeetingSlot.objects.update_or_create(id=pk, defaults=defaults)
-                    else:
-                        obj = MeetingSlot.objects.create(**defaults)
-                        created = True
+                    obj, created = self._upsert(
+                        manifest,
+                        MeetingSlot,
+                        {
+                            "assignment_id": parse_int(row["assignment_id"]),
+                            "order": parse_int(row["order"]),
+                            "mode": mode,
+                            "duration_slots": (
+                                parse_int(row.get("duration_slots"))
+                                or get_mode_duration(mode)
+                            ),
+                        },
+                        pk=row.get("id"),
+                        allow_new_pk=True,
+                    )
                     if created:
                         result.summary["creates"] += 1
                     else:
@@ -1435,19 +1696,19 @@ class ImportProcessor:
 
                 # Availability
                 for row in parsed_data.get("Availability", []):
-                    pk = row.get("id")
-                    defaults = {
-                        "prof_id": parse_int(row["professor_id"]),
-                        "day": parse_day(row["day"]),
-                        "start_time": parse_time(row["start_time"]),
-                        "end_time": parse_time(row["end_time"]),
-                        "is_preferred": parse_bool(row.get("is_preferred")) or False,
-                    }
-                    if pk:
-                        obj, created = AvailabilityWindow.objects.update_or_create(id=pk, defaults=defaults)
-                    else:
-                        obj = AvailabilityWindow.objects.create(**defaults)
-                        created = True
+                    obj, created = self._upsert(
+                        manifest,
+                        AvailabilityWindow,
+                        {
+                            "prof_id": parse_int(row["professor_id"]),
+                            "day": parse_day(row["day"]),
+                            "start_time": parse_time(row["start_time"]),
+                            "end_time": parse_time(row["end_time"]),
+                            "is_preferred": parse_bool(row.get("is_preferred")) or False,
+                        },
+                        pk=row.get("id"),
+                        allow_new_pk=True,
+                    )
                     if created:
                         result.summary["creates"] += 1
                     else:
@@ -1455,22 +1716,32 @@ class ImportProcessor:
 
                 # BusyBlocks
                 for row in parsed_data.get("BusyBlocks", []):
-                    pk = row.get("id")
-                    defaults = {
-                        "prof_id": parse_int(row["professor_id"]),
-                        "day": parse_day(row["day"]),
-                        "start_time": parse_time(row["start_time"]),
-                        "end_time": parse_time(row["end_time"]),
-                    }
-                    if pk:
-                        obj, created = BusyBlock.objects.update_or_create(id=pk, defaults=defaults)
-                    else:
-                        obj = BusyBlock.objects.create(**defaults)
-                        created = True
+                    obj, created = self._upsert(
+                        manifest,
+                        BusyBlock,
+                        {
+                            "prof_id": parse_int(row["professor_id"]),
+                            "day": parse_day(row["day"]),
+                            "start_time": parse_time(row["start_time"]),
+                            "end_time": parse_time(row["end_time"]),
+                        },
+                        pk=row.get("id"),
+                        allow_new_pk=True,
+                    )
                     if created:
                         result.summary["creates"] += 1
                     else:
                         result.summary["updates"] += 1
+
+                from .models import ImportBatch
+
+                batch = ImportBatch.objects.create(
+                    uploaded_by=submitted_by,
+                    filename=filename,
+                    summary=result.summary,
+                    manifest=manifest,
+                )
+                result.batch_id = batch.pk
 
             cache.delete(f"import_preview_{preview_token}")
             return result
@@ -1479,6 +1750,74 @@ class ImportProcessor:
             result.committed = False
             result.errors.append({"message": str(e)})
             return result
+
+    @staticmethod
+    def _referenced_by_schedule_run(entry) -> bool:
+        """True when a created/updated row is already used by a schedule run."""
+        from django.apps import apps
+
+        from catalog.models import Room, Section, Subject
+        from timetable.models import AcademicTerm, Assignment, ScheduledClass
+        from users.models import Professors
+
+        model = apps.get_model(entry["model"])
+        pk = entry["pk"]
+        if model is AcademicTerm:
+            return AcademicTerm.objects.filter(pk=pk, schedule_runs__isnull=False).exists()
+        if model is Assignment:
+            return ScheduledClass.objects.filter(assignment_id=pk).exists()
+        if model is Section:
+            return ScheduledClass.objects.filter(assignment__section_id=pk).exists()
+        if model is Room:
+            return ScheduledClass.objects.filter(room_id=pk).exists()
+        if model is Subject:
+            return ScheduledClass.objects.filter(assignment__subject_id=pk).exists()
+        if model is Professors:
+            return ScheduledClass.objects.filter(assignment__prof_id=pk).exists()
+        return False
+
+    def rollback(self, batch):
+        """Reverse a committed import: delete created rows, restore snapshots."""
+        from django.apps import apps
+        from django.db import transaction
+
+        from .models import ImportBatch
+
+        if batch.status == ImportBatch.Status.ROLLED_BACK:
+            raise ValueError("This import batch has already been rolled back.")
+
+        manifest = batch.manifest or {}
+        entries = list(manifest.get("created", [])) + list(
+            manifest.get("updated", [])
+        )
+        for entry in entries:
+            if self._referenced_by_schedule_run(entry):
+                raise ValueError(
+                    "Cannot roll back: imported data is referenced by a "
+                    "ScheduleRun. Delete the schedule run first."
+                )
+
+        with transaction.atomic():
+            # Reverse-dependency order: later-created rows are deleted first.
+            for entry in reversed(manifest.get("created", [])):
+                model = apps.get_model(entry["model"])
+                model.objects.filter(pk=entry["pk"]).delete()
+            for entry in reversed(manifest.get("updated", [])):
+                model = apps.get_model(entry["model"])
+                obj = model.objects.filter(pk=entry["pk"]).first()
+                if obj is None:
+                    continue
+                for field_obj in obj._meta.concrete_fields:
+                    if field_obj.attname in entry.get("before", {}):
+                        setattr(
+                            obj,
+                            field_obj.attname,
+                            field_obj.to_python(entry["before"][field_obj.attname]),
+                        )
+                obj.save()
+            batch.status = ImportBatch.Status.ROLLED_BACK
+            batch.save(update_fields=["status"])
+        return batch
 
     def _write_department_list_sheet(self, wb) -> None:
         """Hidden `_Lists` sheet holding the live department ids.

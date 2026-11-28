@@ -25,6 +25,10 @@ class Subject(models.Model):
 
 
 class ProfessorSubject(models.Model):
+    class Modality(models.TextChoices):
+        SYNCHRONOUS = "synchronous", "Synchronous"
+        ASYNCHRONOUS = "asynchronous", "Asynchronous"
+
     professor = models.ForeignKey(
         "users.Professors",
         on_delete=models.CASCADE,
@@ -36,6 +40,11 @@ class ProfessorSubject(models.Model):
         related_name="qualified_professors",
     )
     is_preferred = models.BooleanField(default=False)
+    modality = models.CharField(
+        max_length=15,
+        choices=Modality.choices,
+        default=Modality.SYNCHRONOUS,
+    )
 
     class Meta:
         ordering = ["professor_id", "subject__code"]

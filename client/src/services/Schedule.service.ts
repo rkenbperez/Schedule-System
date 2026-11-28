@@ -11,6 +11,8 @@ import type {
   GenerateScheduleResponse,
   GenerateFromPublishedPayload,
   GenerateFromPublishedResponse,
+  ImportBatch,
+  ImportBatchRollbackResponse,
   ImportPreviewResponse,
   MeetingPreference,
   ProfessorPreference,
@@ -334,11 +336,13 @@ class ScheduleService {
   ): Promise<{
     committed: boolean;
     summary: { creates: number; updates: number };
+    batch_id?: number;
     errors?: Array<{ sheet: string; row: number; field: string; message: string }>;
   }> {
     const data = await apiJson<{
       committed: boolean;
       summary: { creates: number; updates: number };
+      batch_id?: number;
       errors?: Array<{ sheet: string; row: number; field: string; message: string }>;
     }>(`${BASE_URL}/api/imports/commit/`, {
       method: 'POST',
@@ -351,6 +355,28 @@ class ScheduleService {
       }),
     });
 
+    return data;
+  }
+
+  async getImportBatches(): Promise<ImportBatch[]> {
+    const data: ImportBatch[] = await apiJson(
+      `${BASE_URL}/api/imports/batches/`
+    );
+    return data;
+  }
+
+  async rollbackImportBatch(
+    batchId: number
+  ): Promise<ImportBatchRollbackResponse> {
+    const data: ImportBatchRollbackResponse = await apiJson(
+      `${BASE_URL}/api/imports/batches/${batchId}/rollback/`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
     return data;
   }
 
@@ -651,12 +677,32 @@ class ScheduleService {
       professor_id: number;
       subject_id: number;
       is_preferred?: boolean;
+      modality?: 'synchronous' | 'asynchronous';
     }
   ) {
     const data: ProfessorSubject = await apiJson(
       `${BASE_URL}/api/departments/${departmentId}/professor-subjects/`,
       {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    );
+    return data;
+  }
+
+  async updateProfessorSubject(
+    departmentId: number,
+    assignmentId: number,
+    payload: {
+      modality?: 'synchronous' | 'asynchronous';
+      is_preferred?: boolean;
+    }
+  ) {
+    const data: ProfessorSubject = await apiJson(
+      `${BASE_URL}/api/departments/${departmentId}/professor-subjects/${assignmentId}/`,
+      {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       }

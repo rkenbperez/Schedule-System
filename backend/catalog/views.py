@@ -144,14 +144,34 @@ class DepartmentViewSet(viewsets.ModelViewSet):
                 raise ValidationError(
                     {"professor_id": "Professor does not belong to this department."}
                 )
+            if (
+                "modality" in request.data
+                and request.data["modality"]
+                not in ProfessorSubject.Modality.values
+            ):
+                raise ValidationError(
+                    {"modality": "Must be 'synchronous' or 'asynchronous'."}
+                )
             assignment, created = ProfessorSubject.objects.get_or_create(
                 professor=professor,
                 subject=subject,
-                defaults={"is_preferred": bool(request.data.get("is_preferred", False))},
+                defaults={
+                    "is_preferred": bool(request.data.get("is_preferred", False)),
+                    "modality": request.data.get(
+                        "modality", ProfessorSubject.Modality.SYNCHRONOUS
+                    ),
+                },
             )
-            if not created and "is_preferred" in request.data:
-                assignment.is_preferred = bool(request.data["is_preferred"])
-                assignment.save(update_fields=["is_preferred"])
+            if not created:
+                changed = []
+                if "is_preferred" in request.data:
+                    assignment.is_preferred = bool(request.data["is_preferred"])
+                    changed.append("is_preferred")
+                if "modality" in request.data:
+                    assignment.modality = request.data["modality"]
+                    changed.append("modality")
+                if changed:
+                    assignment.save(update_fields=changed)
             serializer = ProfessorSubjectSerializer(assignment)
             return Response(
                 serializer.data,
@@ -167,7 +187,7 @@ class DepartmentViewSet(viewsets.ModelViewSet):
 
     @action(
         detail=True,
-        methods=["delete"],
+        methods=["patch", "delete"],
         url_path=r"professor-subjects/(?P<assignment_id>[^/.]+)",
     )
     def professor_subject_detail(self, request, pk=None, assignment_id=None):
@@ -178,6 +198,26 @@ class DepartmentViewSet(viewsets.ModelViewSet):
             pk=assignment_id,
             professor__department=department,
         )
+        if request.method == "PATCH":
+            changed = []
+            if "is_preferred" in request.data:
+                assignment.is_preferred = bool(request.data["is_preferred"])
+                changed.append("is_preferred")
+            if "modality" in request.data:
+                modality = request.data["modality"]
+                if modality not in ProfessorSubject.Modality.values:
+                    raise ValidationError(
+                        {
+                            "modality": (
+                                "Must be 'synchronous' or 'asynchronous'."
+                            )
+                        }
+                    )
+                assignment.modality = modality
+                changed.append("modality")
+            if changed:
+                assignment.save(update_fields=changed)
+            return Response(ProfessorSubjectSerializer(assignment).data)
         assignment.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 

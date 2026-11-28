@@ -4,7 +4,7 @@ This is the only Django-touching piece of the solver. It stays out of the
 ``engines`` package so that package remains importable without a database.
 """
 
-from catalog.models import Room
+from catalog.models import ProfessorSubject, Room
 from users.models import Professors, ProfessorPreference
 
 from .engines.scenario import Availability, Busy, Meeting, RoomRef, Scenario
@@ -140,11 +140,24 @@ def build_scenario_from_published_preferences(term=None) -> Scenario:
         "professor__department", "professor__user", "subject", "section"
     )
 
+    # Department heads mark a professor-subject assignment asynchronous; those
+    # meetings keep their duration (teaching load / section hours) but need no
+    # physical room, which the engines infer from mode="async".
+    modalities = {
+        (prof_id, subject_id): modality
+        for prof_id, subject_id, modality in ProfessorSubject.objects.filter(
+            professor__assignments__term=term
+        ).values_list("professor_id", "subject_id", "modality")
+    }
+
     for pref in prefs:
         headcount = pref.section.headcount
         department = pref.professor.department.name if pref.professor.department else ""
         prof_label = str(pref.professor)
         subject_label = str(pref.subject)
+        asynchronous = (
+            modalities.get((pref.professor_id, pref.subject_id)) == "asynchronous"
+        )
 
         for slot in pref.meetings:
             meetings.append(
@@ -159,7 +172,7 @@ def build_scenario_from_published_preferences(term=None) -> Scenario:
                     section_headcount=headcount,
                     duration_slots=slot["duration_slots"],
                     department=department,
-                    mode=slot["mode"],
+                    mode="async" if asynchronous else slot["mode"],
                 )
             )
             meeting_id += 1

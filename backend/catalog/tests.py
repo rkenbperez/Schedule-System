@@ -30,6 +30,46 @@ class CatalogModelTests(TestCase):
         self.assertEqual(explicit.program, "CUSTOM")
 
 
+class ProfessorSubjectModalityTests(APITestCase):
+    def setUp(self):
+        self.dept = Department.objects.create(name="Modality Dept")
+        user = User.objects.create_user(
+            username="depthead", email="head@example.com", password="pass12345"
+        )
+        self.dept.head = user
+        self.dept.save(update_fields=["head"])
+        self.client.force_authenticate(user=user)
+        prof_user = User.objects.create_user(
+            username="modprof", email="modprof@example.com", password="pass12345"
+        )
+        self.prof = Professors.objects.create(user=prof_user, department=self.dept)
+        self.subject = Subject.objects.create(code="MOD101", title="Modality")
+        self.assignment = ProfessorSubject.objects.create(
+            professor=self.prof, subject=self.subject
+        )
+
+    def test_patch_modality(self):
+        url = (
+            f"/api/departments/{self.dept.id}/professor-subjects/"
+            f"{self.assignment.id}/"
+        )
+        response = self.client.patch(
+            url, {"modality": "asynchronous"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["modality"], "asynchronous")
+        self.assignment.refresh_from_db()
+        self.assertEqual(self.assignment.modality, "asynchronous")
+
+    def test_patch_rejects_unknown_modality(self):
+        url = (
+            f"/api/departments/{self.dept.id}/professor-subjects/"
+            f"{self.assignment.id}/"
+        )
+        response = self.client.patch(url, {"modality": "hybrid"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
 class SubjectViewSetDepartmentFilterTests(APITestCase):
     def setUp(self):
         self.dept = Department.objects.create(name="Dept A")

@@ -152,6 +152,7 @@ export interface ProfessorSubject {
   subject_code: string;
   subject_title: string;
   is_preferred: boolean;
+  modality?: 'synchronous' | 'asynchronous';
 }
 
 export interface SectionSubject {
@@ -358,7 +359,27 @@ export interface ImportPreviewResponse {
 export interface ImportCommitResponse {
   committed: boolean;
   summary: { creates: number; updates: number };
+  batch_id?: number;
   errors?: Array<{ sheet: string; row: number; field: string; message: string }>;
+}
+
+export interface ImportBatch {
+  id: number;
+  filename: string;
+  status: 'committed' | 'rolled_back';
+  summary: {
+    creates?: number;
+    updates?: number;
+    skipped?: number;
+    errors?: number;
+  };
+  uploaded_by: string | null;
+  created_at: string;
+}
+
+export interface ImportBatchRollbackResponse {
+  id: number;
+  status: 'committed' | 'rolled_back';
 }
 
 export interface GenerateSchedulePayload {
@@ -481,8 +502,8 @@ export interface ProfessorPreferenceListItem {
   subject: number;
   subject_code: string;
   subject_title: string;
-  section: number;
-  section_name: string;
+  section: number | null;
+  section_name: string | null;
   term: number;
   term_code: string;
   meetings: MeetingPreference[];
