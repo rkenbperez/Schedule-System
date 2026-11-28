@@ -24,6 +24,14 @@ import {
 } from '../../components/ui';
 import SchedulePreview from './components/SchedulePreview';
 
+const DEMO_PASSWORD = 'TestPass123!';
+const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
+const DEMO_ACCOUNTS = [
+  { label: 'Demo: Registrar', email: 'registrar.demo@cvsu.edu.ph' },
+  { label: 'Demo: Dept Head', email: 'depthead.cs@cvsu.edu.ph' },
+  { label: 'Demo: Professor', email: 'prof.delacruz@cvsu.edu.ph' },
+] as const;
+
 export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
@@ -72,6 +80,12 @@ export default function Login() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to sign in');
     }
+  }
+
+  function fillDemoAccount(demoEmail: string) {
+    setEmail(demoEmail);
+    setPassword(DEMO_PASSWORD);
+    setError(null);
   }
 
   return (
@@ -285,6 +299,39 @@ export default function Login() {
               <span>Need help? Contact the registrar</span>
             </div>
           </Card>
+
+          {DEMO_MODE && !isResetMode && (
+            <Card className='mt-5 border-dashed border-apple-green-200 px-4 py-4 sm:px-5'>
+              <div>
+                <p className='text-body-sm font-semibold text-text-primary'>
+                  Quick Demo Access
+                </p>
+                <p className='mt-0.5 text-caption text-text-secondary'>
+                  Fills the demo email and password — then press Sign in.
+                </p>
+              </div>
+              <div className='mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3'>
+                {DEMO_ACCOUNTS.map((account) => (
+                  <Button
+                    key={account.email}
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    onClick={() => fillDemoAccount(account.email)}
+                  >
+                    {account.label}
+                  </Button>
+                ))}
+              </div>
+              <Link
+                to='/student'
+                className='mt-3 inline-flex items-center gap-1 rounded-control text-caption font-medium text-apple-green-700 transition-colors hover:text-apple-green-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-apple-green-600'
+              >
+                Open the public student schedule page
+                <ArrowUpRight size={14} aria-hidden='true' />
+              </Link>
+            </Card>
+          )}
 
           <Link
             to='/student'
