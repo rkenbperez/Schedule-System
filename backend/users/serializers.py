@@ -1,16 +1,21 @@
 from django.contrib.auth import authenticate
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
-User = get_user_model()
+from catalog.models import Department
 
 from .models import PasswordResetToken, Professors, ProfessorPreference, PreferenceSubmission, SubmissionItem
 
+User = get_user_model()
+
 
 class ProfessorsSerializer(serializers.ModelSerializer):
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
     username = serializers.CharField(source="user.username", read_only=True)
     full_name = serializers.SerializerMethodField(read_only=True)
     department_name = serializers.CharField(
@@ -18,6 +23,7 @@ class ProfessorsSerializer(serializers.ModelSerializer):
     )
     email = serializers.EmailField(source="user.email", read_only=True)
     is_staff = serializers.BooleanField(source="user.is_staff", read_only=True)
+    is_active = serializers.BooleanField(source="user.is_active", read_only=True)
     role = serializers.SerializerMethodField(read_only=True)
     is_department_head = serializers.SerializerMethodField(read_only=True)
     
@@ -25,6 +31,13 @@ class ProfessorsSerializer(serializers.ModelSerializer):
     user_password = serializers.CharField(write_only=True, required=False)
     user_is_staff = serializers.BooleanField(write_only=True, required=False, default=False)
     department_head = serializers.BooleanField(write_only=True, required=False, default=False)
+    department_id = serializers.PrimaryKeyRelatedField(
+        source="department",
+        queryset=Department.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), write_only=True, required=False)
 
     class Meta:
@@ -32,14 +45,17 @@ class ProfessorsSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "user",
+            "user_id",
             "username",
             "full_name",
             "email",
             "department",
+            "department_id",
             "department_name",
             "max_daily_hours",
             "max_consecutive",
             "is_staff",
+            "is_active",
             "role",
             "is_department_head",
             "user_email",
@@ -47,7 +63,7 @@ class ProfessorsSerializer(serializers.ModelSerializer):
             "user_is_staff",
             "department_head",
         ]
-        read_only_fields = ["id", "user", "username", "full_name", "email", "is_staff", "role", "is_department_head"]
+        read_only_fields = ["id", "user", "user_id", "username", "full_name", "email", "is_staff", "is_active", "role", "is_department_head"]
 
     def get_full_name(self, obj):
         full_name = obj.user.get_full_name().strip()
@@ -95,27 +111,57 @@ class ProfessorsSerializer(serializers.ModelSerializer):
         else:
             raise serializers.ValidationError("user or user_email is required")
         
-        professor = Professors.objects.create(user=user, **validated_data)
-        
-        if department_head and professor.department:
-            professor.department.head = user
-            professor.department.save(update_fields=["head"])
-        
+        try:
+            with transaction.atomic():
+                professor = Professors.objects.create(user=user, **validated_data)
+                if department_head and professor.department:
+                    self._set_department_head(professor)
+        except IntegrityError:
+            raise serializers.ValidationError(
+                {"department_head": "This user already heads another department."}
+            )
+
         return professor
+
+    @staticmethod
+    def _set_department_head(professor):
+        if professor.department is None:
+            return
+        if (
+            Department.objects.filter(head=professor.user)
+            .exclude(pk=professor.department_id)
+            .exists()
+        ):
+            raise serializers.ValidationError(
+                {"department_head": "This user already heads another department."}
+            )
+        professor.department.head = professor.user
+        professor.department.save(update_fields=["head"])
 
     def update(self, instance, validated_data):
         department_head = validated_data.pop("department_head", None)
-        
-        professor = super().update(instance, validated_data)
-        
-        if department_head is not None and professor.department:
-            if department_head:
-                professor.department.head = professor.user
-            else:
-                if professor.department.head_id == professor.user_id:
-                    professor.department.head = None
-            professor.department.save(update_fields=["head"])
-        
+        old_department_id = instance.department_id
+
+        try:
+            with transaction.atomic():
+                professor = super().update(instance, validated_data)
+                # A moved professor cannot keep heading a department they no
+                # longer belong to.
+                if old_department_id != professor.department_id:
+                    Department.objects.filter(head=professor.user).exclude(
+                        pk=professor.department_id
+                    ).update(head=None)
+                if department_head is not None and professor.department:
+                    if department_head:
+                        self._set_department_head(professor)
+                    elif professor.department.head_id == professor.user_id:
+                        professor.department.head = None
+                        professor.department.save(update_fields=["head"])
+        except IntegrityError:
+            raise serializers.ValidationError(
+                {"department_head": "This user already heads another department."}
+            )
+
         return professor
 
 
@@ -210,6 +256,41 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         user.save(update_fields=["password"])
         token_obj.used = True
         token_obj.save(update_fields=["used"])
+        return user
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """Change the password of the currently authenticated user."""
+
+    old_password = serializers.CharField(
+        write_only=True, style={"input_type": "password"}
+    )
+    new_password = serializers.CharField(
+        write_only=True, min_length=8, style={"input_type": "password"}
+    )
+
+    def validate_old_password(self, value):
+        user = self.context["request"].user
+        if not user.has_usable_password() or not user.check_password(value):
+            raise serializers.ValidationError("Current password is incorrect.")
+        return value
+
+    def validate_new_password(self, value):
+        user = self.context["request"].user
+        validate_password(value, user)
+        return value
+
+    def validate(self, attrs):
+        if attrs["old_password"] == attrs["new_password"]:
+            raise serializers.ValidationError(
+                {"new_password": "New password must differ from the current password."}
+            )
+        return attrs
+
+    def save(self):
+        user = self.context["request"].user
+        user.set_password(self.validated_data["new_password"])
+        user.save(update_fields=["password"])
         return user
 
 

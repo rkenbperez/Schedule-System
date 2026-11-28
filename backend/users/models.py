@@ -1,5 +1,7 @@
 from django.conf import settings
 from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from django.utils import timezone
 from django.utils.crypto import get_random_string
 
@@ -223,3 +225,11 @@ class SubmissionItem(models.Model):
 
     class Meta:
         unique_together = ["submission", "preference"]
+
+
+@receiver(post_save, sender=settings.AUTH_USER_MODEL)
+def clear_headship_for_inactive_user(sender, instance, **kwargs):
+    """Deactivated users must not keep leading a department."""
+    if instance.is_active:
+        return
+    Department.objects.filter(head=instance).update(head=None)

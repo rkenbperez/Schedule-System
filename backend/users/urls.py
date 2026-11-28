@@ -6,6 +6,7 @@ from rest_framework_simplejwt.views import (
 )
 
 from .views import (
+    ChangePasswordView,
     DepartmentHeadBatchPublishView,
     DepartmentHeadPublishView,
     DepartmentHeadSubmissionViewSet,
@@ -17,6 +18,7 @@ from .views import (
     ProfessorAvailabilityViewSet,
     ProfessorPreferenceSubmitView,
     ProfessorPreferenceViewSet,
+    ProfessorSetupLinkView,
     RegistrarPublishedPreferencesView,
     UserListView,
 )
@@ -39,8 +41,18 @@ urlpatterns = [
         PasswordResetConfirmView.as_view(),
         name="password-reset-confirm",
     ),
+    path(
+        "auth/change-password/",
+        ChangePasswordView.as_view(),
+        name="change-password",
+    ),
     # User list (for master data forms)
     path("users/", UserListView.as_view(), name="user-list"),
+    path(
+        "users/professors/<int:pk>/setup-link/",
+        ProfessorSetupLinkView.as_view(),
+        name="professor-setup-link",
+    ),
 
     # Professor Preferences (professor self-service)
     path(

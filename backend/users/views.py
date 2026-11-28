@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
+from django.shortcuts import get_object_or_404
 from django.urls import reverse
 
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema, extend_schema_view, inline_serializer
@@ -21,6 +22,7 @@ from .models import (
     SubmissionItem,
 )
 from .serializers import (
+    ChangePasswordSerializer,
     LoginSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
@@ -154,6 +156,68 @@ class PasswordResetConfirmView(APIView):
         serializer.save()
         return Response(
             {"detail": "Password reset successfully. You can now sign in."},
+            status=status.HTTP_200_OK,
+        )
+
+
+class ChangePasswordView(APIView):
+    """Change the password of the signed-in user."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["auth"],
+        summary="Change password",
+        request=ChangePasswordSerializer,
+        responses={
+            200: OpenApiResponse(description="Password updated successfully."),
+            400: OpenApiResponse(description="Validation error"),
+        },
+    )
+    def post(self, request):
+        serializer = ChangePasswordSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(
+            {"detail": "Password updated successfully."},
+            status=status.HTTP_200_OK,
+        )
+
+
+class ProfessorSetupLinkView(APIView):
+    """Generate a 24-hour password setup link for an existing professor."""
+
+    permission_classes = [IsRegistrar]
+
+    @extend_schema(
+        tags=["users"],
+        summary="Create a professor account setup link",
+        request=None,
+        responses={
+            200: OpenApiResponse(description="Setup link generated."),
+            400: OpenApiResponse(description="Professor account is inactive"),
+            404: OpenApiResponse(description="Professor not found"),
+        },
+    )
+    def post(self, request, pk):
+        professor = get_object_or_404(Professors, pk=pk)
+        if not professor.user.is_active:
+            return Response(
+                {"detail": "Cannot create a setup link for an inactive account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        token_obj = PasswordResetToken.create_for_user(
+            professor.user, timeout_seconds=86400
+        )
+        setup_url = (
+            f"{settings.FRONTEND_URL.rstrip('/')}/reset-password"
+            f"?token={token_obj.token}"
+        )
+        return Response(
+            {"setup_url": setup_url, "expires_at": token_obj.expires_at},
             status=status.HTTP_200_OK,
         )
 

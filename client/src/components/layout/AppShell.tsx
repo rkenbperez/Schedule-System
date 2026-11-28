@@ -9,7 +9,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { useSignOut } from '../../hooks/useAuth';
+import { useMe, useSignOut } from '../../hooks/useAuth';
+import { ProfileDropdown } from '../shared/ProfileDropdown';
 
 export type AppNavItem = {
   to: string;
@@ -144,6 +145,7 @@ export function AppShell({
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const signOut = useSignOut();
+  const { data: me } = useMe();
 
   const pageTitle = getPageTitle(pathname, navItems);
 
@@ -270,14 +272,13 @@ export function AppShell({
             <div className='flex shrink-0 items-center gap-1 sm:gap-2'>
               {headerAction}
 
-              <div className='ml-1 flex items-center gap-2 rounded-pill py-1 pl-1 pr-1 sm:pr-2'>
-                <span className='grid h-9 w-9 shrink-0 place-items-center rounded-full bg-apple-green-50 text-caption font-semibold text-apple-green-700'>
-                  {userInitials}
-                </span>
-                <span className='hidden max-w-40 truncate text-body-sm font-medium text-text-primary md:block'>
-                  {userName}
-                </span>
-              </div>
+              <ProfileDropdown
+                userName={userName}
+                userEmail={me?.email}
+                userRole={roleLabel}
+                userInitials={userInitials}
+                profileTo={me?.role === 'professor' ? `/teacher/${encodeURIComponent(me.username)}/profile` : undefined}
+              />
             </div>
           </header>
 

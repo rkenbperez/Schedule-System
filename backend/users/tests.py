@@ -11,6 +11,7 @@ from catalog.models import Department, Section, Subject
 from timetable.models import AcademicTerm, Assignment
 
 from .models import (
+    PasswordResetToken,
     PreferenceSubmission,
     ProfessorPreference,
     Professors,
@@ -540,3 +541,226 @@ class ProfessorPreferenceNullSectionTests(APITestCase):
         response = self.client.post(url, payload, format="json")
         self.assertEqual(response.status_code, 400)
         self.assertIn("already exists", str(response.data))
+
+
+class ProfessorSetupLinkTests(APITestCase):
+    def setUp(self):
+        self.staff = User.objects.create_user(
+            username="registrar",
+            email="registrar@example.com",
+            password="pass12345",
+            is_staff=True,
+        )
+        self.dept = Department.objects.create(name="Setup Dept")
+        self.prof_user = User.objects.create_user(
+            username="newprof",
+            email="newprof@example.com",
+            password="oldpass123",
+            is_active=True,
+        )
+        self.prof = Professors.objects.create(
+            user=self.prof_user, department=self.dept
+        )
+        self.url = reverse("professor-setup-link", args=[self.prof.id])
+
+    def test_registrar_can_generate_link(self):
+        self.client.force_authenticate(user=self.staff)
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertIn("/reset-password?token=", response.data["setup_url"])
+        self.assertIn("expires_at", response.data)
+
+    def test_professor_cannot_generate_link(self):
+        self.client.force_authenticate(user=self.prof_user)
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_department_head_cannot_generate_link(self):
+        self.dept.head = self.prof_user
+        self.dept.save(update_fields=["head"])
+        self.client.force_authenticate(user=self.prof_user)
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_anonymous_cannot_generate_link(self):
+        response = self.client.post(self.url)
+        self.assertIn(
+            response.status_code,
+            (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN),
+        )
+
+    def test_inactive_professor_is_rejected(self):
+        self.prof_user.is_active = False
+        self.prof_user.save(update_fields=["is_active"])
+        self.client.force_authenticate(user=self.staff)
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_link_token_works_with_password_reset_confirm(self):
+        self.client.force_authenticate(user=self.staff)
+        setup = self.client.post(self.url)
+        token = setup.data["setup_url"].split("token=")[1]
+
+        self.client.force_authenticate(user=None)
+        response = self.client.post(
+            reverse("password-reset-confirm", args=[token]),
+            {"new_password": "brandnewpass123"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.prof_user.refresh_from_db()
+        self.assertTrue(self.prof_user.check_password("brandnewpass123"))
+
+
+class ChangePasswordTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="changepass",
+            email="changepass@example.com",
+            password="oldpass123",
+        )
+        self.url = reverse("change-password")
+        self.client.force_authenticate(user=self.user)
+
+    def test_changes_password(self):
+        response = self.client.post(
+            self.url,
+            {"old_password": "oldpass123", "new_password": "newpass456"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("newpass456"))
+
+    def test_rejects_wrong_old_password(self):
+        response = self.client.post(
+            self.url,
+            {"old_password": "wrongpass", "new_password": "newpass456"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_rejects_same_password(self):
+        response = self.client.post(
+            self.url,
+            {"old_password": "oldpass123", "new_password": "oldpass123"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_rejects_weak_new_password(self):
+        response = self.client.post(
+            self.url,
+            {"old_password": "oldpass123", "new_password": "123"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.post(
+            self.url,
+            {"old_password": "oldpass123", "new_password": "newpass456"},
+            format="json",
+        )
+        self.assertIn(
+            response.status_code,
+            (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN),
+        )
+
+    def test_unusable_password_returns_400(self):
+        self.user.set_unusable_password()
+        self.user.save(update_fields=["password"])
+
+        response = self.client.post(
+            self.url,
+            {"old_password": "oldpass123", "new_password": "newpass456"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class ProfessorDepartmentHeadSerializerTests(APITestCase):
+    def setUp(self):
+        self.staff = User.objects.create_user(
+            username="registrar",
+            email="registrar2@example.com",
+            password="pass12345",
+            is_staff=True,
+        )
+        self.dept_a = Department.objects.create(name="Heads A")
+        self.dept_b = Department.objects.create(name="Heads B")
+        self.client.force_authenticate(user=self.staff)
+
+    def test_create_assigns_department_and_head(self):
+        response = self.client.post(
+            "/api/profs/",
+            {
+                "user_email": "headcreate@example.com",
+                "department_id": self.dept_a.id,
+                "department_head": True,
+                "max_daily_hours": 8,
+                "max_consecutive": 4,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.dept_a.refresh_from_db()
+        self.assertEqual(self.dept_a.head.email, "headcreate@example.com")
+
+    def test_moving_head_with_flag_transfers_headship(self):
+        user = User.objects.create_user(
+            username="existinghead",
+            email="existinghead@example.com",
+            password="pass12345",
+        )
+        prof = Professors.objects.create(user=user, department=self.dept_a)
+        self.dept_a.head = user
+        self.dept_a.save(update_fields=["head"])
+
+        response = self.client.patch(
+            f"/api/profs/{prof.id}/",
+            {"department_id": self.dept_b.id, "department_head": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.dept_a.refresh_from_db()
+        self.dept_b.refresh_from_db()
+        self.assertIsNone(self.dept_a.head_id)
+        self.assertEqual(self.dept_b.head_id, user.id)
+
+    def test_department_move_clears_stale_headship(self):
+        user = User.objects.create_user(
+            username="movinghead",
+            email="movinghead@example.com",
+            password="pass12345",
+        )
+        prof = Professors.objects.create(user=user, department=self.dept_a)
+        self.dept_a.head = user
+        self.dept_a.save(update_fields=["head"])
+
+        response = self.client.patch(
+            f"/api/profs/{prof.id}/",
+            {"department_id": self.dept_b.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.dept_a.refresh_from_db()
+        prof.refresh_from_db()
+        self.assertIsNone(self.dept_a.head_id)
+        self.assertEqual(prof.department_id, self.dept_b.id)
+
+    def test_deactivating_head_clears_department(self):
+        user = User.objects.create_user(
+            username="inactivehead",
+            email="inactivehead@example.com",
+            password="pass12345",
+        )
+        self.dept_a.head = user
+        self.dept_a.save(update_fields=["head"])
+
+        user.is_active = False
+        user.save(update_fields=["is_active"])
+
+        self.dept_a.refresh_from_db()
+        self.assertIsNone(self.dept_a.head_id)
