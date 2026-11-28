@@ -12,6 +12,7 @@ from core.permissions import IsRegistrar
 from timetable.models import ScheduleRun
 
 from .import_utils import processor
+from .models import ImportBatch
 from .export_utils import generate_schedule_csv, generate_schedule_excel, generate_schedule_pdf
 
 
@@ -128,7 +129,9 @@ class ImportPreviewView(APIView):
         except Exception as e:
             return Response({"detail": f"Failed to parse file: {e}"}, status=status.HTTP_400_BAD_REQUEST)
 
-        result = processor.validate_all(parsed)
+        result = processor.validate_all(
+            parsed, filename=getattr(file, "name", "")
+        )
 
         response_data = {
             "valid": result.valid,
@@ -184,12 +187,54 @@ class ImportCommitView(APIView):
         if result.committed:
             return Response({
                 "committed": True,
-                "summary": result.summary
+                "summary": result.summary,
+                "batch_id": result.batch_id,
             }, status=status.HTTP_200_OK)
         return Response({
             "committed": False,
             "errors": result.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ImportBatchListView(APIView):
+    permission_classes = [IsRegistrar]
+
+    @extend_schema(tags=["imports"])
+    def get(self, request):
+        batches = ImportBatch.objects.select_related("uploaded_by").all()
+        return Response(
+            [
+                {
+                    "id": batch.id,
+                    "filename": batch.filename,
+                    "status": batch.status,
+                    "summary": batch.summary,
+                    "uploaded_by": (
+                        batch.uploaded_by.email if batch.uploaded_by else None
+                    ),
+                    "created_at": batch.created_at,
+                }
+                for batch in batches
+            ]
+        )
+
+
+class ImportBatchRollbackView(APIView):
+    permission_classes = [IsRegistrar]
+
+    @extend_schema(tags=["imports"])
+    def post(self, request, pk):
+        batch = get_object_or_404(ImportBatch, pk=pk)
+        try:
+            processor.rollback(batch)
+        except ValueError as e:
+            return Response(
+                {"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(
+            {"id": batch.id, "status": batch.status},
+            status=status.HTTP_200_OK,
+        )
 
 
 class TemplateView(APIView):

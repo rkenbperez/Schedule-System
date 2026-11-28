@@ -54,7 +54,7 @@ interface SelectTriggerProps {
 }
 
 export const SelectTrigger = forwardRef<HTMLDivElement, SelectTriggerProps>(
-  ({ children, ...props }, ref) => {
+  (props, ref) => {
     return <div ref={ref} {...props} />;
   }
 );

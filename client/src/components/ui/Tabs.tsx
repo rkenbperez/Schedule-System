@@ -37,7 +37,7 @@ interface TabsTriggerProps {
   onClick?: () => void;
 }
 
-export function TabsTrigger({ value: _value, children, disabled, className, onClick }: TabsTriggerProps) {
+export function TabsTrigger({ children, disabled, className, onClick }: TabsTriggerProps) {
   return (
     <button
       role='tab'
@@ -65,7 +65,7 @@ interface TabsContentProps {
   className?: string;
 }
 
-export function TabsContent({ value: _value, children, className }: TabsContentProps) {
+export function TabsContent({ children, className }: TabsContentProps) {
   return (
     <div role='tabpanel' className={cn('animate-in fade-in-0', className)}>
       {children}

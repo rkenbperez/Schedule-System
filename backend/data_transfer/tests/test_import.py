@@ -28,11 +28,14 @@ from users.models import (
 
 from data_transfer.import_utils import (
     TEMPLATE_SHEETS,
+    build_preference_meetings,
+    parse_days,
     processor,
     parse_time,
     parse_day,
     parse_mode,
 )
+from data_transfer.models import ImportBatch
 
 User = get_user_model()
 
@@ -1202,6 +1205,39 @@ class ImportProcessorUnitTests(ImportTestCase):
         self.assertIsNone(parse_mode("lecture"))
         self.assertIsNone(parse_mode(""))
 
+    def test_parse_days_multi_day_patterns(self):
+        self.assertEqual(parse_days("MWF"), ["MON", "WED", "FRI"])
+        self.assertEqual(parse_days("TTH"), ["TUE", "THU"])
+        self.assertEqual(parse_days("MON,WED"), ["MON", "WED"])
+        self.assertEqual(parse_days("MON-FRI"), ["MON", "TUE", "WED", "THU", "FRI"])
+        self.assertEqual(parse_days("m w f"), ["MON", "WED", "FRI"])
+        self.assertEqual(parse_days(1), ["TUE"])
+        self.assertIsNone(parse_days(""))
+        self.assertIsNone(parse_days("FUNDAY"))
+
+    def test_build_preference_meetings_from_atomic_times(self):
+        meetings = build_preference_meetings(
+            {
+                "days": "MWF",
+                "start_time": "08:00",
+                "end_time": "10:00",
+                "mode": "sync",
+            }
+        )
+        self.assertEqual(len(meetings), 3)
+        self.assertEqual(meetings[0]["preferred_days"], [0])
+        self.assertEqual(meetings[1]["preferred_days"], [2])
+        self.assertEqual(meetings[2]["preferred_days"], [4])
+        self.assertEqual(meetings[0]["duration_slots"], 2)
+        self.assertEqual(meetings[0]["preferred_start"], "08:00")
+        self.assertEqual(meetings[0]["preferred_end"], "10:00")
+        # Legacy 3-column rows have no meeting data.
+        self.assertIsNone(
+            build_preference_meetings(
+                {"professor_email": "p@example.com", "subject_code": "CS101"}
+            )
+        )
+
     def test_generate_template_xlsx(self):
         content = processor.generate_template_xlsx()
         wb = load_workbook(BytesIO(content))
@@ -1214,7 +1250,15 @@ class ImportProcessorUnitTests(ImportTestCase):
         # All five core sheets are headers-only (no data rows).
         self.assertEqual(
             [c.value for c in wb["ProfessorPreferences"][1]],
-            ["professor_email", "subject_code", "priority"],
+            [
+                "professor_email",
+                "subject_code",
+                "priority",
+                "days",
+                "start_time",
+                "end_time",
+                "mode",
+            ],
         )
         self.assertEqual(wb["ProfessorPreferences"].max_row, 1)
         for sheet_name in ["Departments", "Subjects", "Sections"]:
@@ -1698,3 +1742,169 @@ class ImportProfessorPreferencesTests(ImportTestCase):
         )
         submission = PreferenceSubmission.objects.get(term=term, department=self.dept)
         self.assertEqual(SubmissionItem.objects.filter(submission=submission).count(), 1)
+
+    def _meeting_sheets(self, pref_rows, professor_rows=None):
+        return {
+            "Departments": [["id", "name"], [self.dept.id, "CS"]],
+            "Rooms": [["id", "name", "capacity"]],
+            "Subjects": [["id", "code", "title"], [self.subject.id, "CS101", "Intro"]],
+            "Sections": [["id", "name", "headcount"]],
+            "Professors": [
+                ["id", "email", "department_id"],
+                *(professor_rows or []),
+            ],
+            "ProfessorPreferences": [
+                [
+                    "professor_email",
+                    "subject_code",
+                    "priority",
+                    "days",
+                    "start_time",
+                    "end_time",
+                    "mode",
+                ],
+                *pref_rows,
+            ],
+        }
+
+    def test_multiday_meetings_commit_and_sync_availability(self):
+        self.auth(self.reg_token)
+        term = self._active_term()
+        sheets = self._meeting_sheets(
+            [["pref.prof@example.com", "CS101", 1, "MWF", "08:00", "10:00", "sync"]],
+            professor_rows=[[None, "pref.prof@example.com", self.dept.id]],
+        )
+        preview = self.client.post(
+            self.url_preview, {"file": self._make_xlsx(sheets)}, format="multipart"
+        )
+        self.assertEqual(preview.status_code, 200, preview.data.get("errors"))
+        commit = self.client.post(
+            self.url_commit,
+            {"preview_token": preview.data["preview_token"]},
+            format="json",
+        )
+        self.assertEqual(commit.status_code, 200, commit.data.get("errors"))
+
+        prof = Professors.objects.get(user__email__iexact="pref.prof@example.com")
+        pref = ProfessorPreference.objects.get(professor=prof, term=term)
+        self.assertEqual(len(pref.meetings), 3)
+        self.assertEqual(
+            [m["preferred_days"][0] for m in pref.meetings], [0, 2, 4]
+        )
+        self.assertTrue(all(m["duration_slots"] == 2 for m in pref.meetings))
+        windows = AvailabilityWindow.objects.filter(prof=prof, is_preferred=True)
+        self.assertEqual(windows.count(), 3)
+        self.assertEqual(set(windows.values_list("day", flat=True)), {0, 2, 4})
+
+    def test_missing_end_time_and_inverted_times_are_rejected(self):
+        self.auth(self.reg_token)
+        self._active_term()
+        sheets = self._meeting_sheets(
+            [
+                ["a.prof@example.com", "CS101", 1, "MW", "08:00", None, "sync"],
+                ["b.prof@example.com", "CS101", 1, "MW", "10:00", "09:00", "sync"],
+            ],
+            professor_rows=[
+                [None, "a.prof@example.com", self.dept.id],
+                [None, "b.prof@example.com", self.dept.id],
+            ],
+        )
+        response = self.client.post(
+            self.url_preview, {"file": self._make_xlsx(sheets)}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 400)
+        messages = " ".join(e["message"] for e in response.data["errors"])
+        self.assertIn("must be provided together", messages)
+        self.assertIn("start_time must be before end_time", messages)
+
+    def test_batch_rollback_deletes_created_and_restores_updated(self):
+        self.auth(self.reg_token)
+        self._active_term()
+        sheets = {
+            "Departments": [
+                ["id", "name"],
+                [self.dept.id, "CS"],
+                [None, "Rollback Dept"],
+            ],
+            "Rooms": [["id", "name", "capacity"]],
+            "Subjects": [
+                ["id", "code", "title"],
+                [self.subject.id, "CS101", "Renamed Intro"],
+            ],
+            "Sections": [["id", "name", "headcount"]],
+            "Professors": [["id", "email", "department_id"]],
+        }
+        preview = self.client.post(
+            self.url_preview, {"file": self._make_xlsx(sheets)}, format="multipart"
+        )
+        self.assertEqual(preview.status_code, 200, preview.data.get("errors"))
+        commit = self.client.post(
+            self.url_commit,
+            {"preview_token": preview.data["preview_token"]},
+            format="json",
+        )
+        self.assertEqual(commit.status_code, 200, commit.data.get("errors"))
+        batch_id = commit.data["batch_id"]
+        self.assertIsNotNone(batch_id)
+        self.assertTrue(Department.objects.filter(name="Rollback Dept").exists())
+        self.subject.refresh_from_db()
+        self.assertEqual(self.subject.title, "Renamed Intro")
+
+        listed = self.client.get("/api/imports/batches/")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.data[0]["id"], batch_id)
+
+        rollback = self.client.post(
+            f"/api/imports/batches/{batch_id}/rollback/", format="json"
+        )
+        self.assertEqual(rollback.status_code, 200, rollback.data)
+        self.assertFalse(Department.objects.filter(name="Rollback Dept").exists())
+        self.subject.refresh_from_db()
+        self.assertEqual(self.subject.title, "Intro")
+        batch = ImportBatch.objects.get(pk=batch_id)
+        self.assertEqual(batch.status, ImportBatch.Status.ROLLED_BACK)
+
+    def test_rollback_blocked_when_referenced_by_schedule_run(self):
+        from timetable.models import Assignment, ScheduledClass, ScheduleRun
+
+        self.auth(self.reg_token)
+        term = self._active_term()
+        sheets = self._meeting_sheets(
+            [["pref.prof@example.com", "CS101", 1, None, None, None, None]],
+            professor_rows=[[None, "pref.prof@example.com", self.dept.id]],
+        )
+        preview = self.client.post(
+            self.url_preview, {"file": self._make_xlsx(sheets)}, format="multipart"
+        )
+        self.assertEqual(preview.status_code, 200, preview.data.get("errors"))
+        commit = self.client.post(
+            self.url_commit,
+            {"preview_token": preview.data["preview_token"]},
+            format="json",
+        )
+        self.assertEqual(commit.status_code, 200, commit.data.get("errors"))
+        batch_id = commit.data["batch_id"]
+
+        prof = Professors.objects.get(user__email__iexact="pref.prof@example.com")
+        assignment = Assignment.objects.create(
+            prof=prof, subject=self.subject, section=self.section, term=term
+        )
+        run_obj = ScheduleRun.objects.create(
+            algorithm="greedy", status="feasible", term=term
+        )
+        ScheduledClass.objects.create(
+            run=run_obj,
+            assignment=assignment,
+            day=0,
+            start_time=dtime(8, 0),
+            duration_slots=1,
+        )
+
+        rollback = self.client.post(
+            f"/api/imports/batches/{batch_id}/rollback/", format="json"
+        )
+        self.assertEqual(rollback.status_code, 400)
+        self.assertIn("ScheduleRun", rollback.data["detail"])
+        self.assertTrue(
+            ProfessorPreference.objects.filter(professor=prof, term=term).exists()
+        )

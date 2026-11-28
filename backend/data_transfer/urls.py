@@ -6,6 +6,8 @@ from .views import (
     ScheduleExportView,
     ImportPreviewView,
     ImportCommitView,
+    ImportBatchListView,
+    ImportBatchRollbackView,
     TemplateView,
     TemplateCSVView,
 )
@@ -51,6 +53,16 @@ urlpatterns = [
         "imports/commit/",
         ImportCommitView.as_view(),
         name="import-commit",
+    ),
+    path(
+        "imports/batches/",
+        ImportBatchListView.as_view(),
+        name="import-batches",
+    ),
+    path(
+        "imports/batches/<int:pk>/rollback/",
+        ImportBatchRollbackView.as_view(),
+        name="import-batch-rollback",
     ),
     path(
         "imports/template/",

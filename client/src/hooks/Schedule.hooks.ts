@@ -302,6 +302,34 @@ export function useImportPreview() {
   });
 }
 
+export function useImportBatches(opts?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['import-batches'],
+    queryFn: () => scheduleService.getImportBatches(),
+    enabled: opts?.enabled ?? true,
+  });
+}
+
+export function useRollbackImportBatch() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (batchId: number) =>
+      scheduleService.rollbackImportBatch(batchId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['import-batches'] });
+      queryClient.invalidateQueries({ queryKey: ['all-assignments'] });
+      queryClient.invalidateQueries({ queryKey: ['registrar-all-assignments'] });
+      queryClient.invalidateQueries({ queryKey: ['registrar-all-schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['teachers'] });
+      queryClient.invalidateQueries({ queryKey: ['courses'] });
+      queryClient.invalidateQueries({ queryKey: ['sections'] });
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+      queryClient.invalidateQueries({ queryKey: ['departments'] });
+    },
+  });
+}
+
 export function useImportTemplate() {
   return useMutation({
     mutationFn: (format: 'xlsx' | 'csv') =>
@@ -626,6 +654,7 @@ export function useCreateProfessorSubject(departmentId: number) {
       professor_id: number;
       subject_id: number;
       is_preferred?: boolean;
+      modality?: 'synchronous' | 'asynchronous';
     }) => scheduleService.createProfessorSubject(departmentId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -633,6 +662,32 @@ export function useCreateProfessorSubject(departmentId: number) {
       });
       // The department-scoped subject list is derived from qualifications.
       queryClient.invalidateQueries({ queryKey: ['subjects-by-department'] });
+    },
+  });
+}
+
+export function useUpdateProfessorSubject(departmentId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      assignmentId,
+      payload,
+    }: {
+      assignmentId: number;
+      payload: {
+        modality?: 'synchronous' | 'asynchronous';
+        is_preferred?: boolean;
+      };
+    }) =>
+      scheduleService.updateProfessorSubject(
+        departmentId,
+        assignmentId,
+        payload
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['professor-subjects', departmentId],
+      });
     },
   });
 }

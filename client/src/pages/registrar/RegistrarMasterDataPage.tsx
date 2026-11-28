@@ -2,7 +2,7 @@
 // Unified master data management for the registrar: Professors, Rooms,
 // Courses (Subjects) and Sections. Each tab is a searchable table with Add /
 // Edit / Delete via SlideOverDrawer and ConfirmDialog.
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, Edit2, Search, X as XIcon, Mail, Lock, Building2, Clock, Timer } from 'lucide-react';
 import {
@@ -68,17 +68,10 @@ type SimpleUser = { id: number; username: string; email: string };
 export default function RegistrarMasterDataPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const [tab, setTab] = useState<Tab>(
-    () => tabFromSlug(tabParam) ?? 'Professors'
-  );
-
-  useEffect(() => {
-    const next = tabFromSlug(tabParam);
-    if (next && next !== tab) setTab(next);
-  }, [tabParam, tab]);
+  // Tab is derived from the URL; selecting a tab only updates the param.
+  const tab: Tab = tabFromSlug(tabParam) ?? 'Professors';
 
   const selectTab = (next: Tab) => {
-    setTab(next);
     setSearchParams({ tab: TAB_SLUGS[next] });
   };
   const [search, setSearch] = useState('');

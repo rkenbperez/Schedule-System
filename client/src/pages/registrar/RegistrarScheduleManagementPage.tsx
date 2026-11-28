@@ -11,15 +11,19 @@ import {
   ChevronDown,
   Download,
   FileSpreadsheet,
+  History,
   Loader2,
+  RotateCcw,
   Sparkles,
   UploadCloud,
   X,
 } from 'lucide-react';
 import {
+  useImportBatches,
   useImportCommit,
   useImportPreview,
   useImportTemplate,
+  useRollbackImportBatch,
   useTerms,
 } from '../../hooks/Schedule.hooks';
 import {
@@ -38,16 +42,26 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  ConfirmDialog,
+  EmptyState,
   IconButton,
   LinkButton,
   PageHeader,
   SegmentedControl,
   SelectField,
+  Table,
+  TableContainer,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
 } from '../../components/ui';
 import { cn } from '../../lib/cn';
 import type {
   GenerateSchedulePayload,
   GenerateScheduleResponse,
+  ImportBatch,
   ImportPreviewItem,
   ImportPreviewResponse,
 } from '../../types/Types';
@@ -69,13 +83,14 @@ interface SheetItem {
   item: ImportPreviewItem;
 }
 
-// Mirrors SHEET_MODELS / REQUIRED_COLUMNS in backend/data_transfer/import_utils.py.
+// Mirrors TEMPLATE_ALL_SHEETS / TEMPLATE_COLUMNS in backend/data_transfer/import_utils.py.
 const FORMAT_GUIDE_SHEETS = [
   'Departments',
   'Rooms',
   'Subjects',
   'Sections',
   'Professors',
+  'ProfessorPreferences (optional)',
 ];
 
 const FORMAT_GUIDE_COLUMNS = [
@@ -84,6 +99,7 @@ const FORMAT_GUIDE_COLUMNS = [
   'Subjects: code, title, units',
   'Sections: name, headcount, program',
   'Professors: email, first_name, last_name, department_id, max_hours',
+  'ProfessorPreferences: professor_email, subject_code, priority, days, start_time, end_time, mode',
 ];
 
 function validateFile(file: File) {
@@ -194,6 +210,15 @@ function detailSegments(sheet: string, item: ImportPreviewItem): string[] {
       if (d.subject_id !== undefined) parts.push(`Subj #${d.subject_id}`);
       if (d.section_id !== undefined) parts.push(`Sec #${d.section_id}`);
       break;
+    case 'ProfessorPreferences':
+      if (d.professor_email !== undefined) parts.push(String(d.professor_email));
+      if (d.subject_code !== undefined) parts.push(String(d.subject_code));
+      if (d.days !== undefined && d.days !== '') parts.push(String(d.days));
+      if (d.start_time !== undefined && d.end_time !== undefined)
+        parts.push(`${d.start_time}–${d.end_time}`);
+      if (d.mode !== undefined && d.mode !== '') parts.push(String(d.mode));
+      if (d.priority !== undefined) parts.push(`Priority ${d.priority}`);
+      break;
     default:
       return Object.entries(d).map(([key, value]) => `${key}: ${value}`);
   }
@@ -205,12 +230,17 @@ export default function RegistrarScheduleManagementPage() {
   const importPreview = useImportPreview();
   const importCommit = useImportCommit();
   const importTemplate = useImportTemplate();
+  const rollbackBatch = useRollbackImportBatch();
   const generateSchedule = useGenerateSchedule();
   const publishRun = usePublishRun();
   const { data: terms } = useTerms();
   const queryClient = useQueryClient();
   const { data: me } = useMe();
   const toast = useToast();
+  const isRegistrar = !!me?.is_staff;
+  const { data: importBatches, isLoading: batchesLoading } = useImportBatches({
+    enabled: isRegistrar,
+  });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -220,6 +250,13 @@ export default function RegistrarScheduleManagementPage() {
     useState<ImportPreviewResponse | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+  const [rollbackTarget, setRollbackTarget] = useState<ImportBatch | null>(
+    null
+  );
+  const [rollbackFeedback, setRollbackFeedback] = useState<{
     type: 'success' | 'error';
     message: string;
   } | null>(null);
@@ -242,8 +279,6 @@ export default function RegistrarScheduleManagementPage() {
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [published, setPublished] = useState(false);
-
-  const isRegistrar = !!me?.is_staff;
 
   useEffect(() => {
     if (!isGenerating) return;
@@ -391,6 +426,7 @@ export default function RegistrarScheduleManagementPage() {
                     data.summary.updates
                   } updated.`,
           });
+          queryClient.invalidateQueries({ queryKey: ['import-batches'] });
           queryClient.invalidateQueries({ queryKey: ['all-assignments'] });
           queryClient.invalidateQueries({
             queryKey: ['registrar-all-assignments'],
@@ -413,6 +449,40 @@ export default function RegistrarScheduleManagementPage() {
         },
       }
     );
+  };
+
+  const handleConfirmRollback = () => {
+    if (!rollbackTarget) return;
+    setRollbackFeedback(null);
+    rollbackBatch.mutate(rollbackTarget.id, {
+      onSuccess: () => {
+        const name = rollbackTarget.filename || `Batch #${rollbackTarget.id}`;
+        setRollbackTarget(null);
+        setRollbackFeedback({
+          type: 'success',
+          message: `Rolled back ${name}. Created records were deleted and updated records restored.`,
+        });
+        toast.addToast({
+          type: 'success',
+          title: 'Import rolled back',
+          description: `${name} has been reverted.`,
+        });
+      },
+      onError: (error: Error) => {
+        const message =
+          error.message || 'Unable to roll back this import batch.';
+        setRollbackTarget(null);
+        setRollbackFeedback({
+          type: 'error',
+          message,
+        });
+        toast.addToast({
+          type: 'error',
+          title: 'Rollback blocked',
+          description: message,
+        });
+      },
+    });
   };
 
   const handleGenerate = () => {
@@ -750,6 +820,61 @@ export default function RegistrarScheduleManagementPage() {
                         section name
                       </li>
                       <li>
+                        <span className='font-mono text-text-primary'>
+                          ProfessorPreferences
+                        </span>{' '}
+                        (7 columns):{' '}
+                        <span className='font-mono text-text-primary'>
+                          days
+                        </span>{' '}
+                        accepts multi-day patterns (
+                        <span className='font-mono text-text-primary'>MWF</span>,{' '}
+                        <span className='font-mono text-text-primary'>TTH</span>,{' '}
+                        <span className='font-mono text-text-primary'>
+                          MON,WED
+                        </span>
+                        ,{' '}
+                        <span className='font-mono text-text-primary'>
+                          MON-FRI
+                        </span>
+                        ) or single days (
+                        <span className='font-mono text-text-primary'>
+                          MON..SAT
+                        </span>
+                        ), times in 24-hour{' '}
+                        <span className='font-mono text-text-primary'>
+                          HH:MM
+                        </span>
+                        , and{' '}
+                        <span className='font-mono text-text-primary'>
+                          mode
+                        </span>{' '}
+                        (<span className='font-mono text-text-primary'>sync</span>
+                        , <span className='font-mono text-text-primary'>lab</span>
+                        ,{' '}
+                        <span className='font-mono text-text-primary'>
+                          async
+                        </span>
+                        ). Leave{' '}
+                        <span className='font-mono text-text-primary'>
+                          days
+                        </span>
+                        ,{' '}
+                        <span className='font-mono text-text-primary'>
+                          start_time
+                        </span>
+                        ,{' '}
+                        <span className='font-mono text-text-primary'>
+                          end_time
+                        </span>
+                        , and{' '}
+                        <span className='font-mono text-text-primary'>
+                          mode
+                        </span>{' '}
+                        blank for 3-column subject-only preferences (backward
+                        compatible)
+                      </li>
+                      <li>
                         Legacy workbooks containing Assignments, Meetings,
                         Availability, or BusyBlocks sheets are still accepted
                       </li>
@@ -1075,6 +1200,138 @@ export default function RegistrarScheduleManagementPage() {
           )}
         </CardBody>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>Import History &amp; Rollback</CardTitle>
+            <CardDescription className='mt-1'>
+              Review committed spreadsheets and undo an import when needed.
+            </CardDescription>
+          </div>
+        </CardHeader>
+        <CardBody className='space-y-4'>
+          {rollbackFeedback && (
+            <Alert
+              tone={rollbackFeedback.type === 'success' ? 'success' : 'danger'}
+              title={
+                rollbackFeedback.type === 'success'
+                  ? 'Rollback complete'
+                  : 'Rollback blocked'
+              }
+              action={
+                <IconButton
+                  label='Dismiss rollback message'
+                  size='sm'
+                  onClick={() => setRollbackFeedback(null)}
+                >
+                  <X size={16} aria-hidden='true' />
+                </IconButton>
+              }
+            >
+              {rollbackFeedback.message}
+            </Alert>
+          )}
+
+          {batchesLoading ? (
+            <div
+              className='flex items-center gap-2 py-4 text-body-sm text-text-secondary'
+              role='status'
+            >
+              <Loader2
+                size={16}
+                className='animate-spin text-apple-green-600'
+                aria-hidden='true'
+              />
+              Loading import history…
+            </div>
+          ) : !importBatches || importBatches.length === 0 ? (
+            <EmptyState
+              className='py-8'
+              icon={History}
+              title='No imports committed yet'
+              description='Committed spreadsheets will appear here with summary counts and rollback controls.'
+            />
+          ) : (
+            <TableContainer>
+              <Table aria-label='Import batch history'>
+                <THead>
+                  <TR>
+                    <TH>File</TH>
+                    <TH>Committed</TH>
+                    <TH>Status</TH>
+                    <TH>Summary</TH>
+                    <TH className='w-32 text-right'>Action</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {importBatches.map((batch) => {
+                    const creates = batch.summary?.creates ?? 0;
+                    const updates = batch.summary?.updates ?? 0;
+                    const isRolledBack = batch.status === 'rolled_back';
+
+                    return (
+                      <TR key={batch.id}>
+                        <TD>
+                          <div className='font-medium text-text-primary'>
+                            {batch.filename || `Batch #${batch.id}`}
+                          </div>
+                          {batch.uploaded_by && (
+                            <div className='text-caption text-text-tertiary'>
+                              {batch.uploaded_by}
+                            </div>
+                          )}
+                        </TD>
+                        <TD className='text-caption text-text-secondary'>
+                          {new Date(batch.created_at).toLocaleString()}
+                        </TD>
+                        <TD>
+                          <Badge
+                            tone={isRolledBack ? 'neutral' : 'success'}
+                            size='sm'
+                          >
+                            {isRolledBack ? 'Rolled back' : 'Committed'}
+                          </Badge>
+                        </TD>
+                        <TD className='text-caption text-text-secondary'>
+                          {creates} new · {updates} updated
+                        </TD>
+                        <TD className='text-right'>
+                          <Button
+                            variant='secondary'
+                            size='sm'
+                            icon={<RotateCcw size={14} aria-hidden='true' />}
+                            disabled={isRolledBack || rollbackBatch.isPending}
+                            onClick={() => {
+                              setRollbackFeedback(null);
+                              setRollbackTarget(batch);
+                            }}
+                          >
+                            Rollback
+                          </Button>
+                        </TD>
+                      </TR>
+                    );
+                  })}
+                </TBody>
+              </Table>
+            </TableContainer>
+          )}
+        </CardBody>
+      </Card>
+
+      <ConfirmDialog
+        open={Boolean(rollbackTarget)}
+        onClose={() => {
+          if (!rollbackBatch.isPending) setRollbackTarget(null);
+        }}
+        onConfirm={handleConfirmRollback}
+        title='Roll back import batch'
+        description={`Roll back ${rollbackTarget?.filename || `Batch #${rollbackTarget?.id ?? ''}`}? Created records will be deleted and updated records restored. Imports referenced by an active ScheduleRun cannot be rolled back.`}
+        confirmLabel='Roll back'
+        tone='danger'
+        loading={rollbackBatch.isPending}
+      />
 
       <Card>
         <CardHeader>
